@@ -6,7 +6,6 @@ const { google } = require("googleapis");
 const fs = require("fs");
 const tvAlert = require("./commands/tvAlert");
 
-// LINE 設定
 const config = {
   channelAccessToken: process.env.LINE_ACCESS_TOKEN,
   channelSecret: process.env.LINE_SECRET
@@ -15,22 +14,43 @@ const config = {
 const app = express();
 const client = new line.Client(config);
 
+// ⚠️ 千萬不要用 express.json()（會阻擋 TradingView）
+// app.use(express.json());  ← 永遠不要寫這個
+
+// === TradingView alert 接收（放最前面並強制 text parser）===
+app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
+  try {
+    let alertContent = req.body || "";
+
+    if (typeof alertContent !== "string") {
+      alertContent = String(alertContent);
+    }
+
+    const targetUser = process.env.TARGET_USER_ID;
+    await tvAlert(client, alertContent, targetUser);
+
+    console.log("🔥 TV ALERT 收到內容：", alertContent);
+
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error("🔥 TV-alert error:", err);
+    res.status(500).send("ERROR");
+  }
+});
+
 // === Google Sheets 設定 ===
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
-const SHEET_NAME = "待辦事項";  // ← 你指定的工作表名稱
+const SHEET_NAME = "待辦事項";
 
-// 讀取 Secret File（金鑰）
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
 
-// 建立 Google API 授權
 const auth = new GoogleAuth({
   credentials,
   scopes: ["https://www.googleapis.com/auth/spreadsheets"]
 });
 
-// 寫入 Google Sheet 的 function
 async function appendRow(values) {
   const client = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: client });
@@ -45,11 +65,10 @@ async function appendRow(values) {
   });
 }
 
-// === Webhook 接收 ===
+// === LINE webhook ===
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
-    const events = req.body.events;
-    for (const event of events) {
+    for (const event of req.body.events) {
       await handleEvent(event);
     }
     res.status(200).send("OK");
@@ -59,20 +78,14 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
   }
 });
 
-
-
-
 // === LINE 訊息處理 ===
 async function handleEvent(event) {
   if (event.type !== "message" || event.message.type !== "text") return;
 
   const text = event.message.text;
 
-  // 偵測「待辦：xxx」
   if (text.startsWith("待辦：")) {
     const task = text.replace("待辦：", "").trim();
-
-    // 寫入 Google Sheet 的欄位順序
     const timestamp = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
 
     const values = [
@@ -90,33 +103,9 @@ async function handleEvent(event) {
       text: `📌 已記錄待辦：「${task}」`
     });
   }
-
-  // 其他訊息 → 不回覆（沉默模式）
-  return;
 }
 
-
-// === TradingView alert 接收 API ===
-app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
-  try {
-    let alertContent = req.body;
-
-    if (typeof alertContent !== "string") {
-      alertContent = JSON.stringify(alertContent);
-    }
-
-    const targetUser = process.env.TARGET_USER_ID;
-
-    await tvAlert(client, alertContent, targetUser);
-
-    res.status(200).send("OK");
-  } catch (err) {
-    console.error("TV-alert error:", err);
-    res.status(500).send("ERROR");
-  }
-});
-
-// === Render port ===
+// === 啟動服務 ===
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Mao Bot running on PORT ${PORT}`);
