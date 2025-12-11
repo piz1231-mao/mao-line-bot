@@ -1,8 +1,11 @@
 require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
+const { GoogleAuth } = require("google-auth-library");
+const { google } = require("googleapis");
+const fs = require("fs");
 
-// 讀取 LINE 設定（等你之後放進 Render 的環境變數）
+// LINE 設定
 const config = {
   channelAccessToken: process.env.LINE_ACCESS_TOKEN,
   channelSecret: process.env.LINE_SECRET
@@ -11,16 +14,43 @@ const config = {
 const app = express();
 const client = new line.Client(config);
 
-// Webhook 接收路由
+// === Google Sheets 設定 ===
+const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
+const SHEET_NAME = "待辦事項";  // ← 你指定的工作表名稱
+
+// 讀取 Secret File（金鑰）
+const credentials = JSON.parse(
+  fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
+);
+
+// 建立 Google API 授權
+const auth = new GoogleAuth({
+  credentials,
+  scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+});
+
+// 寫入 Google Sheet 的 function
+async function appendRow(values) {
+  const client = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: client });
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [values]
+    }
+  });
+}
+
+// === Webhook 接收 ===
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     const events = req.body.events;
-
-    // 處理所有事件（訊息、加入群組、貼圖…）
     for (const event of events) {
       await handleEvent(event);
     }
-
     res.status(200).send("OK");
   } catch (err) {
     console.error("Webhook Error:", err);
@@ -28,24 +58,44 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
   }
 });
 
-// 處理訊息事件
+// === LINE 訊息處理 ===
 async function handleEvent(event) {
-  // 只處理文字訊息
-  if (event.type !== "message" || event.message.type !== "text") {
-    return;
+  if (event.type !== "message" || event.message.type !== "text") return;
+
+  const text = event.message.text;
+
+  // 偵測「待辦：xxx」
+  if (text.startsWith("待辦：")) {
+    const task = text.replace("待辦：", "").trim();
+
+    // 寫入 Google Sheet 的欄位順序
+    const timestamp = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+
+    const values = [
+      timestamp,
+      event.source.groupId || "個人",
+      event.source.userId,
+      task,
+      "未完成"
+    ];
+
+    await appendRow(values);
+
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: `📌 已記錄待辦：「${task}」`
+    });
   }
 
-  const userMessage = event.message.text;
-
-  // 回覆同樣的文字（測試用）
+  // 其他訊息回覆
   return client.replyMessage(event.replyToken, {
     type: "text",
-    text: `你說：${userMessage}`
+    text: `你說：${text}`
   });
 }
 
-// Render 用的 port（官方預設）
+// === Render port ===
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Mao Bot is running on port ${PORT}`);
+  console.log(`🚀 Mao Bot running on PORT ${PORT}`);
 });
