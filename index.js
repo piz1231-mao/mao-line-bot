@@ -58,6 +58,23 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
   }
 });
 
+const tvAlert = require("./commands/tvAlert");
+
+// 接收 TradingView alert 的 API
+app.post("/tv-alert", async (req, res) => {
+  try {
+    const alert = req.body.message || JSON.stringify(req.body);
+    const targetUser = process.env.TARGET_USER_ID;
+
+    await tvAlert(client, alert, targetUser);
+
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error("TV-alert error:", err);
+    res.status(500).send("ERROR");
+  }
+});
+
 // === LINE 訊息處理 ===
 async function handleEvent(event) {
   if (event.type !== "message" || event.message.type !== "text") return;
