@@ -4,6 +4,7 @@ module.exports = async function tvAlert(client, alertMessage, targetUser) {
       type: "text",
       text: `🚨 TV 訊號通知\n${alertMessage}`
     });
+    console.log("📨 已送出 LINE 通知");
   } catch (err) {
     console.error("TV Alert 發送失敗：", err);
   }
