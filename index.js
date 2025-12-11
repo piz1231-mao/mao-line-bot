@@ -124,6 +124,25 @@ async function handleEvent(event) {
   return;
 }
 
+app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
+  try {
+    let alertContent = req.body;
+
+    if (typeof alertContent !== "string") {
+      alertContent = JSON.stringify(alertContent);
+    }
+
+    const targetUser = process.env.TARGET_USER_ID;
+
+    await tvAlert(client, alertContent, targetUser);
+
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error("TV-alert error:", err);
+    res.status(500).send("ERROR");
+  }
+});
+
 // === Render port ===
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
