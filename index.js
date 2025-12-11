@@ -60,36 +60,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 
-// === TradingView alert 接收 API ===
-app.post("/tv-alert", express.json({ type: "*/*" }), async (req, res) => {
-  try {
-    let alertContent = "";
 
-    // TV 有時傳 JSON，有時傳純文字
-    if (req.body && typeof req.body === "object") {
-      if (req.body.message) {
-        alertContent = req.body.message;
-      } else if (req.body.alert_message) {
-        alertContent = req.body.alert_message;
-      } else {
-        alertContent = JSON.stringify(req.body);
-      }
-    } else if (typeof req.body === "string") {
-      alertContent = req.body;
-    } else {
-      alertContent = "無法解析 TradingView 訊息";
-    }
-
-    const targetUser = process.env.TARGET_USER_ID;
-
-    await tvAlert(client, alertContent, targetUser);
-
-    res.status(200).send("OK");
-  } catch (err) {
-    console.error("TV-alert error:", err);
-    res.status(500).send("ERROR");
-  }
-});
 
 // === LINE 訊息處理 ===
 async function handleEvent(event) {
@@ -124,6 +95,8 @@ async function handleEvent(event) {
   return;
 }
 
+
+// === TradingView alert 接收 API ===
 app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
   try {
     let alertContent = req.body;
