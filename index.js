@@ -4,6 +4,7 @@ const line = require("@line/bot-sdk");
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
 const fs = require("fs");
+const tvAlert = require("./commands/tvAlert");
 
 // LINE 設定
 const config = {
@@ -58,15 +59,30 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
   }
 });
 
-const tvAlert = require("./commands/tvAlert");
 
-// 接收 TradingView alert 的 API
-app.post("/tv-alert", async (req, res) => {
+// === TradingView alert 接收 API ===
+app.post("/tv-alert", express.json({ type: "*/*" }), async (req, res) => {
   try {
-    const alert = req.body.message || JSON.stringify(req.body);
+    let alertContent = "";
+
+    // TV 有時傳 JSON，有時傳純文字
+    if (req.body && typeof req.body === "object") {
+      if (req.body.message) {
+        alertContent = req.body.message;
+      } else if (req.body.alert_message) {
+        alertContent = req.body.alert_message;
+      } else {
+        alertContent = JSON.stringify(req.body);
+      }
+    } else if (typeof req.body === "string") {
+      alertContent = req.body;
+    } else {
+      alertContent = "無法解析 TradingView 訊息";
+    }
+
     const targetUser = process.env.TARGET_USER_ID;
 
-    await tvAlert(client, alert, targetUser);
+    await tvAlert(client, alertContent, targetUser);
 
     res.status(200).send("OK");
   } catch (err) {
