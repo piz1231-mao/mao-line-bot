@@ -87,11 +87,8 @@ async function handleEvent(event) {
     });
   }
 
-  // 其他訊息回覆
-  return client.replyMessage(event.replyToken, {
-    type: "text",
-    text: `你說：${text}`
-  });
+  // 其他訊息 → 不回覆（沉默模式）
+  return;
 }
 
 // === Render port ===
