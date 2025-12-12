@@ -1,9 +1,10 @@
 // ======================================================
-// 毛怪公司 LINE Bot v2.0（企業級通知管理）
+// 毛怪公司 LINE Bot v2.2 — 最終正式版
 // 功能：
-// 1. 待辦事項（Google Sheet）
+// 1. 待辦事項（智能 Text Parser｜全形/半形兼容）
 // 2. TradingView 訊號 → Google Sheet 名單推播
-// 3. 通知名單管理（加入 / 移除 / 查名單）
+// 3. 通知名單管理：加入 / 移除 / 查詢
+// 4. 查詢自己的 UserID / 群組ID
 // ======================================================
 
 require("dotenv").config();
@@ -14,9 +15,7 @@ const { google } = require("googleapis");
 const fs = require("fs");
 const tvAlert = require("./commands/tvAlert");
 
-// ======================================================
-// LINE 設定
-// ======================================================
+// ===== LINE 設定 =====
 const config = {
   channelAccessToken: process.env.LINE_ACCESS_TOKEN,
   channelSecret: process.env.LINE_SECRET
@@ -25,25 +24,22 @@ const config = {
 const app = express();
 const client = new line.Client(config);
 
-// ======================================================
-// Google Sheets 設定
-// ======================================================
+// ===== Google Sheet 設定 =====
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const TODO_SHEET_NAME = "待辦事項";
 const NOTIFY_SHEET_NAME = "TV通知名單";
 
-// Google 金鑰
+// ===== 讀取金鑰 =====
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
 
-// Google API 授權
 const auth = new GoogleAuth({
   credentials,
   scopes: ["https://www.googleapis.com/auth/spreadsheets"]
 });
 
-// Google Sheet 寫入
+// ===== Sheet 寫入 =====
 async function appendToSheet(sheetName, values) {
   const client = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: client });
@@ -52,27 +48,25 @@ async function appendToSheet(sheetName, values) {
     spreadsheetId: SPREADSHEET_ID,
     range: `${sheetName}!A1`,
     valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [values]
-    }
+    requestBody: { values: [values] }
   });
 }
 
-// Google Sheet 刪除一列
-async function deleteRowByUserID(targetID) {
+// ===== Sheet 刪除 =====
+async function deleteRowByUserID(uid) {
   const client = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: client });
 
-  const data = await sheets.spreadsheets.values.get({
+  const getRows = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${NOTIFY_SHEET_NAME}!A2:B999`,
+    range: `${NOTIFY_SHEET_NAME}!A2:B999`
   });
 
-  const rows = data.data.values || [];
+  const rows = getRows.data.values || [];
   let rowIndex = -1;
 
-  rows.forEach((r, i) => {
-    if (r[1] === targetID) rowIndex = i + 2; // +2 因為 A2 是第 2 列
+  rows.forEach((r, idx) => {
+    if (r[1] === uid) rowIndex = idx + 2; // A2 是第 2 列
   });
 
   if (rowIndex === -1) return false;
@@ -80,18 +74,16 @@ async function deleteRowByUserID(targetID) {
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
     requestBody: {
-      requests: [
-        {
-          deleteDimension: {
-            range: {
-              sheetId: 0,
-              dimension: "ROWS",
-              startIndex: rowIndex - 1,
-              endIndex: rowIndex
-            }
+      requests: [{
+        deleteDimension: {
+          range: {
+            sheetId: 0,
+            dimension: "ROWS",
+            startIndex: rowIndex - 1,
+            endIndex: rowIndex
           }
         }
-      ]
+      }]
     }
   });
 
@@ -103,13 +95,13 @@ async function deleteRowByUserID(targetID) {
 // ======================================================
 app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
   try {
-    let alertContent = req.body || "";
+    const alertContent = req.body || "";
     await tvAlert(client, alertContent);
 
-    console.log("🔥 TV ALERT 收到並已通知：", alertContent);
+    console.log("🔥 TV ALERT → 已推播：", alertContent);
     res.status(200).send("OK");
   } catch (err) {
-    console.error("🔥 tv-alert Error:", err);
+    console.error("TV-alert Error:", err);
     res.status(500).send("ERROR");
   }
 });
@@ -130,15 +122,26 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// LINE 訊息主處理
+// 🧠 對話暫存（加入通知流程用）
+// ======================================================
+let pendingName = null;
+
+// ======================================================
+// 主指令處理
 // ======================================================
 async function handleEvent(event) {
+
   if (event.type !== "message" || event.message.type !== "text") return;
 
-  const text = event.message.text.trim();
+  const rawText = event.message.text;
+  const text = rawText.trim();
+  const clean = text.replace(/\s/g, "");  // 移除空白（提升容錯）
 
-  // ⭐ 查詢使用者與群組 ID
-  if (text.replace(/\s/g, "").includes("我的ID")) {
+  // ============================================
+  // 1️⃣ 查 User ID / Group ID（最高優先）
+  // ============================================
+  if (clean.includes("我的ID") || clean.includes("查ID")) {
+
     const uid = event.source.userId;
     const gid = event.source.groupId;
 
@@ -155,41 +158,58 @@ async function handleEvent(event) {
     });
   }
 
-  // ⭐ 加入通知名單（加入通知：名字 使用者ID）
+  // ============================================
+  // 2️⃣ 加入通知（Step 1）
+  // ============================================
   if (text.startsWith("加入通知：")) {
-    const name = text.replace("加入通知：", "").trim();
+    pendingName = text.replace("加入通知：", "").trim();
 
     return client.replyMessage(event.replyToken, {
       type: "text",
-      text: `請輸入 ${name} 的 User ID（格式：Uxxxxxx）\n輸入方式：\n加入通知ID：UserID`
+      text: `請輸入【${pendingName}】的 User ID（格式：Uxxxxxx）\n例如：\n加入通知ID：Uxxxxxx`
     });
   }
 
-  // ⭐ 實際寫入通知名單
+  // ============================================
+  // 3️⃣ 加入通知（Step 2）
+  // ============================================
   if (text.startsWith("加入通知ID：")) {
+    if (!pendingName) {
+      return client.replyMessage(event.replyToken, {
+        type: "text",
+        text: "⚠️ 你還沒輸入名字！格式：加入通知：小陳"
+      });
+    }
+
     const uid = text.replace("加入通知ID：", "").trim();
 
-    await appendToSheet(NOTIFY_SHEET_NAME, ["未命名", uid]);
+    await appendToSheet(NOTIFY_SHEET_NAME, [pendingName, uid]);
+
+    const doneName = pendingName;
+    pendingName = null;
 
     return client.replyMessage(event.replyToken, {
       type: "text",
-      text: "✅ 已加入 TV 通知名單！"
+      text: `✅ 已加入通知名單：${doneName}`
     });
   }
 
-  // ⭐ 移除通知名單：移除通知：UserID
+  // ============================================
+  // 4️⃣ 移除通知
+  // ============================================
   if (text.startsWith("移除通知：")) {
     const uid = text.replace("移除通知：", "").trim();
-
-    const result = await deleteRowByUserID(uid);
+    const success = await deleteRowByUserID(uid);
 
     return client.replyMessage(event.replyToken, {
       type: "text",
-      text: result ? "🗑 已成功移除通知名單！" : "找不到此 UserID。"
+      text: success ? "🗑 已成功移除通知名單！" : "❌ 找不到此 User ID"
     });
   }
 
-  // ⭐ 查詢通知名單
+  // ============================================
+  // 5️⃣ 查詢通知名單
+  // ============================================
   if (text === "查通知名單") {
     const client2 = await auth.getClient();
     const sheets = google.sheets({ version: "v4", auth: client2 });
@@ -200,21 +220,25 @@ async function handleEvent(event) {
     });
 
     const rows = data.data.values || [];
-    let reply = "📢 目前通知名單：\n\n";
+    
+    if (rows.length === 0) {
+      return client.replyMessage(event.replyToken, { type: "text", text: "目前沒有通知名單。" });
+    }
 
+    let reply = "📢 TV 通知名單：\n\n";
     rows.forEach((r, i) => {
       reply += `${i + 1}. ${r[0] || "未命名"}\n`;
     });
 
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: reply
-    });
+    return client.replyMessage(event.replyToken, { type: "text", text: reply });
   }
 
-  // ⭐ 待辦事項
-  if (text.startsWith("待辦：")) {
-    const task = text.replace("待辦：", "").trim();
+  // ============================================
+  // 6️⃣ 待辦事項（萬用冒號，全形/半形/空格皆可）
+  // ============================================
+  if (clean.startsWith("待辦：") || clean.startsWith("待辦:")) {
+    const task = text.split(/[:：]/)[1]?.trim();
+
     const timestamp = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
 
     await appendToSheet(TODO_SHEET_NAME, [
@@ -230,12 +254,15 @@ async function handleEvent(event) {
       text: `📌 已記錄待辦：「${task}」`
     });
   }
+
+  // ============================================
+  // 其他訊息 → 不回覆
+  // ============================================
+  return;
 }
 
 // ======================================================
-// Render 啟動
-// ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Mao Bot v2.0 running on PORT ${PORT}`);
+  console.log(`🚀 Mao Bot v2.2 Running on PORT ${PORT}`);
 });
