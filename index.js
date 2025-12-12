@@ -98,25 +98,23 @@ async function handleEvent(event) {
 
   const text = event.message.text;
 
-  // ======================================================
-  // 1️⃣ 回傳 User ID / Group ID（用於 TV 通知名單管理）
-  // ======================================================
-  if (text === "我的ID") {
-    const uid = event.source.userId || null;
-    const gid = event.source.groupId || null;
+  // === 回傳 User ID / Group ID（更聰明的比對法） ===
+if (text.replace(/\s/g, "").includes("我的ID")) {
+  const uid = event.source.userId || null;
+  const gid = event.source.groupId || null;
 
-    if (gid) {
-      return client.replyMessage(event.replyToken, {
-        type: "text",
-        text: `📌 群組 ID：\n${gid}\n\n請截圖給阿毛。`
-      });
-    } else {
-      return client.replyMessage(event.replyToken, {
-        type: "text",
-        text: `📌 你的 User ID：\n${uid}\n\n請截圖給阿毛。`
-      });
-    }
+  if (gid) {
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: `📌 群組 ID：\n${gid}\n\n請截圖給阿毛。`
+    });
+  } else {
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: `📌 你的 User ID：\n${uid}\n\n請截圖給阿毛。`
+    });
   }
+}
 
   // ======================================================
   // 2️⃣ 待辦事項（格式：待辦：內容）
