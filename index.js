@@ -1,10 +1,9 @@
 // ======================================================
-// 毛怪公司 LINE Bot v1.0（正式版）
+// 毛怪公司 LINE Bot v1.1（正式版）
 // 功能：
-// 1. 待辦事項（文字）
-// 2. 清潔檢查表（按鈕 quick reply）
-// 3. TradingView 私人訊號通知
-// 4. Google Sheets 資料庫
+// 1. 待辦事項（文字 → 寫入 Google Sheet）
+// 2. TradingView 私人訊號通知（多人）
+// 3. 回覆 User ID / Group ID（管理用）
 // ======================================================
 
 require("dotenv").config();
@@ -31,7 +30,6 @@ const client = new line.Client(config);
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const TODO_SHEET_NAME = "待辦事項";
-const CLEANING_SHEET_NAME = "清潔記錄"; // ← 你需在 Google Sheet 新增此表
 
 // 讀取 Secret File（金鑰）
 const credentials = JSON.parse(
@@ -45,7 +43,7 @@ const auth = new GoogleAuth({
 });
 
 // ======================================================
-// Google Sheet：寫入 function（共用）
+// Google Sheet：寫入 function（可共用）
 // ======================================================
 async function appendToSheet(sheetName, values) {
   const client = await auth.getClient();
@@ -55,32 +53,30 @@ async function appendToSheet(sheetName, values) {
     spreadsheetId: SPREADSHEET_ID,
     range: `${sheetName}!A1`,
     valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [values]
-    }
+    requestBody: { values: [values] }
   });
 }
 
 // ======================================================
-// TradingView /tv-alert（私人通知）
+// TradingView 訊號 /tv-alert → 可通知多人
 // ======================================================
 app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
   try {
-    let alertContent = req.body || "";
-    const targetUser = process.env.TARGET_USER_ID;
+    const alertContent = req.body || "";
+    const targetUserList = process.env.TV_TARGET_IDS || ""; // 多人 ID，用逗號分隔
 
-    await tvAlert(client, alertContent, targetUser);
+    await tvAlert(client, alertContent, targetUserList);
 
-    console.log("🔥 TV ALERT 收到並已通知：", alertContent);
+    console.log("🔥 TV ALERT 已通知：", alertContent);
     res.status(200).send("OK");
   } catch (err) {
-    console.error("🔥 tv-alert Error:", err);
+    console.error("🔥 tv-alert Error：", err);
     res.status(500).send("ERROR");
   }
 });
 
 // ======================================================
-// LINE Webhook
+// LINE Webhook 主入口
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
@@ -95,81 +91,35 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// LINE 訊息處理主程式
+// LINE 訊息處理邏輯
 // ======================================================
 async function handleEvent(event) {
   if (event.type !== "message" || event.message.type !== "text") return;
 
   const text = event.message.text;
 
-  // === 回傳 User ID / Group ID ===
-if (text === "我的ID") {
-  const uid = event.source.userId || null;
-  const gid = event.source.groupId || null;
-
-  // 判斷是群組還是個人
-  if (gid) {
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: `📌 群組 ID：\n${gid}\n\n請截圖給阿毛。`
-    });
-  } else {
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: `📌 你的 User ID：\n${uid}\n\n請截圖給阿毛。`
-    });
-  }
-}
-
   // ======================================================
-  // 1️⃣ 清潔開始 → 推出按鈕式清單
+  // 1️⃣ 回傳 User ID / Group ID（用於 TV 通知名單管理）
   // ======================================================
-  if (text === "清潔開始") {
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: "🧹 請選擇要回報的清潔項目：",
-      quickReply: {
-        items: [
-          { type: "action", action: { type: "message", label: "桌面擦拭", text: "清潔：桌面擦拭" }},
-          { type: "action", action: { type: "message", label: "地板無積水", text: "清潔：地板無積水" }},
-          { type: "action", action: { type: "message", label: "冷藏櫃把手清潔", text: "清潔：冷藏櫃把手清潔" }},
-          { type: "action", action: { type: "message", label: "備料台整潔", text: "清潔：備料台整潔" }},
-          { type: "action", action: { type: "message", label: "餐具區清潔", text: "清潔：餐具區清潔" }},
-          { type: "action", action: { type: "message", label: "垃圾桶更換", text: "清潔：垃圾桶更換" }},
-          { type: "action", action: { type: "message", label: "排水溝清理", text: "清潔：排水溝清理" }},
-          { type: "action", action: { type: "message", label: "餐具補滿", text: "清潔：餐具補滿" }},
-        ]
-      }
-    });
+  if (text === "我的ID") {
+    const uid = event.source.userId || null;
+    const gid = event.source.groupId || null;
 
-    
+    if (gid) {
+      return client.replyMessage(event.replyToken, {
+        type: "text",
+        text: `📌 群組 ID：\n${gid}\n\n請截圖給阿毛。`
+      });
+    } else {
+      return client.replyMessage(event.replyToken, {
+        type: "text",
+        text: `📌 你的 User ID：\n${uid}\n\n請截圖給阿毛。`
+      });
+    }
   }
 
   // ======================================================
-  // 2️⃣ 清潔紀錄寫入（按按鈕後）
-  // ======================================================
-  if (text.startsWith("清潔：")) {
-    const item = text.replace("清潔：", "").trim();
-    const timestamp = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
-
-    const values = [
-      timestamp,
-      event.source.groupId || "個人",
-      event.source.userId,
-      item,
-      "完成"
-    ];
-
-    await appendToSheet(CLEANING_SHEET_NAME, values);
-
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: `🧽 已完成清潔：「${item}」`
-    });
-  }
-
-  // ======================================================
-  // 3️⃣ 待辦事項
+  // 2️⃣ 待辦事項（格式：待辦：內容）
   // ======================================================
   if (text.startsWith("待辦：")) {
     const task = text.replace("待辦：", "").trim();
@@ -191,14 +141,16 @@ if (text === "我的ID") {
     });
   }
 
-  // 其他訊息 → 不回覆
+  // ======================================================
+  // 其他訊息不回應（保持安靜）
+  // ======================================================
   return;
 }
 
 // ======================================================
-// Render 啟動
+// Render 伺服器啟動
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Mao Bot v1.0 running on PORT ${PORT}`);
+  console.log(`🚀 Mao Bot v1.1 running on PORT ${PORT}`);
 });
