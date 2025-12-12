@@ -98,22 +98,26 @@ async function handleEvent(event) {
 
   const text = event.message.text;
 
-  // === 回傳 User ID / Group ID（更聰明的比對法） ===
-if (text.replace(/\s/g, "").includes("我的ID")) {
-  const uid = event.source.userId || null;
-  const gid = event.source.groupId || null;
+ // === 回傳 User ID / Group ID（智慧比對，任何「我的ID」都可以） ===
+if (text.replace(/\s/g, "").includes("我的ID")
+ || text.replace(/\s/g, "").includes("我的id")
+ || text.replace(/\s/g, "").includes("查ID")
+ || text.replace(/\s/g, "").includes("查id")) {
 
-  if (gid) {
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: `📌 群組 ID：\n${gid}\n\n請截圖給阿毛。`
-    });
-  } else {
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: `📌 你的 User ID：\n${uid}\n\n請截圖給阿毛。`
-    });
-  }
+    const uid = event.source.userId || null;
+    const gid = event.source.groupId || null;
+
+    if (gid) {
+      return client.replyMessage(event.replyToken, {
+        type: "text",
+        text: `📌 群組 ID：\n${gid}\n\n請截圖給阿毛。`
+      });
+    } else {
+      return client.replyMessage(event.replyToken, {
+        type: "text",
+        text: `📌 你的 User ID：\n${uid}\n\n請截圖給阿毛。`
+      });
+    }
 }
 
   // ======================================================
