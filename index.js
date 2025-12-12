@@ -102,6 +102,25 @@ async function handleEvent(event) {
 
   const text = event.message.text;
 
+  // === 回傳 User ID / Group ID ===
+if (text === "我的ID") {
+  const uid = event.source.userId || null;
+  const gid = event.source.groupId || null;
+
+  // 判斷是群組還是個人
+  if (gid) {
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: `📌 群組 ID：\n${gid}\n\n請截圖給阿毛。`
+    });
+  } else {
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: `📌 你的 User ID：\n${uid}\n\n請截圖給阿毛。`
+    });
+  }
+}
+
   // ======================================================
   // 1️⃣ 清潔開始 → 推出按鈕式清單
   // ======================================================
@@ -123,15 +142,6 @@ async function handleEvent(event) {
       }
     });
 
-// === 取得使用者 User ID ===
-if (text === "我的ID") {
-  const uid = event.source.userId;
-
-  return client.replyMessage(event.replyToken, {
-    type: "text",
-    text: `你的 User ID 是：\n${uid}\n\n請截圖傳給阿毛 🙌`
-  });
-}
     
   }
 
