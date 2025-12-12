@@ -2,20 +2,19 @@ const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
 const fs = require("fs");
 
-// 讀取 Secret File
+// Google Sheet 設定
+const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
+const SHEET_NAME = "TV通知名單";
+
+// 讀取金鑰
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
 
-// Google API 授權
 const auth = new GoogleAuth({
   credentials,
   scopes: ["https://www.googleapis.com/auth/spreadsheets"]
 });
-
-// Google Sheet 設定
-const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
-const SHEET_NAME = "TV通知名單";
 
 async function getNotifyList() {
   const client = await auth.getClient();
@@ -27,7 +26,7 @@ async function getNotifyList() {
   });
 
   const rows = result.data.values || [];
-  return rows.map(r => r[1]); // 回傳 UserID 列
+  return rows.map(r => r[1]); // 回傳每個 UserID
 }
 
 module.exports = async function tvAlert(client, alertContent) {
