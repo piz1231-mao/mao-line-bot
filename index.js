@@ -122,6 +122,17 @@ async function handleEvent(event) {
         ]
       }
     });
+
+// === 取得使用者 User ID ===
+if (text === "我的ID") {
+  const uid = event.source.userId;
+
+  return client.replyMessage(event.replyToken, {
+    type: "text",
+    text: `你的 User ID 是：\n${uid}\n\n請截圖傳給阿毛 🙌`
+  });
+}
+    
   }
 
   // ======================================================
