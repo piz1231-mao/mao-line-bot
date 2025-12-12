@@ -25,23 +25,38 @@ async function getNotifyList() {
     range: `${SHEET_NAME}!A2:B999`
   });
 
-  return (rows.data.values || []).map(r => r[1]); // UserID
+  return (rows.data.values || [])
+    .map(r => r[1])
+    .filter(Boolean); // 避免空 ID
 }
 
-module.exports = async function tvAlert(client, alertContent) {
+module.exports = async function tvAlert(client, alertContent, rawBody = null) {
   const ids = await getNotifyList();
+
+  // ✅ 防呆：確保一定有內容
+  let safeContent = "TradingView 訊號（無內容）";
+
+  if (typeof alertContent === "string" && alertContent.trim()) {
+    safeContent = alertContent.trim();
+  } else if (rawBody) {
+    // fallback：直接把 TV payload 印出來
+    safeContent = JSON.stringify(rawBody, null, 2);
+  }
 
   const msg = {
     type: "text",
-    text: `📢 毛怪祕書：TradingView 訊號\n\n${alertContent}`
+    text:
+      `📢 毛怪祕書｜TradingView 訊號\n` +
+      `----------------------\n` +
+      safeContent
   };
 
   for (const id of ids) {
     try {
       await client.pushMessage(id, msg);
-      console.log("已通知：", id);
+      console.log("✅ 已通知：", id);
     } catch (err) {
-      console.error("通知失敗：", id, err);
+      console.error("❌ 通知失敗：", id, err?.originalError || err);
     }
   }
 };
