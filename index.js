@@ -1,9 +1,9 @@
 // ======================================================
-// 毛怪公司 LINE Bot v1.1（正式版）
+// 毛怪公司 LINE Bot v2.0（企業級通知管理）
 // 功能：
-// 1. 待辦事項（文字 → 寫入 Google Sheet）
-// 2. TradingView 私人訊號通知（多人）
-// 3. 回覆 User ID / Group ID（管理用）
+// 1. 待辦事項（Google Sheet）
+// 2. TradingView 訊號 → Google Sheet 名單推播
+// 3. 通知名單管理（加入 / 移除 / 查名單）
 // ======================================================
 
 require("dotenv").config();
@@ -30,21 +30,20 @@ const client = new line.Client(config);
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const TODO_SHEET_NAME = "待辦事項";
+const NOTIFY_SHEET_NAME = "TV通知名單";
 
-// 讀取 Secret File（金鑰）
+// Google 金鑰
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
 
-// 建立 Google API 授權
+// Google API 授權
 const auth = new GoogleAuth({
   credentials,
   scopes: ["https://www.googleapis.com/auth/spreadsheets"]
 });
 
-// ======================================================
-// Google Sheet：寫入 function（可共用）
-// ======================================================
+// Google Sheet 寫入
 async function appendToSheet(sheetName, values) {
   const client = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: client });
@@ -53,30 +52,70 @@ async function appendToSheet(sheetName, values) {
     spreadsheetId: SPREADSHEET_ID,
     range: `${sheetName}!A1`,
     valueInputOption: "USER_ENTERED",
-    requestBody: { values: [values] }
+    requestBody: {
+      values: [values]
+    }
   });
 }
 
+// Google Sheet 刪除一列
+async function deleteRowByUserID(targetID) {
+  const client = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: client });
+
+  const data = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${NOTIFY_SHEET_NAME}!A2:B999`,
+  });
+
+  const rows = data.data.values || [];
+  let rowIndex = -1;
+
+  rows.forEach((r, i) => {
+    if (r[1] === targetID) rowIndex = i + 2; // +2 因為 A2 是第 2 列
+  });
+
+  if (rowIndex === -1) return false;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      requests: [
+        {
+          deleteDimension: {
+            range: {
+              sheetId: 0,
+              dimension: "ROWS",
+              startIndex: rowIndex - 1,
+              endIndex: rowIndex
+            }
+          }
+        }
+      ]
+    }
+  });
+
+  return true;
+}
+
 // ======================================================
-// TradingView 訊號 /tv-alert → 可通知多人
+// TradingView Webhook
 // ======================================================
 app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
   try {
-    const alertContent = req.body || "";
-    const targetUserList = process.env.TV_TARGET_IDS || ""; // 多人 ID，用逗號分隔
+    let alertContent = req.body || "";
+    await tvAlert(client, alertContent);
 
-    await tvAlert(client, alertContent, targetUserList);
-
-    console.log("🔥 TV ALERT 已通知：", alertContent);
+    console.log("🔥 TV ALERT 收到並已通知：", alertContent);
     res.status(200).send("OK");
   } catch (err) {
-    console.error("🔥 tv-alert Error：", err);
+    console.error("🔥 tv-alert Error:", err);
     res.status(500).send("ERROR");
   }
 });
 
 // ======================================================
-// LINE Webhook 主入口
+// LINE Webhook
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
@@ -91,68 +130,112 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// LINE 訊息處理邏輯
+// LINE 訊息主處理
 // ======================================================
 async function handleEvent(event) {
   if (event.type !== "message" || event.message.type !== "text") return;
 
-  const text = event.message.text;
+  const text = event.message.text.trim();
 
- // === 回傳 User ID / Group ID（智慧比對，任何「我的ID」都可以） ===
-if (text.replace(/\s/g, "").includes("我的ID")
- || text.replace(/\s/g, "").includes("我的id")
- || text.replace(/\s/g, "").includes("查ID")
- || text.replace(/\s/g, "").includes("查id")) {
-
-    const uid = event.source.userId || null;
-    const gid = event.source.groupId || null;
+  // ⭐ 查詢使用者與群組 ID
+  if (text.replace(/\s/g, "").includes("我的ID")) {
+    const uid = event.source.userId;
+    const gid = event.source.groupId;
 
     if (gid) {
       return client.replyMessage(event.replyToken, {
         type: "text",
-        text: `📌 群組 ID：\n${gid}\n\n請截圖給阿毛。`
-      });
-    } else {
-      return client.replyMessage(event.replyToken, {
-        type: "text",
-        text: `📌 你的 User ID：\n${uid}\n\n請截圖給阿毛。`
+        text: `📌 群組 ID：\n${gid}`
       });
     }
-}
 
-  // ======================================================
-  // 2️⃣ 待辦事項（格式：待辦：內容）
-  // ======================================================
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: `📌 你的 User ID：\n${uid}`
+    });
+  }
+
+  // ⭐ 加入通知名單（加入通知：名字 使用者ID）
+  if (text.startsWith("加入通知：")) {
+    const name = text.replace("加入通知：", "").trim();
+
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: `請輸入 ${name} 的 User ID（格式：Uxxxxxx）\n輸入方式：\n加入通知ID：UserID`
+    });
+  }
+
+  // ⭐ 實際寫入通知名單
+  if (text.startsWith("加入通知ID：")) {
+    const uid = text.replace("加入通知ID：", "").trim();
+
+    await appendToSheet(NOTIFY_SHEET_NAME, ["未命名", uid]);
+
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: "✅ 已加入 TV 通知名單！"
+    });
+  }
+
+  // ⭐ 移除通知名單：移除通知：UserID
+  if (text.startsWith("移除通知：")) {
+    const uid = text.replace("移除通知：", "").trim();
+
+    const result = await deleteRowByUserID(uid);
+
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: result ? "🗑 已成功移除通知名單！" : "找不到此 UserID。"
+    });
+  }
+
+  // ⭐ 查詢通知名單
+  if (text === "查通知名單") {
+    const client2 = await auth.getClient();
+    const sheets = google.sheets({ version: "v4", auth: client2 });
+
+    const data = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${NOTIFY_SHEET_NAME}!A2:B999`
+    });
+
+    const rows = data.data.values || [];
+    let reply = "📢 目前通知名單：\n\n";
+
+    rows.forEach((r, i) => {
+      reply += `${i + 1}. ${r[0] || "未命名"}\n`;
+    });
+
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: reply
+    });
+  }
+
+  // ⭐ 待辦事項
   if (text.startsWith("待辦：")) {
     const task = text.replace("待辦：", "").trim();
     const timestamp = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
 
-    const values = [
+    await appendToSheet(TODO_SHEET_NAME, [
       timestamp,
       event.source.groupId || "個人",
       event.source.userId,
       task,
       "未完成"
-    ];
-
-    await appendToSheet(TODO_SHEET_NAME, values);
+    ]);
 
     return client.replyMessage(event.replyToken, {
       type: "text",
       text: `📌 已記錄待辦：「${task}」`
     });
   }
-
-  // ======================================================
-  // 其他訊息不回應（保持安靜）
-  // ======================================================
-  return;
 }
 
 // ======================================================
-// Render 伺服器啟動
+// Render 啟動
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Mao Bot v1.1 running on PORT ${PORT}`);
+  console.log(`🚀 Mao Bot v2.0 running on PORT ${PORT}`);
 });
