@@ -1,11 +1,49 @@
-module.exports = async function tvAlert(client, alertMessage, targetUser) {
-  try {
-    await client.pushMessage(targetUser, {
-      type: "text",
-      text: `🚨 TV 訊號通知\n${alertMessage}`
-    });
-    console.log("📨 已送出 LINE 通知");
-  } catch (err) {
-    console.error("TV Alert 發送失敗：", err);
+const { GoogleAuth } = require("google-auth-library");
+const { google } = require("googleapis");
+const fs = require("fs");
+
+// 讀取 Secret File
+const credentials = JSON.parse(
+  fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
+);
+
+// Google API 授權
+const auth = new GoogleAuth({
+  credentials,
+  scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+});
+
+// Google Sheet 設定
+const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
+const SHEET_NAME = "TV通知名單";
+
+async function getNotifyList() {
+  const client = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: client });
+
+  const result = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!A2:B999`,
+  });
+
+  const rows = result.data.values || [];
+  return rows.map(r => r[1]); // 回傳 UserID 列
+}
+
+module.exports = async function tvAlert(client, alertContent) {
+  const ids = await getNotifyList();
+
+  const msg = {
+    type: "text",
+    text: `📢 TradingView 訊號：\n${alertContent}`
+  };
+
+  for (const id of ids) {
+    try {
+      await client.pushMessage(id, msg);
+      console.log("已通知：", id);
+    } catch (err) {
+      console.error("通知失敗：", id, err);
+    }
   }
 };
