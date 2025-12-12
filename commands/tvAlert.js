@@ -17,16 +17,15 @@ const auth = new GoogleAuth({
 });
 
 async function getNotifyList() {
-  const client = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: client });
+  const c = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: c });
 
-  const result = await sheets.spreadsheets.values.get({
+  const rows = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A2:B999`,
+    range: `${SHEET_NAME}!A2:B999`
   });
 
-  const rows = result.data.values || [];
-  return rows.map(r => r[1]); // 回傳每個 UserID
+  return (rows.data.values || []).map(r => r[1]); // UserID
 }
 
 module.exports = async function tvAlert(client, alertContent) {
@@ -34,7 +33,7 @@ module.exports = async function tvAlert(client, alertContent) {
 
   const msg = {
     type: "text",
-    text: `📢 TradingView 訊號：\n${alertContent}`
+    text: `📢 毛怪祕書：TradingView 訊號\n\n${alertContent}`
   };
 
   for (const id of ids) {
