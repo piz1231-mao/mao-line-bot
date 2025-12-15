@@ -3,7 +3,7 @@ const { google } = require("googleapis");
 const fs = require("fs");
 
 // ======================================================
-// Google Sheet 設定（通知名單）
+// Google Sheet 設定（TV 通知名單）
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const SHEET_NAME = "TV通知名單";
@@ -38,27 +38,40 @@ async function getNotifyList() {
 }
 
 // ======================================================
+// 從 alert 文字中抓 price=xxxx
+// ======================================================
+function extractPriceFromText(text) {
+  if (!text) return null;
+  const m = text.match(/price\s*=\s*(\d+(\.\d+)?)/i);
+  return m ? Number(m[1]) : null;
+}
+
+// ======================================================
 // TradingView → LINE 主函式
 // ======================================================
 module.exports = async function tvAlert(client, alertContent, payload = {}) {
   const ids = await getNotifyList();
 
-  // ---------- 方向判斷 ----------
-  const text = typeof alertContent === "string" ? alertContent : "";
+  // ---------- alert 文字 ----------
+  const text =
+    typeof alertContent === "string"
+      ? alertContent
+      : "";
 
+  // ---------- 方向 ----------
   const direction =
-    /買|BUY/i.test(text) ? "買進" :
-    /賣|SELL/i.test(text) ? "賣出" :
+    /BUY/i.test(text) ? "買進" :
+    /SELL/i.test(text) ? "賣出" :
     "—";
 
   // ---------- 價格 ----------
   const priceText =
     typeof payload.price === "number"
       ? payload.price
-      : "—";
+      : extractPriceFromText(text) ?? "—";
 
   // ======================================================
-  // LINE 訊息（定稿好看版，不算改版）
+  // LINE 訊息（定稿好看版）
   // ======================================================
   const msg = {
     type: "text",
