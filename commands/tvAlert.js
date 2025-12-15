@@ -14,7 +14,7 @@ const SHEET_NAME = "TV通知名單";
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
-
+ 
 const auth = new GoogleAuth({
   credentials,
   scopes: ["https://www.googleapis.com/auth/spreadsheets"]
