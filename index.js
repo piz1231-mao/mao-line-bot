@@ -90,20 +90,37 @@ async function deleteRowByUserID(uid) {
 }
 
 // ======================================================
-// TradingView webhook（修正版，可直接用）
+// TradingView webhook（最終穩定版）
 // ======================================================
-app.post("/tv-alert", express.json({ type: "*/*" }), async (req, res) => {
+app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
   try {
-    // TradingView webhook body
-    const body = req.body || {};
+    let body = {};
+    let content = "";
 
-    // 訊號文字（給方向判斷用）
-    const content =
-      body.message ||
-      body.alert ||
-      "";
+    // 原始內容（一定有）
+    const raw = req.body || "";
 
-    // 價格（優先 close，其次 price）
+    // 嘗試解析 JSON
+    if (typeof raw === "string") {
+      try {
+        body = JSON.parse(raw);
+      } catch {
+        // 解析失敗 → 當純文字
+        content = raw;
+      }
+    } else if (typeof raw === "object") {
+      body = raw;
+    }
+
+    // 如果是 JSON，從裡面抓 message
+    if (body && typeof body === "object") {
+      content =
+        body.message ||
+        body.alert ||
+        content;
+    }
+
+    // 價格（JSON 才有）
     const price =
       body.close ??
       body.price ??
@@ -114,7 +131,7 @@ app.post("/tv-alert", express.json({ type: "*/*" }), async (req, res) => {
       price
     });
 
-    console.log("🔥 毛怪祕書 TV 訊號推播：", body);
+    console.log("🔥 毛怪祕書 TV 訊號推播：", content || body);
     res.status(200).send("OK");
   } catch (err) {
     console.error("TV Error:", err);
