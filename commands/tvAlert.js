@@ -64,7 +64,7 @@ module.exports = async function tvAlert(client, alertContent, payload = {}) {
     type: "text",
     text:
       `📢 毛怪祕書｜TradingView 訊號\n` +
-      `━━━━━━━━━━━━━━━━\n` +
+      `━━━━━━━━━━━\n` +
       `📦 商品：台指期\n` +
       `📈 方向：${direction}\n` +
       `🕒 週期：5 分 K\n` +
