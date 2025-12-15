@@ -14,7 +14,7 @@ const SHEET_NAME = "TV通知名單";
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
- 
+
 const auth = new GoogleAuth({
   credentials,
   scopes: ["https://www.googleapis.com/auth/spreadsheets"]
@@ -38,7 +38,7 @@ async function getNotifyList() {
 }
 
 // ======================================================
-// 從 alert 文字中抓 price=xxxx
+// 從文字中抓 price=xxxx
 // ======================================================
 function extractPriceFromText(text) {
   if (!text) return null;
@@ -47,43 +47,39 @@ function extractPriceFromText(text) {
 }
 
 // ======================================================
-// TradingView → LINE 主函式（除錯版）
+// TradingView → LINE（最終定稿）
 // ======================================================
 module.exports = async function tvAlert(client, alertContent, payload = {}) {
   const ids = await getNotifyList();
 
-  // ---------- 原始內容 ----------
-  const text =
-    typeof alertContent === "string"
-      ? alertContent
-      : "";
+  // ----------------------------------------------------
+  // 統一訊息來源（最關鍵）
+  // ----------------------------------------------------
+  const sourceText =
+    (typeof alertContent === "string" && alertContent) ||
+    payload?.message ||
+    payload?.alert ||
+    "";
 
-  // 🔥🔥🔥 關鍵除錯輸出（不要刪）
-  console.log("🧪 RAW alertContent =", alertContent);
-  console.log("🧪 TEXT =", text);
-  console.log("🧪 PAYLOAD =", payload);
-
-  // ---------- 方向 ----------
+  // ----------------------------------------------------
+  // 方向判斷
+  // ----------------------------------------------------
   const direction =
-    /BUY/i.test(text) ? "買進" :
-    /SELL/i.test(text) ? "賣出" :
+    /BUY/i.test(sourceText) ? "買進" :
+    /SELL/i.test(sourceText) ? "賣出" :
     "—";
 
-  // ---------- 價格 ----------
-  const extractedPrice = extractPriceFromText(text);
-
-  console.log("🧪 extractedPrice =", extractedPrice);
-
+  // ----------------------------------------------------
+  // 價格判斷
+  // ----------------------------------------------------
   const priceText =
     typeof payload.price === "number"
       ? payload.price
-      : extractedPrice ?? "—";
+      : extractPriceFromText(sourceText) ?? "—";
 
-  console.log("🧪 final priceText =", priceText);
-
-  // ======================================================
-  // LINE 訊息（定稿好看版）
-  // ======================================================
+  // ----------------------------------------------------
+  // LINE 訊息（短實線定稿版）
+  // ----------------------------------------------------
   const msg = {
     type: "text",
     text:
@@ -96,13 +92,14 @@ module.exports = async function tvAlert(client, alertContent, payload = {}) {
       `💰 價格：${priceText}`
   };
 
-  // ---------- 發送 ----------
+  // ----------------------------------------------------
+  // 發送 LINE
+  // ----------------------------------------------------
   for (const id of ids) {
     try {
       await client.pushMessage(id, msg);
-      console.log("✅ 已通知：", id);
     } catch (err) {
-      console.error("❌ 通知失敗：", id, err?.originalError || err);
+      console.error("LINE 推播失敗：", id, err?.originalError || err);
     }
   }
 };
