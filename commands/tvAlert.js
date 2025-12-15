@@ -47,16 +47,21 @@ function extractPriceFromText(text) {
 }
 
 // ======================================================
-// TradingView → LINE 主函式
+// TradingView → LINE 主函式（除錯版）
 // ======================================================
 module.exports = async function tvAlert(client, alertContent, payload = {}) {
   const ids = await getNotifyList();
 
-  // ---------- alert 文字 ----------
+  // ---------- 原始內容 ----------
   const text =
     typeof alertContent === "string"
       ? alertContent
       : "";
+
+  // 🔥🔥🔥 關鍵除錯輸出（不要刪）
+  console.log("🧪 RAW alertContent =", alertContent);
+  console.log("🧪 TEXT =", text);
+  console.log("🧪 PAYLOAD =", payload);
 
   // ---------- 方向 ----------
   const direction =
@@ -65,10 +70,16 @@ module.exports = async function tvAlert(client, alertContent, payload = {}) {
     "—";
 
   // ---------- 價格 ----------
+  const extractedPrice = extractPriceFromText(text);
+
+  console.log("🧪 extractedPrice =", extractedPrice);
+
   const priceText =
     typeof payload.price === "number"
       ? payload.price
-      : extractPriceFromText(text) ?? "—";
+      : extractedPrice ?? "—";
+
+  console.log("🧪 final priceText =", priceText);
 
   // ======================================================
   // LINE 訊息（定稿好看版）
