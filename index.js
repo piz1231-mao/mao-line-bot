@@ -90,14 +90,31 @@ async function deleteRowByUserID(uid) {
 }
 
 // ======================================================
-// TradingView webhook
+// TradingView webhook（修正版，可直接用）
 // ======================================================
-app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
+app.post("/tv-alert", express.json({ type: "*/*" }), async (req, res) => {
   try {
-    const content = req.body || "";
-    await tvAlert(client, content);
+    // TradingView webhook body
+    const body = req.body || {};
 
-    console.log("🔥 毛怪祕書 TV 訊號推播：", content);
+    // 訊號文字（給方向判斷用）
+    const content =
+      body.message ||
+      body.alert ||
+      "";
+
+    // 價格（優先 close，其次 price）
+    const price =
+      body.close ??
+      body.price ??
+      null;
+
+    await tvAlert(client, content, {
+      ...body,
+      price
+    });
+
+    console.log("🔥 毛怪祕書 TV 訊號推播：", body);
     res.status(200).send("OK");
   } catch (err) {
     console.error("TV Error:", err);
