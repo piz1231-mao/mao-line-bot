@@ -4,12 +4,13 @@ const fs = require("fs");
 
 // ======================================================
 // Google Sheet 設定（TV 通知名單）
+// 請確認這些 ID 設置正確
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const SHEET_NAME = "TV通知名單";
 
 // ======================================================
-// Google Auth (假設已設置好)
+// Google Auth 設置
 // ======================================================
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
@@ -38,27 +39,25 @@ async function getNotifyList() {
 }
 
 // ======================================================
-// 從文字中抓 price=xxxx
+// 從文字中抓取數值型變數的工具函數
 // ======================================================
+
+// 抓取 price=xxxx
 function extractPriceFromText(text) {
   if (!text) return null;
   const m = text.match(/price\s*=\s*(\d+(\.\d+)?)/i);
   return m ? Number(m[1]) : null;
 }
 
-// ======================================================
-// 【新增】從文字中抓 SL=xxxx
-// ======================================================
+// 抓取 sl=xxxx
 function extractSLFromText(text) {
   if (!text) return null;
   // 匹配 sl= 後的數字 (可包含小數點)
   const m = text.match(/sl\s*=\s*(\d+(\.\d+)?)/i);
-  return m ? m[1] : null; // 返回字串，以便在 LINE 訊息中顯示
+  return m ? m[1] : null; // 返回字串
 }
 
-// ======================================================
-// 從文字中抓取週期 tf=X
-// ======================================================
+// 抓取週期 tf=X
 function extractTimeframeFromText(text) {
   if (!text) return null;
   // 匹配 tf= 後的數字或字串 (例如 tf=5, tf=60, tf=D)
@@ -67,13 +66,13 @@ function extractTimeframeFromText(text) {
 }
 
 // ======================================================
-// TradingView → LINE（最終定稿）
+// TradingView → LINE（V1.8.2 最終定稿）
 // ======================================================
 module.exports = async function tvAlert(client, alertContent, payload = {}) {
   const ids = await getNotifyList();
 
   // ----------------------------------------------------
-  // 統一訊息來源（最關鍵）
+  // 統一訊息來源（從各種 Webhook 欄位中提取）
   // ----------------------------------------------------
   const sourceText =
     (typeof alertContent === "string" && alertContent) ||
@@ -82,28 +81,22 @@ module.exports = async function tvAlert(client, alertContent, payload = {}) {
     "";
 
   // ----------------------------------------------------
-  // 方向判斷
+  // 核心數據解析
   // ----------------------------------------------------
   const direction =
     /BUY/i.test(sourceText) ? "買進" :
     /SELL/i.test(sourceText) ? "賣出" :
     "—";
 
-  // ----------------------------------------------------
-  // 價格判斷
-  // ----------------------------------------------------
   const priceText =
     typeof payload.price === "number"
       ? payload.price
       : extractPriceFromText(sourceText) ?? "—";
 
-  // ----------------------------------------------------
-  // 【新增】停損價格判斷
-  // ----------------------------------------------------
-  const slPriceText = extractSLFromText(sourceText) ?? "—";
+  const slPriceText = extractSLFromText(sourceText) ?? "—"; // 解析停損價
     
   // ----------------------------------------------------
-  // 週期判斷 (使用之前修正的邏輯)
+  // 週期格式化
   // ----------------------------------------------------
   const rawTimeframe = extractTimeframeFromText(sourceText);
 
@@ -123,7 +116,7 @@ module.exports = async function tvAlert(client, alertContent, payload = {}) {
   }
 
   // ----------------------------------------------------
-  // LINE 訊息（加入停損價）
+  // LINE 訊息構建
   // ----------------------------------------------------
   const msg = {
     type: "text",
@@ -134,7 +127,7 @@ module.exports = async function tvAlert(client, alertContent, payload = {}) {
       `📈 方向：${direction}\n` +
       `🕒 週期：${tfDisplay}\n` + 
       `📊 條件：分數通過\n` +
-      `💰 進場價：${priceText}\n` + // 建議改名為「進場價」
+      `💰 進場價：${priceText}\n` + 
       `🛡️ 停損價：${slPriceText}`
   };
 
