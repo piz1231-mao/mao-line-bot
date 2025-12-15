@@ -4,7 +4,6 @@ const fs = require("fs");
 
 // ======================================================
 // Google Sheet 設定（TV 通知名單）
-// 請確認這些 ID 設置正確
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const SHEET_NAME = "TV通知名單";
@@ -66,7 +65,7 @@ function extractTimeframeFromText(text) {
 }
 
 // ======================================================
-// TradingView → LINE（V1.8.2 最終定稿）
+// TradingView → LINE（V1.8.0 最終定稿 - SL價格式化）
 // ======================================================
 module.exports = async function tvAlert(client, alertContent, payload = {}) {
   const ids = await getNotifyList();
@@ -93,10 +92,24 @@ module.exports = async function tvAlert(client, alertContent, payload = {}) {
       ? payload.price
       : extractPriceFromText(sourceText) ?? "—";
 
-  const slPriceText = extractSLFromText(sourceText) ?? "—"; // 解析停損價
+  const rawSLPriceText = extractSLFromText(sourceText); 
+  let slPriceText = "—";
+
+  // 【核心修改區塊】：格式化 SL 價
+  if (rawSLPriceText) {
+      const slValue = Number(rawSLPriceText);
+      
+      // 假設最小跳動點為 1 (整數)
+      if (!isNaN(slValue)) {
+          // 四捨五入到最近的整數
+          slPriceText = String(Math.round(slValue)); 
+      } else {
+          slPriceText = "解析錯誤"; 
+      }
+  }
     
   // ----------------------------------------------------
-  // 週期格式化
+  // 週期判斷
   // ----------------------------------------------------
   const rawTimeframe = extractTimeframeFromText(sourceText);
 
