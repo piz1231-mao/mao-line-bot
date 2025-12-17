@@ -9,7 +9,9 @@
 require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
-const tvAlert = require("./tvAlert"); // ⚠️ 確認路徑正確
+
+// ✅【重點修正】正確指向 commands/tvAlert.js
+const tvAlert = require("./commands/tvAlert");
 
 const app = express();
 
@@ -20,6 +22,12 @@ const config = {
   channelAccessToken: process.env.LINE_ACCESS_TOKEN,
   channelSecret: process.env.LINE_SECRET
 };
+
+// 防呆：啟動時就檢查環境變數
+if (!config.channelAccessToken || !config.channelSecret) {
+  console.error("❌ LINE 環境變數未設定（LINE_ACCESS_TOKEN / LINE_SECRET）");
+  process.exit(1);
+}
 
 const client = new line.Client(config);
 
@@ -79,11 +87,11 @@ app.post(
 );
 
 // ======================================================
-// （可選）LINE Webhook（如果你之後要接指令）
-// 目前不影響 TV 功能，可先留著
+// （可選）LINE Webhook（之後接指令用）
+// 目前不影響 TV 功能
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
-  console.log("📩 LINE Webhook 事件數：", req.body.events?.length || 0);
+  console.log("📩 LINE Webhook 收到事件數：", req.body.events?.length || 0);
   res.status(200).send("OK");
 });
 
