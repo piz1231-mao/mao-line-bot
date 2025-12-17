@@ -1,5 +1,5 @@
 // ======================================================
-// 毛怪祕書 LINE Bot v2.3 — 含指令表最終版
+// 毛怪秘書 LINE Bot v2.3 — 含指令表最終版
 // ======================================================
 
 require("dotenv").config();
@@ -42,7 +42,7 @@ const COMMANDS = [
     group: "📌 基本功能",
     items: [
       { cmd: "查ID / 查群組 / 群組ID", desc: "顯示目前聊天的 ID（User / Group / Room）" },
-      { cmd: "help / 指令", desc: "顯示毛怪祕書指令表" }
+      { cmd: "help / 指令", desc: "顯示毛怪秘書指令表" }
     ]
   },
   {
@@ -64,7 +64,7 @@ const COMMANDS = [
 
 // ===== 指令表文字產生 =====
 function buildHelpText() {
-  let text = "📖 毛怪祕書 指令表\n━━━━━━━━━━━\n";
+  let text = "📖 毛怪秘書 指令表\n━━━━━━━━━━━\n";
 
   COMMANDS.forEach(section => {
     text += `\n${section.group}\n`;
@@ -149,5 +149,5 @@ async function handleEvent(event) {
 
 // ======================================================
 app.listen(3000, () => {
-  console.log("🚀 毛怪祕書 v2.3（含指令表）已啟動");
+  console.log("🚀 毛怪秘書 v2.3（含指令表）已啟動");
 });
