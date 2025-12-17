@@ -9,149 +9,139 @@ const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const SHEET_NAME = "TV通知名單";
 
 // ======================================================
-// Google Auth 設置
+// Google Auth
 // ======================================================
 const credentials = JSON.parse(
-  fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
+  fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
 
 const auth = new GoogleAuth({
-  credentials,
-  scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+  credentials,
+  scopes: ["https://www.googleapis.com/auth/spreadsheets"]
 });
 
 // ======================================================
-// 取得 LINE 通知名單
+// 取得 LINE 通知名單（防呆完整版）
 // ======================================================
 async function getNotifyList() {
-  const c = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: c });
+  const c = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: c });
 
-  const rows = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A2:B999`
-  });
+  const rows = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!A2:B999`
+  });
 
-  return (rows.data.values || [])
-    .map(r => r[1])
-    .filter(Boolean);
+  const ids = (rows.data.values || [])
+    .map(r => (r[1] || "").trim())          // 去空白
+    .filter(id => id.startsWith("U") || id.startsWith("C")); // 只收合法 ID
+
+  console.log("📤 TV 推播 ID 清單：", ids);
+
+  return ids;
 }
 
 // ======================================================
-// 從文字中抓取數值型變數的工具函數
+// 工具：從文字中抓數值
 // ======================================================
-
-// 抓取 price=xxxx
 function extractPriceFromText(text) {
-  if (!text) return null;
-  const m = text.match(/price\s*=\s*(\d+(\.\d+)?)/i);
-  return m ? Number(m[1]) : null;
+  if (!text) return null;
+  const m = text.match(/price\s*=\s*(\d+(\.\d+)?)/i);
+  return m ? Number(m[1]) : null;
 }
 
-// 抓取 sl=xxxx
 function extractSLFromText(text) {
-  if (!text) return null;
-  // 匹配 sl= 後的數字 (可包含小數點)
-  const m = text.match(/sl\s*=\s*(\d+(\.\d+)?)/i);
-  return m ? m[1] : null; // 返回字串
+  if (!text) return null;
+  const m = text.match(/sl\s*=\s*(\d+(\.\d+)?)/i);
+  return m ? m[1] : null;
 }
 
-// 抓取週期 tf=X
 function extractTimeframeFromText(text) {
-  if (!text) return null;
-  // 匹配 tf= 後的數字或字串 (例如 tf=5, tf=60, tf=D)
-  const m = text.match(/tf\s*=\s*([^|\s]+)/i);
-  return m ? m[1].toUpperCase() : null;
+  if (!text) return null;
+  const m = text.match(/tf\s*=\s*([^|\s]+)/i);
+  return m ? m[1].toUpperCase() : null;
 }
 
 // ======================================================
-// TradingView → LINE（V1.8.0 最終定稿 - SL價格式化）
+// TradingView → LINE（防呆穩定版）
 // ======================================================
 module.exports = async function tvAlert(client, alertContent, payload = {}) {
-  const ids = await getNotifyList();
+  const ids = await getNotifyList();
 
-  // ----------------------------------------------------
-  // 統一訊息來源（從各種 Webhook 欄位中提取）
-  // ----------------------------------------------------
-  const sourceText =
-    (typeof alertContent === "string" && alertContent) ||
-    payload?.message ||
-    payload?.alert ||
-    "";
+  if (!ids.length) {
+    console.warn("⚠️ TV 推播中止：通知名單為空");
+    return;
+  }
 
-  // ----------------------------------------------------
-  // 核心數據解析
-  // ----------------------------------------------------
-  const direction =
-    /BUY/i.test(sourceText) ? "買進" :
-    /SELL/i.test(sourceText) ? "賣出" :
-    "—";
+  // ----------------------------------------------------
+  // 統一訊息來源
+  // ----------------------------------------------------
+  const sourceText =
+    (typeof alertContent === "string" && alertContent) ||
+    payload?.message ||
+    payload?.alert ||
+    "";
 
-  const priceText =
-    typeof payload.price === "number"
-      ? payload.price
-      : extractPriceFromText(sourceText) ?? "—";
+  // ----------------------------------------------------
+  // 核心數據解析
+  // ----------------------------------------------------
+  const direction =
+    /BUY/i.test(sourceText) ? "買進" :
+    /SELL/i.test(sourceText) ? "賣出" :
+    "—";
 
-  const rawSLPriceText = extractSLFromText(sourceText); 
+  const priceText =
+    typeof payload.price === "number"
+      ? payload.price
+      : extractPriceFromText(sourceText) ?? "—";
+
+  const rawSL = extractSLFromText(sourceText);
   let slPriceText = "—";
 
-  // 【核心修改區塊】：格式化 SL 價
-  if (rawSLPriceText) {
-      const slValue = Number(rawSLPriceText);
-      
-      // 假設最小跳動點為 1 (整數)
-      if (!isNaN(slValue)) {
-          // 四捨五入到最近的整數
-          slPriceText = String(Math.round(slValue)); 
-      } else {
-          slPriceText = "解析錯誤"; 
-      }
+  if (rawSL) {
+    const slValue = Number(rawSL);
+    slPriceText = !isNaN(slValue) ? String(Math.round(slValue)) : "解析錯誤";
   }
-    
-  // ----------------------------------------------------
-  // 週期判斷
-  // ----------------------------------------------------
-  const rawTimeframe = extractTimeframeFromText(sourceText);
 
+  const rawTF = extractTimeframeFromText(sourceText);
   let tfDisplay = "未指定";
-  if (rawTimeframe) {
-    if (rawTimeframe.match(/^\d+$/)) { 
-      tfDisplay = `${rawTimeframe} 分 K`;
-    } else if (rawTimeframe === "D") {
-      tfDisplay = "日 K";
-    } else if (rawTimeframe === "W") {
-      tfDisplay = "週 K";
-    } else if (rawTimeframe.match(/^[0-9]+[A-Z]$/)) { 
-        tfDisplay = rawTimeframe;
-    } else { 
-      tfDisplay = rawTimeframe;
+
+  if (rawTF) {
+    if (/^\d+$/.test(rawTF)) tfDisplay = `${rawTF} 分 K`;
+    else if (rawTF === "D") tfDisplay = "日 K";
+    else if (rawTF === "W") tfDisplay = "週 K";
+    else tfDisplay = rawTF;
+  }
+
+  // ----------------------------------------------------
+  // LINE 訊息
+  // ----------------------------------------------------
+  const msg = {
+    type: "text",
+    text:
+      `📢 毛怪秘書｜TradingView 訊號\n` +
+      `━━━━━━━━━━━\n` +
+      `📦 商品：台指期\n` +
+      `📈 方向：${direction}\n` +
+      `🕒 週期：${tfDisplay}\n` +
+      `📊 條件：分數通過\n` +
+      `💰 進場價：${priceText}\n` +
+      `🛡️ 停損價：${slPriceText}`
+  };
+
+  // ----------------------------------------------------
+  // 發送 LINE（逐一推播，不互相影響）
+// ----------------------------------------------------
+  for (const id of ids) {
+    try {
+      await client.pushMessage(id, msg);
+      console.log("✅ TV 訊號已推播：", id);
+    } catch (err) {
+      console.error(
+        "❌ LINE 推播失敗：",
+        id,
+        err?.originalError?.message || err.message || err
+      );
     }
   }
-
-  // ----------------------------------------------------
-  // LINE 訊息構建
-  // ----------------------------------------------------
-  const msg = {
-    type: "text",
-    text:
-      `📢 毛怪祕書｜TradingView 訊號\n` +
-      `━━━━━━━━━━━\n` +
-      `📦 商品：台指期\n` +
-      `📈 方向：${direction}\n` +
-      `🕒 週期：${tfDisplay}\n` + 
-      `📊 條件：分數通過\n` +
-      `💰 進場價：${priceText}\n` + 
-      `🛡️ 停損價：${slPriceText}`
-  };
-
-  // ----------------------------------------------------
-  // 發送 LINE
-  // ----------------------------------------------------
-  for (const id of ids) {
-    try {
-      await client.pushMessage(id, msg);
-    } catch (err) {
-      console.error("LINE 推播失敗：", id, err?.originalError || err);
-    }
-  }
 };
