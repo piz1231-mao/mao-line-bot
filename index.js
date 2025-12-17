@@ -1,10 +1,10 @@
 // ======================================================
-// 毛怪祕書 LINE Bot v2.3 — 整合修正版
+// 毛怪祕書 LINE Bot v2.3 — 最終完整版（穩定可封存）
 // 功能：
-// 1. 待辦事項（萬用冒號、自動字元解析）
+// 1. 待辦事項（萬用冒號、自動解析）
 // 2. TradingView 訊號 → Google Sheet 名單推播
 // 3. 通知名單管理（加入 / 移除 / 查名單）
-// 4. 強化查 UserID / GroupID / RoomID
+// 4. 查 UserID / GroupID / RoomID（支援指令 alias）
 // ======================================================
 
 require("dotenv").config();
@@ -29,10 +29,11 @@ const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const TODO_SHEET_NAME = "待辦事項";
 const NOTIFY_SHEET_NAME = "TV通知名單";
 
-// ===== 金鑰 =====
+// ===== Google Auth =====
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
+
 const auth = new GoogleAuth({
   credentials,
   scopes: ["https://www.googleapis.com/auth/spreadsheets"]
@@ -90,7 +91,7 @@ async function deleteRowByUserID(uid) {
 }
 
 // ======================================================
-// TradingView webhook（最終穩定版）
+// TradingView webhook
 // ======================================================
 app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
   try {
@@ -108,18 +109,12 @@ app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
       body = raw;
     }
 
-    if (body && typeof body === "object") {
-      content = body.message || body.alert || content;
-    }
-
+    content = body.message || body.alert || content;
     const price = body.close ?? body.price ?? null;
 
-    await tvAlert(client, content, {
-      ...body,
-      price
-    });
+    await tvAlert(client, content, { ...body, price });
 
-    console.log("🔥 毛怪祕書 TV 訊號推播：", content || body);
+    console.log("🔥 TV 訊號推播：", content);
     res.status(200).send("OK");
   } catch (err) {
     console.error("TV Error:", err);
@@ -143,7 +138,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// 對話狀態
+// 對話狀態（加入通知流程）
 // ======================================================
 const pendingMap = new Map();
 
@@ -151,54 +146,57 @@ const pendingMap = new Map();
 // 主指令處理
 // ======================================================
 async function handleEvent(event) {
-  // 僅處理文字訊息
   if (!event.message || event.message.type !== "text") return;
 
   const text = event.message.text.trim();
   const clean = text.replace(/\s/g, "");
+  const cleanLower = clean.toLowerCase();
 
-  // ============================================
-  // 1️⃣ 查 UserID / GroupID（優化判斷邏輯）
-  // ============================================
-  if (clean.includes("我的ID") || clean.includes("查ID")) {
+  // ==================================================
+  // 1️⃣ 查 ID（User / Group / Room）— 指令 alias
+  // ==================================================
+  const idAliases = [
+    "查id",
+    "我的id",
+    "群組id",
+    "查群組",
+    "群組id"
+  ];
+
+  if (idAliases.some(cmd => cleanLower.includes(cmd))) {
     const source = event.source;
-    let replyText = "";
+    let reply = "";
 
-    // 優先判斷是否在群組
     if (source.type === "group") {
-      replyText = `📌 本群組 ID：\n${source.groupId}`;
-    } 
-    // 次之判斷是否在多人聊天室 (舊式)
-    else if (source.type === "room") {
-      replyText = `📌 本聊天室 ID：\n${source.roomId}`;
-    } 
-    // 最後則是個人 ID
-    else {
-      replyText = `📌 你的 User ID：\n${source.userId}`;
+      reply = `📌 本群組 ID：\n${source.groupId}`;
+    } else if (source.type === "room") {
+      reply = `📌 本聊天室 ID：\n${source.roomId}`;
+    } else {
+      reply = `📌 你的 User ID：\n${source.userId}`;
     }
 
     return client.replyMessage(event.replyToken, {
       type: "text",
-      text: replyText
+      text: reply
     });
   }
 
-  // ============================================
+  // ==================================================
   // 2️⃣ 加入通知 Step1
-  // ============================================
+  // ==================================================
   if (text.startsWith("加入通知：")) {
     const name = text.replace("加入通知：", "").trim();
     pendingMap.set(event.source.userId, name);
 
     return client.replyMessage(event.replyToken, {
       type: "text",
-      text: `請輸入【${name}】的 User ID（或群組 ID）\n格式：加入通知ID：Uxxxx 或 Cxxxx`
+      text: `請輸入【${name}】的 ID（User 或 Group）\n格式：加入通知ID：Uxxxx / Cxxxx`
     });
   }
 
-  // ============================================
+  // ==================================================
   // 3️⃣ 加入通知 Step2
-  // ============================================
+  // ==================================================
   if (text.startsWith("加入通知ID：")) {
     const uid = text.replace("加入通知ID：", "").trim();
     const name = pendingMap.get(event.source.userId);
@@ -206,7 +204,7 @@ async function handleEvent(event) {
     if (!name) {
       return client.replyMessage(event.replyToken, {
         type: "text",
-        text: "⚠️ 你還沒有輸入「加入通知：名字」"
+        text: "⚠️ 尚未輸入「加入通知：名字」"
       });
     }
 
@@ -219,9 +217,9 @@ async function handleEvent(event) {
     });
   }
 
-  // ============================================
+  // ==================================================
   // 4️⃣ 移除通知
-  // ============================================
+  // ==================================================
   if (text.startsWith("移除通知：")) {
     const uid = text.replace("移除通知：", "").trim();
     const ok = await deleteRowByUserID(uid);
@@ -232,9 +230,9 @@ async function handleEvent(event) {
     });
   }
 
-  // ============================================
+  // ==================================================
   // 5️⃣ 查通知名單
-  // ============================================
+  // ==================================================
   if (text === "查通知名單") {
     const c2 = await auth.getClient();
     const sheets = google.sheets({ version: "v4", auth: c2 });
@@ -245,15 +243,14 @@ async function handleEvent(event) {
     });
 
     const rows = data.data.values || [];
-
-    if (rows.length === 0) {
+    if (!rows.length) {
       return client.replyMessage(event.replyToken, {
         type: "text",
         text: "📭 目前通知名單為空。"
       });
     }
 
-    let reply = "📢 毛怪祕書 TV 通知名單：\n\n";
+    let reply = "📢 TV 通知名單：\n\n";
     rows.forEach((r, i) => reply += `${i + 1}. ${r[0]}\n`);
 
     return client.replyMessage(event.replyToken, {
@@ -262,11 +259,11 @@ async function handleEvent(event) {
     });
   }
 
-  // ============================================
-  // 6️⃣ 待辦（支援所有冒號形式）
-  // ============================================
+  // ==================================================
+  // 6️⃣ 待辦（萬用冒號）
+  // ==================================================
   if (clean.startsWith("待辦")) {
-    const parts = text.split(/[:：﹕꞉]/); 
+    const parts = text.split(/[:：﹕꞉]/);
     const task = parts[1]?.trim();
 
     if (!task) {
@@ -276,7 +273,9 @@ async function handleEvent(event) {
       });
     }
 
-    const timestamp = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+    const timestamp = new Date().toLocaleString("zh-TW", {
+      timeZone: "Asia/Taipei"
+    });
 
     await appendToSheet(TODO_SHEET_NAME, [
       timestamp,
