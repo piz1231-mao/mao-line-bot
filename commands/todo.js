@@ -1,19 +1,19 @@
-const { appendTodo } = require("../modules/sheet");
+module.exports = {
+  keywords: ["待辦"],
+  handler: async (client, event) => {
+    const task = event.message.text.split(/[:：]/)[1]?.trim();
 
-module.exports = async function handleTodo(client, event) {
-  const text = event.message.text;
-  const task = text.split(/[:：]/)[1]?.trim();
+    if (!task) {
+      await client.replyMessage(event.replyToken, {
+        type: "text",
+        text: "⚠️ 格式：待辦：事項內容"
+      });
+      return;
+    }
 
-  if (!task) return;
-
-  await appendTodo({
-    userId: event.source.userId,
-    groupId: event.source.groupId || "個人",
-    task
-  });
-
-  await client.replyMessage(event.replyToken, {
-    type: "text",
-    text: `📌 已記錄待辦：${task}`
-  });
+    await client.replyMessage(event.replyToken, {
+      type: "text",
+      text: `📌 已新增待辦：${task}`
+    });
+  }
 };
