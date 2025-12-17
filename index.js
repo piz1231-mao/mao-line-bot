@@ -1,24 +1,16 @@
 // ======================================================
-// 毛怪秘書 LINE Bot — index.js（中控基準版）
-// 職責：
-// 1. 啟動 Express / LINE Client
-// 2. TradingView Webhook (/tv-alert)
-// 3. LINE Webhook 指令分流（commands）
+// 毛怪秘書 LINE Bot — index.js（安全基準版）
 // ======================================================
 
 require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
 
-// ===== 指令模組（你已經都有）=====
-const handleId        = require("./commands/id");
-const handleTodo      = require("./commands/todo");
-const handleHelp      = require("./commands/help");
-const handleInterview = require("./commands/interview");
-const handleComplaint = require("./commands/complaint");
-// 👉 之後新增功能，只要在這裡多 require 一行
-
-const tvAlert = require("./commands/tvAlert");
+// ===== 已存在的指令模組 =====
+const handleId   = require("./commands/id");
+const handleTodo = require("./commands/todo");
+const handleHelp = require("./commands/help");
+const tvAlert    = require("./commands/tvAlert");
 
 const app = express();
 
@@ -38,7 +30,7 @@ if (!config.channelAccessToken || !config.channelSecret) {
 const client = new line.Client(config);
 
 // ======================================================
-// Debug：GET /tv-alert（確認 Render 路由）
+// Debug：GET /tv-alert
 // ======================================================
 app.get("/tv-alert", (req, res) => {
   console.log("🟡 GET /tv-alert 進來了（Render 路由正常）");
@@ -92,16 +84,11 @@ app.post(
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const event of req.body.events) {
-
       if (event.type !== "message") continue;
       if (event.message.type !== "text") continue;
 
       const text = event.message.text.trim();
       const clean = text.replace(/\s/g, "").toLowerCase();
-
-      // ==============================
-      // 指令分流（只做「判斷」，不寫邏輯）
-      // ==============================
 
       if (["help", "指令", "說明"].includes(clean)) {
         await handleHelp(client, event);
@@ -117,18 +104,6 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         await handleTodo(client, event);
         continue;
       }
-
-      if (clean.startsWith("面試")) {
-        await handleInterview(client, event);
-        continue;
-      }
-
-      if (clean.startsWith("客怨")) {
-        await handleComplaint(client, event);
-        continue;
-      }
-
-      // 👉 之後新功能只要在這裡加一個 if
     }
 
     res.status(200).send("OK");
@@ -139,7 +114,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// 啟動 Server（Render 使用 PORT）
+// 啟動 Server
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
