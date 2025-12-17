@@ -1,6 +1,6 @@
 module.exports = {
   keywords: ["面試", "錄取"],
-  desc: "登記面試或錄取紀錄"
+  desc: "登記面試或錄取紀錄",
   handler: async (client, event) => {
     const text = event.message.text;
     const content = text.split(/[:：]/)[1]?.trim();
