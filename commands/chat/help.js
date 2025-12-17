@@ -1,5 +1,5 @@
 module.exports = {
-  keywords: ["help", "指令", "說明"],
+  keywords: ["help", "指令", "說明", "功能"],
   desc: "查看目前可用的所有指令",
   handler: async (client, event) => {
     const list = global.MAO_COMMANDS || [];
