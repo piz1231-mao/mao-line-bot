@@ -1,10 +1,10 @@
 // ======================================================
-// 毛怪祕書 LINE Bot v2.3 — 最終正式版
+// 毛怪祕書 LINE Bot v2.3 — 整合修正版
 // 功能：
 // 1. 待辦事項（萬用冒號、自動字元解析）
 // 2. TradingView 訊號 → Google Sheet 名單推播
 // 3. 通知名單管理（加入 / 移除 / 查名單）
-// 4. 查 UserID / GroupID
+// 4. 強化查 UserID / GroupID / RoomID
 // ======================================================
 
 require("dotenv").config();
@@ -96,35 +96,23 @@ app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
   try {
     let body = {};
     let content = "";
-
-    // 原始內容（一定有）
     const raw = req.body || "";
 
-    // 嘗試解析 JSON
     if (typeof raw === "string") {
       try {
         body = JSON.parse(raw);
       } catch {
-        // 解析失敗 → 當純文字
         content = raw;
       }
     } else if (typeof raw === "object") {
       body = raw;
     }
 
-    // 如果是 JSON，從裡面抓 message
     if (body && typeof body === "object") {
-      content =
-        body.message ||
-        body.alert ||
-        content;
+      content = body.message || body.alert || content;
     }
 
-    // 價格（JSON 才有）
-    const price =
-      body.close ??
-      body.price ??
-      null;
+    const price = body.close ?? body.price ?? null;
 
     await tvAlert(client, content, {
       ...body,
@@ -155,7 +143,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// 對話狀態（加入通知流程）
+// 對話狀態
 // ======================================================
 const pendingMap = new Map();
 
@@ -163,24 +151,35 @@ const pendingMap = new Map();
 // 主指令處理
 // ======================================================
 async function handleEvent(event) {
-
+  // 僅處理文字訊息
   if (!event.message || event.message.type !== "text") return;
 
   const text = event.message.text.trim();
   const clean = text.replace(/\s/g, "");
 
   // ============================================
-  // 1️⃣ 查 UserID / GroupID（最高優先）
+  // 1️⃣ 查 UserID / GroupID（優化判斷邏輯）
   // ============================================
   if (clean.includes("我的ID") || clean.includes("查ID")) {
-    const uid = event.source.userId;
-    const gid = event.source.groupId;
+    const source = event.source;
+    let replyText = "";
+
+    // 優先判斷是否在群組
+    if (source.type === "group") {
+      replyText = `📌 本群組 ID：\n${source.groupId}`;
+    } 
+    // 次之判斷是否在多人聊天室 (舊式)
+    else if (source.type === "room") {
+      replyText = `📌 本聊天室 ID：\n${source.roomId}`;
+    } 
+    // 最後則是個人 ID
+    else {
+      replyText = `📌 你的 User ID：\n${source.userId}`;
+    }
 
     return client.replyMessage(event.replyToken, {
       type: "text",
-      text: gid
-        ? `📌 群組 ID：\n${gid}`
-        : `📌 你的 User ID：\n${uid}`
+      text: replyText
     });
   }
 
@@ -193,7 +192,7 @@ async function handleEvent(event) {
 
     return client.replyMessage(event.replyToken, {
       type: "text",
-      text: `請輸入【${name}】的 User ID（格式：Uxxxxxx）\n例如：加入通知ID：Uxxxxxx`
+      text: `請輸入【${name}】的 User ID（或群組 ID）\n格式：加入通知ID：Uxxxx 或 Cxxxx`
     });
   }
 
@@ -229,7 +228,7 @@ async function handleEvent(event) {
 
     return client.replyMessage(event.replyToken, {
       type: "text",
-      text: ok ? "🗑 已移除通知名單！" : "❌ 找不到此 User ID"
+      text: ok ? "🗑 已移除通知名單！" : "❌ 找不到此 ID"
     });
   }
 
@@ -264,11 +263,10 @@ async function handleEvent(event) {
   }
 
   // ============================================
-  // 6️⃣ 待辦（萬用冒號解析）
+  // 6️⃣ 待辦（支援所有冒號形式）
   // ============================================
   if (clean.startsWith("待辦")) {
-
-    const parts = text.split(/[:：﹕꞉]/); // 支援所有冒號
+    const parts = text.split(/[:：﹕꞉]/); 
     const task = parts[1]?.trim();
 
     if (!task) {
@@ -282,7 +280,7 @@ async function handleEvent(event) {
 
     await appendToSheet(TODO_SHEET_NAME, [
       timestamp,
-      event.source.groupId || "個人",
+      event.source.groupId || event.source.roomId || "個人",
       event.source.userId,
       task,
       "未完成"
@@ -293,9 +291,6 @@ async function handleEvent(event) {
       text: `📌 已記錄待辦：「${task}」`
     });
   }
-
-  // 其他訊息 → 不回覆
-  return;
 }
 
 // ======================================================
