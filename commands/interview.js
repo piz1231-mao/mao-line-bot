@@ -1,15 +1,22 @@
 module.exports = {
-  keywords: ["查id", "我的id", "群組id"],
+  keywords: ["面試", "錄取"],
   handler: async (client, event) => {
-    const s = event.source;
-    const text =
-      s.type === "group" ? `📌 群組 ID：${s.groupId}` :
-      s.type === "room"  ? `📌 聊天室 ID：${s.roomId}` :
-                           `📌 User ID：${s.userId}`;
+    const text = event.message.text;
+    const content = text.split(/[:：]/)[1]?.trim();
+
+    if (!content) {
+      await client.replyMessage(event.replyToken, {
+        type: "text",
+        text: "⚠️ 格式：面試：姓名 / 職位 / 備註"
+      });
+      return;
+    }
 
     await client.replyMessage(event.replyToken, {
       type: "text",
-      text
+      text: `✅ 已登記面試紀錄：\n${content}`
     });
+
+    // 👉 之後可接 Google Sheet
   }
 };
