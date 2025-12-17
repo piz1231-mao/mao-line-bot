@@ -1,10 +1,5 @@
 // ======================================================
-// 毛怪祕書 LINE Bot v2.3 — 最終完整版（穩定可封存）
-// 功能：
-// 1. 待辦事項（萬用冒號、自動解析）
-// 2. TradingView 訊號 → Google Sheet 名單推播
-// 3. 通知名單管理（加入 / 移除 / 查名單）
-// 4. 查 UserID / GroupID / RoomID（支援指令 alias）
+// 毛怪祕書 LINE Bot v2.3 — 含指令表最終版
 // ======================================================
 
 require("dotenv").config();
@@ -39,6 +34,48 @@ const auth = new GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/spreadsheets"]
 });
 
+// ======================================================
+// 指令表定義（單一真實來源）
+// ======================================================
+const COMMANDS = [
+  {
+    group: "📌 基本功能",
+    items: [
+      { cmd: "查ID / 查群組 / 群組ID", desc: "顯示目前聊天的 ID（User / Group / Room）" },
+      { cmd: "help / 指令", desc: "顯示毛怪祕書指令表" }
+    ]
+  },
+  {
+    group: "📝 待辦事項",
+    items: [
+      { cmd: "待辦：事項內容", desc: "新增一筆待辦事項" }
+    ]
+  },
+  {
+    group: "📢 通知管理",
+    items: [
+      { cmd: "加入通知：名字", desc: "設定通知對象（Step 1）" },
+      { cmd: "加入通知ID：Uxxxx / Cxxxx", desc: "綁定通知 ID（Step 2）" },
+      { cmd: "移除通知：ID", desc: "移除通知名單" },
+      { cmd: "查通知名單", desc: "查看目前通知名單" }
+    ]
+  }
+];
+
+// ===== 指令表文字產生 =====
+function buildHelpText() {
+  let text = "📖 毛怪祕書 指令表\n━━━━━━━━━━━\n";
+
+  COMMANDS.forEach(section => {
+    text += `\n${section.group}\n`;
+    section.items.forEach(i => {
+      text += `- ${i.cmd}\n  ${i.desc}\n`;
+    });
+  });
+
+  return text.trim();
+}
+
 // ===== Sheet 寫入 =====
 async function appendToSheet(sheetName, values) {
   const c = await auth.getClient();
@@ -52,95 +89,13 @@ async function appendToSheet(sheetName, values) {
   });
 }
 
-// ===== Sheet 刪除（移除通知名單） =====
-async function deleteRowByUserID(uid) {
-  const c = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: c });
-
-  const rowsData = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${NOTIFY_SHEET_NAME}!A2:B999`
-  });
-
-  const rows = rowsData.data.values || [];
-  let rowIndex = -1;
-
-  rows.forEach((r, idx) => {
-    if (r[1] === uid) rowIndex = idx + 2;
-  });
-
-  if (rowIndex === -1) return false;
-
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId: SPREADSHEET_ID,
-    requestBody: {
-      requests: [{
-        deleteDimension: {
-          range: {
-            sheetId: 0,
-            dimension: "ROWS",
-            startIndex: rowIndex - 1,
-            endIndex: rowIndex
-          }
-        }
-      }]
-    }
-  });
-
-  return true;
-}
-
-// ======================================================
-// TradingView webhook
-// ======================================================
-app.post("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
-  try {
-    let body = {};
-    let content = "";
-    const raw = req.body || "";
-
-    if (typeof raw === "string") {
-      try {
-        body = JSON.parse(raw);
-      } catch {
-        content = raw;
-      }
-    } else if (typeof raw === "object") {
-      body = raw;
-    }
-
-    content = body.message || body.alert || content;
-    const price = body.close ?? body.price ?? null;
-
-    await tvAlert(client, content, { ...body, price });
-
-    console.log("🔥 TV 訊號推播：", content);
-    res.status(200).send("OK");
-  } catch (err) {
-    console.error("TV Error:", err);
-    res.status(500).send("ERROR");
-  }
-});
-
-// ======================================================
-// LINE Webhook
-// ======================================================
+// ===== LINE Webhook =====
 app.post("/webhook", line.middleware(config), async (req, res) => {
-  try {
-    for (const e of req.body.events) {
-      await handleEvent(e);
-    }
-    res.status(200).send("OK");
-  } catch (err) {
-    console.error("LINE Webhook Error:", err);
-    res.status(500).end();
+  for (const e of req.body.events) {
+    await handleEvent(e);
   }
+  res.status(200).send("OK");
 });
-
-// ======================================================
-// 對話狀態（加入通知流程）
-// ======================================================
-const pendingMap = new Map();
 
 // ======================================================
 // 主指令處理
@@ -152,134 +107,34 @@ async function handleEvent(event) {
   const clean = text.replace(/\s/g, "");
   const cleanLower = clean.toLowerCase();
 
-  // ==================================================
-  // 1️⃣ 查 ID（User / Group / Room）— 指令 alias
-  // ==================================================
-  const idAliases = [
-    "查id",
-    "我的id",
-    "群組id",
-    "查群組",
-    "群組id"
-  ];
+  // ===== help 指令 =====
+  if (["help", "指令", "說明"].includes(cleanLower)) {
+    return client.replyMessage(event.replyToken, {
+      type: "text",
+      text: buildHelpText()
+    });
+  }
 
+  // ===== 查 ID =====
+  const idAliases = ["查id", "我的id", "查群組", "群組id"];
   if (idAliases.some(cmd => cleanLower.includes(cmd))) {
-    const source = event.source;
-    let reply = "";
+    const s = event.source;
+    const reply =
+      s.type === "group" ? `📌 本群組 ID：\n${s.groupId}` :
+      s.type === "room"  ? `📌 本聊天室 ID：\n${s.roomId}` :
+                           `📌 你的 User ID：\n${s.userId}`;
 
-    if (source.type === "group") {
-      reply = `📌 本群組 ID：\n${source.groupId}`;
-    } else if (source.type === "room") {
-      reply = `📌 本聊天室 ID：\n${source.roomId}`;
-    } else {
-      reply = `📌 你的 User ID：\n${source.userId}`;
-    }
-
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: reply
-    });
+    return client.replyMessage(event.replyToken, { type: "text", text: reply });
   }
 
-  // ==================================================
-  // 2️⃣ 加入通知 Step1
-  // ==================================================
-  if (text.startsWith("加入通知：")) {
-    const name = text.replace("加入通知：", "").trim();
-    pendingMap.set(event.source.userId, name);
-
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: `請輸入【${name}】的 ID（User 或 Group）\n格式：加入通知ID：Uxxxx / Cxxxx`
-    });
-  }
-
-  // ==================================================
-  // 3️⃣ 加入通知 Step2
-  // ==================================================
-  if (text.startsWith("加入通知ID：")) {
-    const uid = text.replace("加入通知ID：", "").trim();
-    const name = pendingMap.get(event.source.userId);
-
-    if (!name) {
-      return client.replyMessage(event.replyToken, {
-        type: "text",
-        text: "⚠️ 尚未輸入「加入通知：名字」"
-      });
-    }
-
-    await appendToSheet(NOTIFY_SHEET_NAME, [name, uid]);
-    pendingMap.delete(event.source.userId);
-
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: `✅ 已加入通知名單：${name}`
-    });
-  }
-
-  // ==================================================
-  // 4️⃣ 移除通知
-  // ==================================================
-  if (text.startsWith("移除通知：")) {
-    const uid = text.replace("移除通知：", "").trim();
-    const ok = await deleteRowByUserID(uid);
-
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: ok ? "🗑 已移除通知名單！" : "❌ 找不到此 ID"
-    });
-  }
-
-  // ==================================================
-  // 5️⃣ 查通知名單
-  // ==================================================
-  if (text === "查通知名單") {
-    const c2 = await auth.getClient();
-    const sheets = google.sheets({ version: "v4", auth: c2 });
-
-    const data = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${NOTIFY_SHEET_NAME}!A2:B999`
-    });
-
-    const rows = data.data.values || [];
-    if (!rows.length) {
-      return client.replyMessage(event.replyToken, {
-        type: "text",
-        text: "📭 目前通知名單為空。"
-      });
-    }
-
-    let reply = "📢 TV 通知名單：\n\n";
-    rows.forEach((r, i) => reply += `${i + 1}. ${r[0]}\n`);
-
-    return client.replyMessage(event.replyToken, {
-      type: "text",
-      text: reply
-    });
-  }
-
-  // ==================================================
-  // 6️⃣ 待辦（萬用冒號）
-  // ==================================================
+  // ===== 待辦 =====
   if (clean.startsWith("待辦")) {
-    const parts = text.split(/[:：﹕꞉]/);
-    const task = parts[1]?.trim();
-
-    if (!task) {
-      return client.replyMessage(event.replyToken, {
-        type: "text",
-        text: "⚠️ 格式錯誤：請使用\n待辦：事項內容"
-      });
-    }
-
-    const timestamp = new Date().toLocaleString("zh-TW", {
-      timeZone: "Asia/Taipei"
-    });
+    const task = text.split(/[:：﹕꞉]/)[1]?.trim();
+    if (!task) return;
 
     await appendToSheet(TODO_SHEET_NAME, [
-      timestamp,
-      event.source.groupId || event.source.roomId || "個人",
+      new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }),
+      event.source.groupId || "個人",
       event.source.userId,
       task,
       "未完成"
@@ -293,7 +148,6 @@ async function handleEvent(event) {
 }
 
 // ======================================================
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 毛怪祕書 v2.3 Running on PORT ${PORT}`);
+app.listen(3000, () => {
+  console.log("🚀 毛怪祕書 v2.3（含指令表）已啟動");
 });
