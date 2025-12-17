@@ -1,7 +1,7 @@
 // ======================================================
-// 毛怪秘書 LINE Bot — index.js（最終穩定版）
-// 架構：
-// 1. LINE Bot Webhook
+// 毛怪秘書 LINE Bot — index.js（Debug 完整版）
+// 用途：
+// 1. 確認 LINE Webhook 是否真的進來
 // 2. 自動載入聊天指令（commands/chat）
 // 3. TradingView Webhook（services/tvAlert）
 // ======================================================
@@ -28,6 +28,14 @@ if (!config.channelAccessToken || !config.channelSecret) {
 }
 
 const client = new line.Client(config);
+
+// ======================================================
+// ⭐ Debug：任何 request 都先印出來（保命用）
+// ======================================================
+app.use((req, res, next) => {
+  console.log("➡️ HTTP 進來：", req.method, req.url);
+  next();
+});
 
 // ======================================================
 // 自動載入聊天指令（只掃 commands/chat）
@@ -61,7 +69,7 @@ if (fs.existsSync(commandsDir)) {
       }
     });
 } else {
-  console.warn("⚠️ commands/chat 資料夾不存在，未載入任何聊天指令");
+  console.warn("⚠️ commands/chat 資料夾不存在");
 }
 
 // ======================================================
@@ -119,10 +127,14 @@ app.post(
 );
 
 // ======================================================
-// LINE Webhook（聊天指令分流）
+// ⭐ LINE Webhook（重點 Debug 在這）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
+    console.log("🔥 LINE Webhook 進來了");
+    console.log("📦 原始事件內容：");
+    console.log(JSON.stringify(req.body, null, 2));
+
     for (const event of req.body.events || []) {
       if (event.type !== "message") continue;
       if (event.message.type !== "text") continue;
@@ -130,8 +142,11 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
       const text = event.message.text.trim();
       const clean = text.replace(/\s/g, "").toLowerCase();
 
+      console.log("✏️ 收到文字訊息：", text);
+
       for (const cmd of COMMANDS) {
         if (cmd.keywords.some(k => clean.startsWith(k))) {
+          console.log(`🎯 命中指令：${cmd.name}`);
           await cmd.handler(client, event);
           break;
         }
@@ -146,7 +161,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// 啟動 Server（Render 會給 PORT）
+// 啟動 Server
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
