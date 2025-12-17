@@ -3,9 +3,9 @@ module.exports = {
   handler: async (client, event) => {
     const s = event.source;
     const text =
-      s.type === "group" ? `📌 群組 ID：\n${s.groupId}` :
-      s.type === "room"  ? `📌 聊天室 ID：\n${s.roomId}` :
-                           `📌 User ID：\n${s.userId}`;
+      s.type === "group" ? `📌 群組 ID：${s.groupId}` :
+      s.type === "room"  ? `📌 聊天室 ID：${s.roomId}` :
+                           `📌 User ID：${s.userId}`;
 
     await client.replyMessage(event.replyToken, {
       type: "text",
