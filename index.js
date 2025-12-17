@@ -1,16 +1,23 @@
 // ======================================================
-// 毛怪秘書 LINE Bot v2.3 — index.js（最終穩定版）
-// 功能：
-// 1. LINE Bot 基礎啟動
-// 2. TradingView Webhook（/tv-alert）
-// 3. Debug GET /tv-alert（確認 Render 路由）
+// 毛怪秘書 LINE Bot — index.js（中控基準版）
+// 職責：
+// 1. 啟動 Express / LINE Client
+// 2. TradingView Webhook (/tv-alert)
+// 3. LINE Webhook 指令分流（commands）
 // ======================================================
 
 require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
 
-// ✅【重點修正】正確指向 commands/tvAlert.js
+// ===== 指令模組（你已經都有）=====
+const handleId        = require("./commands/id");
+const handleTodo      = require("./commands/todo");
+const handleHelp      = require("./commands/help");
+const handleInterview = require("./commands/interview");
+const handleComplaint = require("./commands/complaint");
+// 👉 之後新增功能，只要在這裡多 require 一行
+
 const tvAlert = require("./commands/tvAlert");
 
 const app = express();
@@ -23,17 +30,15 @@ const config = {
   channelSecret: process.env.LINE_SECRET
 };
 
-// 防呆：啟動時就檢查環境變數
 if (!config.channelAccessToken || !config.channelSecret) {
-  console.error("❌ LINE 環境變數未設定（LINE_ACCESS_TOKEN / LINE_SECRET）");
+  console.error("❌ LINE_ACCESS_TOKEN / LINE_SECRET 未設定");
   process.exit(1);
 }
 
 const client = new line.Client(config);
 
 // ======================================================
-// ⭐ Debug 用：GET /tv-alert
-// 用瀏覽器打 https://xxx.onrender.com/tv-alert
+// Debug：GET /tv-alert（確認 Render 路由）
 // ======================================================
 app.get("/tv-alert", (req, res) => {
   console.log("🟡 GET /tv-alert 進來了（Render 路由正常）");
@@ -41,7 +46,7 @@ app.get("/tv-alert", (req, res) => {
 });
 
 // ======================================================
-// ⭐ TradingView Webhook：POST /tv-alert
+// TradingView Webhook（POST /tv-alert）
 // ======================================================
 app.post(
   "/tv-alert",
@@ -52,10 +57,8 @@ app.post(
 
       let body = {};
       let content = "";
-
       const raw = req.body || "";
 
-      // 嘗試解析 JSON
       if (typeof raw === "string") {
         try {
           body = JSON.parse(raw);
@@ -64,15 +67,12 @@ app.post(
         }
       }
 
-      // 從 payload 抓訊息
       if (body && typeof body === "object") {
         content = body.message || body.alert || content;
       }
 
-      // 價格（若有）
       const price = body.close ?? body.price ?? null;
 
-      // 呼叫推播模組
       await tvAlert(client, content, {
         ...body,
         price
@@ -87,16 +87,59 @@ app.post(
 );
 
 // ======================================================
-// （可選）LINE Webhook（之後接指令用）
-// 目前不影響 TV 功能
+// LINE Webhook（指令中控）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
-  console.log("📩 LINE Webhook 收到事件數：", req.body.events?.length || 0);
-  res.status(200).send("OK");
+  try {
+    for (const event of req.body.events) {
+
+      if (event.type !== "message") continue;
+      if (event.message.type !== "text") continue;
+
+      const text = event.message.text.trim();
+      const clean = text.replace(/\s/g, "").toLowerCase();
+
+      // ==============================
+      // 指令分流（只做「判斷」，不寫邏輯）
+      // ==============================
+
+      if (["help", "指令", "說明"].includes(clean)) {
+        await handleHelp(client, event);
+        continue;
+      }
+
+      if (["查id", "我的id", "群組id", "查群組"].includes(clean)) {
+        await handleId(client, event);
+        continue;
+      }
+
+      if (clean.startsWith("待辦")) {
+        await handleTodo(client, event);
+        continue;
+      }
+
+      if (clean.startsWith("面試")) {
+        await handleInterview(client, event);
+        continue;
+      }
+
+      if (clean.startsWith("客怨")) {
+        await handleComplaint(client, event);
+        continue;
+      }
+
+      // 👉 之後新功能只要在這裡加一個 if
+    }
+
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error("❌ LINE Webhook Error:", err);
+    res.status(500).end();
+  }
 });
 
 // ======================================================
-// 啟動 Server（Render 使用 PORT 環境變數）
+// 啟動 Server（Render 使用 PORT）
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
