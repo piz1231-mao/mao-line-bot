@@ -20,6 +20,11 @@ const auth = new GoogleAuth({
   scopes: ["https://www.googleapis.com/auth/spreadsheets"]
 });
 
+app.get("/tv-alert", (req, res) => {
+  console.log("🟡 GET /tv-alert 進來了（測試用）");
+  res.status(200).send("OK");
+});
+
 // ======================================================
 // 取得 LINE 通知名單（防呆完整版）
 // ======================================================
