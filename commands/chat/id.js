@@ -1,6 +1,6 @@
 module.exports = {
   keywords: ["查id", "我的id", "群組id"],
-  desc: "查詢目前聊天的 User ID 或群組 ID"
+  desc: "查詢目前聊天的 User ID 或群組 ID",
   handler: async (client, event) => {
     const s = event.source;
     const text =
