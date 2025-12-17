@@ -7,21 +7,30 @@ module.exports = {
     if (!list.length) {
       await client.replyMessage(event.replyToken, {
         type: "text",
-        text: "⚠️ 目前沒有載入任何指令"
+        text: "⚠️ 目前沒有可用指令"
       });
       return;
     }
 
-    let text = "📖 毛怪秘書 功能指令一覽\n━━━━━━━━━━━\n";
+    let text = "📖 毛怪秘書｜功能指令一覽\n━━━━━━━━━━━\n";
 
     list.forEach(cmd => {
       const keys = cmd.keywords.join(" / ");
-      text += `• ${keys}\n  ${cmd.desc}\n`;
+      const desc = cmd.desc || "（尚未提供說明）";
+
+      // 👉 簡單 emoji 規則（先夠用）
+      let icon = "🔹";
+      if (keys.includes("待辦")) icon = "📝";
+      else if (keys.includes("查") || keys.includes("id")) icon = "🆔";
+      else if (keys.includes("面試") || keys.includes("錄取")) icon = "👥";
+      else if (keys.includes("help") || keys.includes("指令")) icon = "ℹ️";
+
+      text += `${icon} ${keys}\n${desc}\n\n`;
     });
 
     await client.replyMessage(event.replyToken, {
       type: "text",
-      text
+      text: text.trim()
     });
   }
 };
