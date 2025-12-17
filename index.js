@@ -16,15 +16,21 @@ const path = require("path");
 const app = express();
 
 // ======================================================
-// LINE 設定
+// middleware（順序固定，Render 穩定）
+// ======================================================
+app.use(express.json());
+app.use(express.text({ type: "*/*" }));
+
+// ======================================================
+// LINE 設定（⚠️ 已修正為正確 env 名稱）
 // ======================================================
 const config = {
-  channelAccessToken: process.env.LINE_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_SECRET
+  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
+  channelSecret: process.env.LINE_CHANNEL_SECRET
 };
 
 if (!config.channelAccessToken || !config.channelSecret) {
-  console.error("❌ LINE_ACCESS_TOKEN 或 LINE_SECRET 未設定");
+  console.error("❌ LINE_CHANNEL_ACCESS_TOKEN 或 LINE_CHANNEL_SECRET 未設定");
   process.exit(1);
 }
 
@@ -82,61 +88,67 @@ if (!fs.existsSync(commandsDir)) {
 }
 
 // ======================================================
-// TradingView 服務模組（不參與指令掃描）
+// TradingView 服務模組
 // ======================================================
 const tvAlert = require("./services/tvAlert");
 
 // ======================================================
-// Debug：GET /tv-alert（測 Render 路由）
+// Health Check（Render 需要）
+// ======================================================
+app.get("/", (req, res) => {
+  res.send("毛怪祕書 running");
+});
+
+// ======================================================
+// Debug：GET /tv-alert（確認路由活著）
 // ======================================================
 app.get("/tv-alert", (req, res) => {
-  console.log("🟡 GET /tv-alert 進來了（Render 路由正常）");
+  console.log("🟡 GET /tv-alert 進來了");
   res.status(200).send("OK");
 });
 
 // ======================================================
-// TradingView Webhook：POST /tv-alert
+// TradingView Webhook：POST /tv-alert（關鍵）
 // ======================================================
-app.post(
-  "/tv-alert",
-  express.text({ type: "*/*" }),
-  async (req, res) => {
-    try {
-      console.log("🚨 收到 TradingView POST");
+app.post("/tv-alert", async (req, res) => {
+  try {
+    console.log("🚨 收到 TradingView Webhook");
+    console.log("🧪 RAW body =", req.body);
 
-      let body = {};
-      let content = "";
-      const raw = req.body || "";
+    let content = "";
+    let payload = {};
 
-      if (typeof raw === "string") {
-        try {
-          body = JSON.parse(raw);
-        } catch {
-          content = raw;
-        }
+    // JSON or 文字 都能吃
+    if (typeof req.body === "string") {
+      try {
+        payload = JSON.parse(req.body);
+        content = payload.message || payload.alert || "";
+      } catch {
+        content = req.body;
+        payload = {};
       }
-
-      if (body && typeof body === "object") {
-        content = body.message || body.alert || content;
-      }
-
-      const price = body.close ?? body.price ?? null;
-
-      await tvAlert(client, content, {
-        ...body,
-        price
-      });
-
-      res.status(200).send("OK");
-    } catch (err) {
-      console.error("❌ TradingView Webhook Error:", err);
-      res.status(500).send("ERROR");
+    } else if (typeof req.body === "object" && req.body !== null) {
+      payload = req.body;
+      content = payload.message || payload.alert || "";
     }
+
+    // 嘗試補 price
+    const price = payload.close ?? payload.price ?? null;
+
+    await tvAlert(client, content, {
+      ...payload,
+      price
+    });
+
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error("❌ TradingView Webhook Error:", err);
+    res.status(500).send("ERROR");
   }
-);
+});
 
 // ======================================================
-// LINE Webhook（聊天指令分流）
+// LINE Webhook（聊天指令）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
@@ -167,5 +179,5 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 毛怪秘書服務已啟動，監聽 PORT ${PORT}`);
+  console.log(`🚀 毛怪祕書服務已啟動，監聽 PORT ${PORT}`);
 });
