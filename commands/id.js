@@ -1,13 +1,15 @@
-module.exports = async function handleId(client, event) {
-  const s = event.source;
+module.exports = {
+  keywords: ["查id", "我的id", "群組id"],
+  handler: async (client, event) => {
+    const s = event.source;
+    const text =
+      s.type === "group" ? `📌 群組 ID：\n${s.groupId}` :
+      s.type === "room"  ? `📌 聊天室 ID：\n${s.roomId}` :
+                           `📌 User ID：\n${s.userId}`;
 
-  const text =
-    s.type === "group" ? `📌 本群組 ID：\n${s.groupId}` :
-    s.type === "room"  ? `📌 本聊天室 ID：\n${s.roomId}` :
-                         `📌 你的 User ID：\n${s.userId}`;
-
-  await client.replyMessage(event.replyToken, {
-    type: "text",
-    text
-  });
+    await client.replyMessage(event.replyToken, {
+      type: "text",
+      text
+    });
+  }
 };
