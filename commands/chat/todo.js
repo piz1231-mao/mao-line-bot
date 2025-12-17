@@ -31,6 +31,7 @@ async function appendTodo(values) {
 
 module.exports = {
   keywords: ["待辦"],
+  desc: "新增一筆待辦事項"
   handler: async (lineClient, event) => {
     const text = event.message.text;
     const task = text.split(/[:：]/)[1]?.trim();
