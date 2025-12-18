@@ -1,5 +1,5 @@
 // ======================================================
-// 毛怪秘書 LINE Bot — index.js（最終封板穩定版）
+// 毛怪秘書 LINE Bot — index.js（最終封板穩定版＋本機防呆）
 // ======================================================
 
 require("dotenv").config();
@@ -7,11 +7,12 @@ const express = require("express");
 const line = require("@line/bot-sdk");
 const fs = require("fs");
 const path = require("path");
+const axios = require("axios");
 
 const app = express();
 
 // ======================================================
-// LINE 設定（⚠️ 使用正確官方環境變數）
+// LINE 設定
 // ======================================================
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -26,7 +27,7 @@ if (!config.channelAccessToken || !config.channelSecret) {
 const client = new line.Client(config);
 
 // ======================================================
-// 全域指令清單（給 help 用）
+// 全域指令清單
 // ======================================================
 global.MAO_COMMANDS = [];
 
@@ -59,16 +60,25 @@ if (fs.existsSync(commandsDir)) {
 }
 
 // ======================================================
-// TradingView 服務（⚠️ 只給 tv-alert 用 text）
+// TradingView 服務（本機防呆）
 // ======================================================
-const tvAlert = require("./services/tvAlert");
+let tvAlert = null;
+try {
+  tvAlert = require("./services/tvAlert");
+  console.log("✅ tvAlert 模組已載入");
+} catch (e) {
+  console.warn("⚠️ tvAlert 模組未載入（本機測試模式）");
+}
 
 app.all(
   "/tv-alert",
   express.text({ type: "*/*" }),
   async (req, res) => {
     try {
-      console.log("🚨 TradingView 進來", req.method);
+      if (!tvAlert) {
+        res.status(200).send("OK");
+        return;
+      }
 
       let body = {};
       let content = req.body || "";
@@ -96,7 +106,28 @@ app.all(
 );
 
 // ======================================================
-// LINE Webhook（⚠️ 不可被任何 bodyParser 汙染）
+// 台指期查詢（A 版｜定版）
+// ======================================================
+async function getTXF() {
+  const url =
+    "https://query1.finance.yahoo.com/v7/finance/quote?symbols=TXF=F";
+
+  const res = await axios.get(url);
+  const q = res.data.quoteResponse.result[0];
+
+  return {
+    price: q.regularMarketPrice,
+    change: q.regularMarketChange,
+    changePct: q.regularMarketChangePercent,
+    time: new Date(q.regularMarketTime * 1000).toLocaleTimeString("zh-TW", {
+      hour: "2-digit",
+      minute: "2-digit"
+    })
+  };
+}
+
+// ======================================================
+// LINE Webhook
 // ======================================================
 app.post(
   "/webhook",
@@ -107,10 +138,33 @@ app.post(
         if (event.type !== "message") continue;
         if (event.message.type !== "text") continue;
 
-        const clean = event.message.text
-          .replace(/\s/g, "")
-          .toLowerCase();
+        const rawText = event.message.text || "";
+        const clean = rawText.replace(/\s/g, "").toLowerCase();
 
+        // ===== 台指期查詢（優先）=====
+        if (clean.includes("台指期")) {
+          try {
+            const txf = await getTXF();
+
+            const reply = `【台指期即時】
+目前：${txf.price}
+漲跌：${txf.change > 0 ? "▲" : "▼"}${txf.change.toFixed(0)}（${txf.changePct.toFixed(2)}%）
+時間：${txf.time}`;
+
+            await client.replyMessage(event.replyToken, {
+              type: "text",
+              text: reply
+            });
+          } catch {
+            await client.replyMessage(event.replyToken, {
+              type: "text",
+              text: "台指期資料暫時抓不到，晚點再試"
+            });
+          }
+          continue;
+        }
+
+        // ===== 原本指令模組 =====
         for (const cmd of COMMANDS) {
           if (cmd.keywords.some(k => clean.includes(k))) {
             await cmd.handler(client, event);
