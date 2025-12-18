@@ -1,5 +1,5 @@
 // ======================================================
-// 毛怪秘書 LINE Bot — index.js（線上正式版｜定版）
+// 毛怪秘書 LINE Bot — index.js（線上正式版｜Yahoo 台指期定版）
 // ======================================================
 
 require("dotenv").config();
@@ -12,7 +12,7 @@ const axios = require("axios");
 const app = express();
 
 // ======================================================
-// LINE 設定（正式環境）
+// LINE 設定
 // ======================================================
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -60,7 +60,7 @@ if (fs.existsSync(commandsDir)) {
 }
 
 // ======================================================
-// TradingView 服務（線上正式啟用）
+// TradingView Webhook（維持原本用途）
 // ======================================================
 const tvAlert = require("./services/tvAlert");
 
@@ -95,14 +95,24 @@ app.all(
 );
 
 // ======================================================
-// 台指期查詢（A 版｜定版）
+// 台指期查詢（Yahoo Finance｜線上可用｜定版）
 // ======================================================
 async function getTXF() {
   const url =
     "https://query1.finance.yahoo.com/v7/finance/quote?symbols=TXF=F";
 
-  const res = await axios.get(url);
+  const res = await axios.get(url, {
+    headers: {
+      "User-Agent":
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+      "Accept":
+        "application/json, text/plain, */*"
+    },
+    timeout: 5000
+  });
+
   const q = res.data.quoteResponse.result[0];
+  if (!q) throw new Error("No TXF data");
 
   return {
     price: q.regularMarketPrice,
@@ -116,7 +126,7 @@ async function getTXF() {
 }
 
 // ======================================================
-// LINE Webhook（正式）
+// LINE Webhook
 // ======================================================
 app.post(
   "/webhook",
@@ -130,7 +140,7 @@ app.post(
         const rawText = event.message.text || "";
         const clean = rawText.replace(/\s/g, "").toLowerCase();
 
-        // ===== 台指期即時查詢（優先）=====
+        // ===== 台指期即時查詢（Yahoo）=====
         if (clean.includes("台指期")) {
           try {
             const txf = await getTXF();
@@ -144,7 +154,8 @@ app.post(
               type: "text",
               text: reply
             });
-          } catch {
+          } catch (err) {
+            console.error("TXF error:", err.message);
             await client.replyMessage(event.replyToken, {
               type: "text",
               text: "台指期資料暫時抓不到，晚點再試"
