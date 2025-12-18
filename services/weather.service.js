@@ -6,7 +6,12 @@ const DEFAULT_CITY = process.env.DEFAULT_CITY || "高雄市";
 async function get36hrWeather(city) {
   const targetCity = city || DEFAULT_CITY;
 
-  const url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001";
+  if (!CWA_API_KEY) {
+    throw new Error("CWA_API_KEY not set");
+  }
+
+  const url =
+    "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001";
 
   const res = await axios.get(url, {
     params: {
@@ -24,3 +29,8 @@ async function get36hrWeather(city) {
     data: res.data.records.location[0]
   };
 }
+
+// ✅ 一定要是「物件 export」
+module.exports = {
+  get36hrWeather
+};
