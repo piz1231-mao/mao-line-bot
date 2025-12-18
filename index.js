@@ -1,5 +1,5 @@
 // ======================================================
-// 毛怪秘書 LINE Bot — index.js（最終封板穩定版＋本機防呆）
+// 毛怪秘書 LINE Bot — index.js（線上正式版｜定版）
 // ======================================================
 
 require("dotenv").config();
@@ -12,7 +12,7 @@ const axios = require("axios");
 const app = express();
 
 // ======================================================
-// LINE 設定
+// LINE 設定（正式環境）
 // ======================================================
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -27,7 +27,7 @@ if (!config.channelAccessToken || !config.channelSecret) {
 const client = new line.Client(config);
 
 // ======================================================
-// 全域指令清單
+// 全域指令清單（給 help 用）
 // ======================================================
 global.MAO_COMMANDS = [];
 
@@ -60,26 +60,15 @@ if (fs.existsSync(commandsDir)) {
 }
 
 // ======================================================
-// TradingView 服務（本機防呆）
+// TradingView 服務（線上正式啟用）
 // ======================================================
-let tvAlert = null;
-try {
-  tvAlert = require("./services/tvAlert");
-  console.log("✅ tvAlert 模組已載入");
-} catch (e) {
-  console.warn("⚠️ tvAlert 模組未載入（本機測試模式）");
-}
+const tvAlert = require("./services/tvAlert");
 
 app.all(
   "/tv-alert",
   express.text({ type: "*/*" }),
   async (req, res) => {
     try {
-      if (!tvAlert) {
-        res.status(200).send("OK");
-        return;
-      }
-
       let body = {};
       let content = req.body || "";
 
@@ -127,7 +116,7 @@ async function getTXF() {
 }
 
 // ======================================================
-// LINE Webhook
+// LINE Webhook（正式）
 // ======================================================
 app.post(
   "/webhook",
@@ -141,7 +130,7 @@ app.post(
         const rawText = event.message.text || "";
         const clean = rawText.replace(/\s/g, "").toLowerCase();
 
-        // ===== 台指期查詢（優先）=====
+        // ===== 台指期即時查詢（優先）=====
         if (clean.includes("台指期")) {
           try {
             const txf = await getTXF();
