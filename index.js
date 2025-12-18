@@ -9,9 +9,13 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 
-const { get36hrWeather } = require("./services/weather.service");
-
 const app = express();
+
+// ======================================================
+// 自家 services
+// ======================================================
+const { get36hrWeather } = require("./services/weather.service");
+const { buildWeatherFriendText } = require("./services/weather.text");
 
 // ======================================================
 // LINE 設定
@@ -166,33 +170,12 @@ app.post(
           continue;
         }
 
-        // ===== 天氣查詢（中央氣象署｜預設高雄）=====
+        // ===== 天氣查詢（朋友版毛怪｜已抽文案模組）=====
         if (clean.includes("天氣")) {
           try {
-            const result = await get36hrWeather();
+            const result = await get36hrWeather(); // 預設城市由 env 控制（高雄）
 
-            const wx = result.data.weatherElement
-              .find(e => e.elementName === "Wx")
-              .time[0].parameter.parameterName;
-
-            const pop = result.data.weatherElement
-              .find(e => e.elementName === "PoP")
-              .time[0].parameter.parameterName;
-
-            const minT = result.data.weatherElement
-              .find(e => e.elementName === "MinT")
-              .time[0].parameter.parameterName;
-
-            const maxT = result.data.weatherElement
-              .find(e => e.elementName === "MaxT")
-              .time[0].parameter.parameterName;
-
-            const reply = `【毛怪天氣】
-━━━━━━━━━━━
-地區：${result.city}
-天氣：${wx}
-降雨機率：${pop}%
-氣溫：${minT}～${maxT}°C`;
+            const reply = buildWeatherFriendText(result);
 
             await client.replyMessage(event.replyToken, {
               type: "text",
