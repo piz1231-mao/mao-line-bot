@@ -9,6 +9,8 @@ const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 
+const { get36hrWeather } = require("./services/weather.service");
+
 const app = express();
 
 // ======================================================
@@ -159,6 +161,48 @@ app.post(
             await client.replyMessage(event.replyToken, {
               type: "text",
               text: "台指期資料暫時抓不到，晚點再試"
+            });
+          }
+          continue;
+        }
+
+        // ===== 天氣查詢（中央氣象署｜預設高雄）=====
+        if (clean.includes("天氣")) {
+          try {
+            const result = await get36hrWeather();
+
+            const wx = result.data.weatherElement
+              .find(e => e.elementName === "Wx")
+              .time[0].parameter.parameterName;
+
+            const pop = result.data.weatherElement
+              .find(e => e.elementName === "PoP")
+              .time[0].parameter.parameterName;
+
+            const minT = result.data.weatherElement
+              .find(e => e.elementName === "MinT")
+              .time[0].parameter.parameterName;
+
+            const maxT = result.data.weatherElement
+              .find(e => e.elementName === "MaxT")
+              .time[0].parameter.parameterName;
+
+            const reply = `【毛怪天氣】
+━━━━━━━━━━━
+地區：${result.city}
+天氣：${wx}
+降雨機率：${pop}%
+氣溫：${minT}～${maxT}°C`;
+
+            await client.replyMessage(event.replyToken, {
+              type: "text",
+              text: reply
+            });
+          } catch (err) {
+            console.error("Weather error:", err.message);
+            await client.replyMessage(event.replyToken, {
+              type: "text",
+              text: "天氣資料暫時取得失敗，請稍後再試"
             });
           }
           continue;
