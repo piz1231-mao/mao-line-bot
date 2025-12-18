@@ -1,10 +1,10 @@
 // ======================================================
-// 毛怪秘書 LINE Bot — index.js（最終穩定完整版）
+// 毛怪秘書 LINE Bot — index.js（最終封板穩定版）
 // 功能：
-// 1. LINE Webhook
-// 2. 自動載入聊天指令（commands/chat）
-// 3. HELP 指令自動顯示「指令＋說明」
-// 4. TradingView Webhook（services/tvAlert）
+// 1. LINE Webhook（聊天指令）
+// 2. 自動載入 commands/chat 指令模組
+// 3. HELP 指令自動彙整 desc
+// 4. TradingView Webhook（/tv-alert，GET + POST 通吃）
 // ======================================================
 
 require("dotenv").config();
@@ -16,21 +16,15 @@ const path = require("path");
 const app = express();
 
 // ======================================================
-// middleware（順序固定，Render 穩定）
-// ======================================================
-app.use(express.json());
-app.use(express.text({ type: "*/*" }));
-
-// ======================================================
-// LINE 設定（⚠️ 已修正為正確 env 名稱）
+// LINE 設定
 // ======================================================
 const config = {
-  channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
-  channelSecret: process.env.LINE_CHANNEL_SECRET
+  channelAccessToken: process.env.LINE_ACCESS_TOKEN,
+  channelSecret: process.env.LINE_SECRET
 };
 
 if (!config.channelAccessToken || !config.channelSecret) {
-  console.error("❌ LINE_CHANNEL_ACCESS_TOKEN 或 LINE_CHANNEL_SECRET 未設定");
+  console.error("❌ LINE_ACCESS_TOKEN 或 LINE_SECRET 未設定");
   process.exit(1);
 }
 
@@ -48,10 +42,10 @@ const COMMANDS = [];
 const commandsDir = path.join(__dirname, "commands/chat");
 
 if (!fs.existsSync(commandsDir)) {
-  console.warn("⚠️ commands/chat 資料夾不存在，未載入任何聊天指令");
+  console.warn("⚠️ commands/chat 資料夾不存在，未載入聊天指令");
 } else {
   fs.readdirSync(commandsDir)
-    .filter(file => file.endsWith(".js"))
+    .filter(f => f.endsWith(".js"))
     .forEach(file => {
       try {
         const mod = require(path.join(commandsDir, file));
@@ -61,20 +55,16 @@ if (!fs.existsSync(commandsDir)) {
           Array.isArray(mod.keywords) &&
           typeof mod.handler === "function"
         ) {
-          const name = file.replace(".js", "");
-          const keywords = mod.keywords.map(k => k.toLowerCase());
-          const desc = mod.desc || "（尚未提供說明）";
-
           COMMANDS.push({
-            name,
-            keywords,
+            name: file.replace(".js", ""),
+            keywords: mod.keywords.map(k => k.toLowerCase()),
             handler: mod.handler
           });
 
           global.MAO_COMMANDS.push({
-            name,
+            name: file.replace(".js", ""),
             keywords: mod.keywords,
-            desc
+            desc: mod.desc || "（尚未提供說明）"
           });
 
           console.log(`✅ 載入指令模組：${file}`);
@@ -88,67 +78,60 @@ if (!fs.existsSync(commandsDir)) {
 }
 
 // ======================================================
-// TradingView 服務模組
+// TradingView 推播模組
 // ======================================================
 const tvAlert = require("./services/tvAlert");
 
 // ======================================================
-// Health Check（Render 需要）
-// ======================================================
-app.get("/", (req, res) => {
-  res.send("毛怪祕書 running");
-});
-
-// ======================================================
-// Debug：GET /tv-alert（確認路由活著）
+// Debug：GET /tv-alert（確認 Render 路由）
 // ======================================================
 app.get("/tv-alert", (req, res) => {
-  console.log("🟡 GET /tv-alert 進來了");
+  console.log("🟡 GET /tv-alert（Render 路由正常）");
   res.status(200).send("OK");
 });
 
 // ======================================================
-// TradingView Webhook：POST /tv-alert（關鍵）
+// TradingView Webhook（GET + POST 通吃，最終保險）
 // ======================================================
-app.post("/tv-alert", async (req, res) => {
+app.all("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
   try {
-    console.log("🚨 收到 TradingView Webhook");
-    console.log("🧪 RAW body =", req.body);
+    console.log("🚨 TradingView 打進來了");
+    console.log("➡️ Method:", req.method);
 
+    let body = {};
     let content = "";
-    let payload = {};
+    const raw = req.body || "";
 
-    // JSON or 文字 都能吃
-    if (typeof req.body === "string") {
+    if (typeof raw === "string" && raw.length) {
       try {
-        payload = JSON.parse(req.body);
-        content = payload.message || payload.alert || "";
+        body = JSON.parse(raw);
       } catch {
-        content = req.body;
-        payload = {};
+        content = raw;
       }
-    } else if (typeof req.body === "object" && req.body !== null) {
-      payload = req.body;
-      content = payload.message || payload.alert || "";
     }
 
-    // 嘗試補 price
-    const price = payload.close ?? payload.price ?? null;
+    if (body && typeof body === "object") {
+      content = body.message || body.alert || content;
+    }
+
+    const price = body.close ?? body.price ?? null;
 
     await tvAlert(client, content, {
-      ...payload,
+      ...body,
       price
     });
 
+    // ⚠️ 一定回 200，避免 TradingView 放棄
     res.status(200).send("OK");
   } catch (err) {
     console.error("❌ TradingView Webhook Error:", err);
-    res.status(500).send("ERROR");
+    res.status(200).send("OK");
   }
 });
 
 // ======================================================
-// LINE Webhook（聊天指令）
+// LINE Webhook（聊天指令分流）
+// includes → 解決「查id 打不出來」問題
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
@@ -160,7 +143,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
       const clean = text.replace(/\s/g, "").toLowerCase();
 
       for (const cmd of COMMANDS) {
-        if (cmd.keywords.some(k => clean.startsWith(k))) {
+        if (cmd.keywords.some(k => clean.includes(k))) {
           await cmd.handler(client, event);
           break;
         }
@@ -175,9 +158,9 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// 啟動 Server（Render 會指定 PORT）
+// 啟動 Server（Render 指定 PORT）
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 毛怪祕書服務已啟動，監聽 PORT ${PORT}`);
+  console.log(`🚀 毛怪秘書服務已啟動，監聽 PORT ${PORT}`);
 });
