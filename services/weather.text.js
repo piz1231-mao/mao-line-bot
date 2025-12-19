@@ -1,17 +1,14 @@
 // ======================================================
-// 毛怪天氣文案模組｜朋友嘴砲版 v1.4（結構自動偵測）
+// 毛怪天氣文案模組｜正式版 v1.0
+// 說明：
+// - 相容 CWA 新舊 JSON 結構
+// - 同時支援 elementValue / parameter.parameterName
+// - 降雨機率為主，溫度補嘴
+// - 40–60% 為「下不下不好說」區
 // ======================================================
 
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
-}
-
-function getTempFeeling(t) {
-  if (t <= 18) return "有點冷";
-  if (t <= 23) return "偏涼";
-  if (t <= 27) return "算舒服";
-  if (t <= 31) return "有點熱";
-  return "滿熱的";
 }
 
 function isNight() {
@@ -19,43 +16,71 @@ function isNight() {
   return h >= 18 || h < 6;
 }
 
-// 🔒 從任何可能位置安全抓 weatherElement
+// ======================================================
+// 從 CWA 各種可能結構中取出 weatherElement
+// ======================================================
 function extractWeatherElement(weather) {
   if (!weather) return null;
 
-  // 情況 A：data.weatherElement
+  // 常見：weather.data.records.location[0].weatherElement
+  const records = weather.data?.records || weather.records;
+  if (Array.isArray(records?.location) && records.location[0]?.weatherElement) {
+    return records.location[0].weatherElement;
+  }
+
+  // 舊結構：weather.data.weatherElement
   if (Array.isArray(weather.data?.weatherElement)) {
     return weather.data.weatherElement;
   }
 
-  // 情況 B：data.records.location[0].weatherElement（CWA 常見）
-  if (
-    Array.isArray(weather.data?.records?.location) &&
-    weather.data.records.location[0]?.weatherElement
-  ) {
-    return weather.data.records.location[0].weatherElement;
+  // 最後保底
+  if (Array.isArray(weather.weatherElement)) {
+    return weather.weatherElement;
   }
 
   return null;
 }
 
+// ======================================================
+// 取單一氣象元素（新舊格式相容）
+// ======================================================
 function getElement(elements, name, fallback = "") {
-  try {
-    return (
-      elements.find(e => e.elementName === name)
-        ?.time?.[0]?.parameter?.parameterName
-    ) || fallback;
-  } catch {
-    return fallback;
+  if (!elements) return fallback;
+
+  const el = elements.find(e => e.elementName === name);
+  if (!el || !Array.isArray(el.time) || !el.time[0]) return fallback;
+
+  const t = el.time[0];
+
+  // 新版 CWA
+  if (Array.isArray(t.elementValue) && t.elementValue[0]?.value != null) {
+    return t.elementValue[0].value;
   }
+
+  // 舊版 CWA
+  if (t.parameter?.parameterName != null) {
+    return t.parameter.parameterName;
+  }
+
+  return fallback;
 }
 
+// ======================================================
+// 主輸出
+// ======================================================
 function buildWeatherFriendText(weather) {
-  const city = weather?.city || "這個地方";
+  const city =
+    weather?.city ||
+    weather?.data?.records?.location?.[0]?.locationName ||
+    "這個地方";
 
   const elements = extractWeatherElement(weather);
   if (!elements) {
-    return `${city} 天氣資料暫時抓不到，晚點再看。`;
+    return `【毛怪天氣 🌧️】
+━━━━━━━━━━━
+${city}
+
+天氣資料暫時抓不到，晚點再看。`;
   }
 
   const wx = getElement(elements, "Wx", "天氣不明");
@@ -66,7 +91,7 @@ function buildWeatherFriendText(weather) {
   let maoLine = "";
 
   // ======================================================
-  // 🌧️ 降雨機率分級（你定稿）
+  // 🌧️ 降雨機率分級（定稿）
   // ======================================================
   if (pop <= 20) {
     maoLine = pick([
@@ -95,14 +120,18 @@ function buildWeatherFriendText(weather) {
     ]);
   }
 
-  // 🌡️ 溫度補嘴
+  // ======================================================
+  // 🌡️ 溫度補嘴（輔助）
+  // ======================================================
   if (tMax >= 28 && pop >= 40) {
     maoLine += " 又熱又可能下雨，這種最容易讓人煩。";
-  } else if (tMax <= 18) {
+  } else if (tMax <= 18 && tMax > 0) {
     maoLine += " 溫度偏低，記得不要著涼。";
   }
 
+  // ======================================================
   // 🌙 晚上語氣
+  // ======================================================
   if (isNight()) {
     maoLine += " 晚上要不要出門，你自己評估。";
   }
