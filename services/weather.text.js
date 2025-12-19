@@ -1,10 +1,5 @@
 // ======================================================
-// 毛怪天氣文案模組｜朋友嘴砲版 v1.0
-// 規則：
-// - 降雨機率為主軸（20% 一級）
-// - 溫度僅補嘴，不搶主戲
-// - 40–60% 為「下不下不好說」區
-// - 早 / 晚語氣不同
+// 毛怪天氣文案模組｜朋友嘴砲版 v1.2（穩定防炸版）
 // ======================================================
 
 function pick(arr) {
@@ -24,27 +19,41 @@ function isNight() {
   return h >= 18 || h < 6;
 }
 
+// 安全取 weatherElement 內資料
+function getElement(elements, name, fallback = "") {
+  try {
+    return (
+      elements.find(e => e.elementName === name)
+        ?.time?.[0]?.parameter?.parameterName
+    ) || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 function buildWeatherFriendText(weather) {
-  const city = weather.city;
-  const elements = weather.data.weatherElement;
+  // ===============================
+  // 🔒 結構防呆（關鍵）
+  // ===============================
+  if (!weather) {
+    return "天氣資料暫時怪怪的，等等再試。";
+  }
 
-  const wx = elements.find(e => e.elementName === "Wx")
-    ?.time[0].parameter.parameterName || "天氣不明";
+  const city = weather.city || "未知地區";
 
-  const pop = Number(
-    elements.find(e => e.elementName === "PoP")
-      ?.time[0].parameter.parameterName || 0
-  );
+  // ⚠️ 真正的 location 物件
+  const location = weather.data || weather.location;
 
-  const tMin = Number(
-    elements.find(e => e.elementName === "MinT")
-      ?.time[0].parameter.parameterName || 0
-  );
+  if (!location || !Array.isArray(location.weatherElement)) {
+    return `${city} 天氣資料暫時抓不到，晚點再看。`;
+  }
 
-  const tMax = Number(
-    elements.find(e => e.elementName === "MaxT")
-      ?.time[0].parameter.parameterName || 0
-  );
+  const elements = location.weatherElement;
+
+  const wx = getElement(elements, "Wx", "天氣不明");
+  const pop = Number(getElement(elements, "PoP", 0));
+  const tMin = Number(getElement(elements, "MinT", 0));
+  const tMax = Number(getElement(elements, "MaxT", 0));
 
   const tempFeeling = getTempFeeling(tMax);
   const night = isNight();
@@ -52,13 +61,13 @@ function buildWeatherFriendText(weather) {
   let maoLine = "";
 
   // ======================================================
-  // 降雨機率分級（定稿）
+  // 🌧️ 降雨機率分級（你定稿的邏輯）
   // ======================================================
   if (pop <= 20) {
     maoLine = pick([
       "基本上不太會下，要不要管隨你。",
       "雨是沒什麼機會啦，今天可以放鬆一點。",
-      "看起來很安全，懶得帶傘也不太會出事。"
+      "看起來算安全，懶得帶傘也不太會出事。"
     ]);
   } else if (pop <= 39) {
     maoLine = pick([
@@ -70,13 +79,13 @@ function buildWeatherFriendText(weather) {
     maoLine = pick([
       "下不下不好說，要不要聽隨你，但我有講。",
       "這種不上不下的機率最煩，等等突然下也不奇怪。",
-      "現在看不太準，會不會下真的不好說。"
+      "現在真的看不太準，會不會下不好說。"
     ]);
   } else if (pop <= 80) {
     maoLine = pick([
       "這個機率我會當作會下啦，你自己想一下。",
       "不想淋雨的話，今天就不要賭。",
-      "雨的存在感有點高了。"
+      "雨的存在感已經有點高了。"
     ]);
   } else {
     maoLine = pick([
@@ -87,7 +96,7 @@ function buildWeatherFriendText(weather) {
   }
 
   // ======================================================
-  // 溫度補嘴（不搶戲）
+  // 🌡️ 溫度補嘴（不搶主戲）
   // ======================================================
   if (tMax >= 28 && pop >= 40) {
     maoLine += " 又熱又可能下雨，這種最容易讓人煩。";
@@ -98,7 +107,7 @@ function buildWeatherFriendText(weather) {
   }
 
   // ======================================================
-  // 晚上語氣微調
+  // 🌙 晚上語氣
   // ======================================================
   if (night) {
     maoLine += " 晚上要不要出門，你自己評估。";
