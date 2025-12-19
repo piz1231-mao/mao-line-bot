@@ -1,5 +1,5 @@
 // ======================================================
-// 毛怪秘書 LINE Bot — index.js（天氣穩定版）
+// 毛怪秘書 LINE Bot — index.js（縣市解析修正版）
 // ======================================================
 
 require("dotenv").config();
@@ -11,6 +11,7 @@ const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
 
 const app = express();
+app.use(express.json());
 
 // ======================================================
 // LINE 設定
@@ -20,11 +21,6 @@ const config = {
   channelSecret: process.env.LINE_CHANNEL_SECRET
 };
 
-if (!config.channelAccessToken || !config.channelSecret) {
-  console.error("❌ LINE_CHANNEL_ACCESS_TOKEN 或 LINE_CHANNEL_SECRET 未設定");
-  process.exit(1);
-}
-
 const client = new line.Client(config);
 
 // ======================================================
@@ -33,14 +29,34 @@ const client = new line.Client(config);
 const DEFAULT_CITY = process.env.DEFAULT_CITY || "高雄市";
 
 // ======================================================
-// 支援縣市清單
+// 縣市對照表（短名 → 正式名）
 // ======================================================
-const CITY_LIST = [
-  "台北市","新北市","桃園市","台中市","台南市","高雄市",
-  "基隆市","新竹市","新竹縣","苗栗縣","彰化縣","南投縣",
-  "雲林縣","嘉義市","嘉義縣","屏東縣","宜蘭縣","花蓮縣",
-  "台東縣","澎湖縣","金門縣","連江縣"
-];
+const CITY_MAP = {
+  "台北": "台北市",
+  "臺北": "台北市",
+  "新北": "新北市",
+  "桃園": "桃園市",
+  "台中": "台中市",
+  "臺中": "台中市",
+  "台南": "台南市",
+  "臺南": "台南市",
+  "高雄": "高雄市",
+  "基隆": "基隆市",
+  "新竹": "新竹市",
+  "苗栗": "苗栗縣",
+  "彰化": "彰化縣",
+  "南投": "南投縣",
+  "雲林": "雲林縣",
+  "嘉義": "嘉義市",
+  "屏東": "屏東縣",
+  "宜蘭": "宜蘭縣",
+  "花蓮": "花蓮縣",
+  "台東": "台東縣",
+  "臺東": "台東縣",
+  "澎湖": "澎湖縣",
+  "金門": "金門縣",
+  "連江": "連江縣"
+};
 
 // ======================================================
 // LINE Webhook
@@ -54,38 +70,32 @@ app.post(
         if (event.type !== "message") continue;
         if (event.message.type !== "text") continue;
 
-        const rawText = event.message.text.trim();
-        const clean = rawText.replace(/\s/g, "");
+        const rawText = event.message.text;
 
         // ==================================================
         // 天氣指令
         // ==================================================
-        if (clean.includes("天氣")) {
+        if (rawText.includes("天氣")) {
           try {
-            // ---------- 解析縣市 ----------
+            // ---------- 解析縣市（最穩版本） ----------
             let city = DEFAULT_CITY;
 
-            for (const c of CITY_LIST) {
-              const short = c.replace("市","").replace("縣","");
-              if (rawText.includes(c) || rawText.includes(short)) {
-                city = c;
+            for (const key of Object.keys(CITY_MAP)) {
+              if (rawText.includes(key)) {
+                city = CITY_MAP[key];
                 break;
               }
             }
 
-            console.log("🌤 WEATHER CITY =", city);
+            console.log("🌤 WEATHER CITY =", city, "| text =", rawText);
 
-            // ---------- 查天氣 ----------
             const weather = await get36hrWeather(city);
-
-            // ---------- 產生毛怪文案 ----------
             const text = buildWeatherFriendText(weather);
 
             await client.replyMessage(event.replyToken, {
               type: "text",
               text
             });
-
           } catch (err) {
             console.error("🌧 WEATHER ERROR:", err);
 
@@ -94,13 +104,7 @@ app.post(
               text: "天氣資料現在有點怪，等等再試。"
             });
           }
-
-          continue;
         }
-
-        // ==================================================
-        // 其他訊息（暫時忽略）
-        // ==================================================
       }
 
       res.status(200).send("OK");
@@ -114,7 +118,7 @@ app.post(
 // ======================================================
 // 啟動 Server
 // ======================================================
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 毛怪秘書啟動，PORT ${PORT}`);
 });
