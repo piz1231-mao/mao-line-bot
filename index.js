@@ -48,15 +48,15 @@ if (fs.existsSync(commandsDir)) {
     .filter(f => f.endsWith(".js"))
     .forEach(file => {
       const mod = require(path.join(commandsDir, file));
-      if (Array.isArray(mod.keywords) && typeof mod.handler === "function") {
+      if (Array.isArray(mod.commands) && typeof mod.handler === "function") {
         COMMANDS.push({
-          keywords: mod.keywords.map(k => k.toLowerCase()),
+          commands: mod.commands, // ⚠️ 改成「完整指令前綴」
           handler: mod.handler
         });
 
         global.MAO_COMMANDS.push({
           name: file.replace(".js", ""),
-          keywords: mod.keywords,
+          commands: mod.commands,
           desc: mod.desc || "（尚未提供說明）"
         });
 
@@ -84,11 +84,7 @@ app.all(
         } catch {}
       }
 
-      const msg =
-        body.message ||
-        body.alert ||
-        content;
-
+      const msg = body.message || body.alert || content;
       const price = body.close ?? body.price ?? null;
 
       await tvAlert(client, msg, { ...body, price });
@@ -101,7 +97,7 @@ app.all(
 );
 
 // ======================================================
-// 台指期查詢（Yahoo Finance｜線上可用｜定版）
+// 台指期查詢（Yahoo Finance｜定版）
 // ======================================================
 async function getTXF() {
   const url =
@@ -109,10 +105,8 @@ async function getTXF() {
 
   const res = await axios.get(url, {
     headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
-      "Accept":
-        "application/json, text/plain, */*"
+      "User-Agent": "Mozilla/5.0",
+      "Accept": "application/json, text/plain, */*"
     },
     timeout: 5000
   });
@@ -132,6 +126,21 @@ async function getTXF() {
 }
 
 // ======================================================
+// 指令解析器（核心）
+// ======================================================
+function parseCommand(text) {
+  if (!text || !text.includes("：")) return null;
+
+  const [rawCmd, rawArg] = text.split("：");
+  const command = rawCmd.trim();
+  const arg = rawArg?.trim();
+
+  if (!command || !arg) return null;
+
+  return { command, arg };
+}
+
+// ======================================================
 // LINE Webhook
 // ======================================================
 app.post(
@@ -144,24 +153,24 @@ app.post(
         if (event.message.type !== "text") continue;
 
         const rawText = event.message.text || "";
-        const clean = rawText.replace(/\s/g, "").toLowerCase();
+        const parsed = parseCommand(rawText);
 
-        // ===== 台指期即時查詢（Yahoo）=====
-        if (clean.includes("台指期")) {
+        if (!parsed) continue; // ❗ 不合法指令 → 靜默
+
+        const { command, arg } = parsed;
+
+        // ===== 台指期（明確指令制）=====
+        if (command === "台指期") {
           try {
             const txf = await getTXF();
-
-            const reply = `【台指期即時】
-目前：${txf.price}
-漲跌：${txf.change > 0 ? "▲" : "▼"}${txf.change.toFixed(0)}（${txf.changePct.toFixed(2)}%）
-時間：${txf.time}`;
-
             await client.replyMessage(event.replyToken, {
               type: "text",
-              text: reply
+              text: `【台指期即時】
+目前：${txf.price}
+漲跌：${txf.change > 0 ? "▲" : "▼"}${txf.change.toFixed(0)}（${txf.changePct.toFixed(2)}%）
+時間：${txf.time}`
             });
-          } catch (err) {
-            console.error("TXF error:", err.message);
+          } catch {
             await client.replyMessage(event.replyToken, {
               type: "text",
               text: "台指期資料暫時抓不到，晚點再試"
@@ -170,19 +179,16 @@ app.post(
           continue;
         }
 
-        // ===== 天氣查詢（朋友版毛怪｜已抽文案模組）=====
-        if (clean.includes("天氣")) {
+        // ===== 天氣（明確指令制）=====
+        if (command === "天氣") {
           try {
-            const result = await get36hrWeather(); // 預設城市由 env 控制（高雄）
-
+            const result = await get36hrWeather(arg);
             const reply = buildWeatherFriendText(result);
-
             await client.replyMessage(event.replyToken, {
               type: "text",
               text: reply
             });
-          } catch (err) {
-            console.error("Weather error:", err.message);
+          } catch {
             await client.replyMessage(event.replyToken, {
               type: "text",
               text: "天氣資料暫時取得失敗，請稍後再試"
@@ -191,10 +197,10 @@ app.post(
           continue;
         }
 
-        // ===== 原本指令模組 =====
+        // ===== chat 指令模組（完整前綴比對）=====
         for (const cmd of COMMANDS) {
-          if (cmd.keywords.some(k => clean.includes(k))) {
-            await cmd.handler(client, event);
+          if (cmd.commands.includes(command)) {
+            await cmd.handler(client, event, arg);
             break;
           }
         }
