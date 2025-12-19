@@ -6,7 +6,7 @@ function buildWeatherFriendText(weather) {
   if (!weather || !Array.isArray(weather.weatherElement)) {
     throw new Error("weatherElement not found");
   }
-
+ 
   const city = weather.city || "未知地區";
   const elements = weather.weatherElement;
 
