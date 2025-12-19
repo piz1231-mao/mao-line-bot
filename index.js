@@ -156,12 +156,12 @@ app.post(
           const DEFAULT_CITY = process.env.DEFAULT_CITY || "高雄市";
           let city = parsed.arg && parsed.arg.trim();
 
-          // 1) 沒帶城市 → 用預設
+          // 1️⃣ 沒帶城市 → 用預設
           if (!city) {
             city = DEFAULT_CITY;
           }
 
-          // 2) 支援「台中天氣 / 高雄天氣」
+          // 2️⃣ 支援「台中天氣 / 高雄天氣」
           if (!parsed.arg) {
             const CITY_KEYS = [
               "台北","臺北","新北","桃園","台中","臺中","台南","臺南","高雄",
@@ -171,11 +171,12 @@ app.post(
 
             for (const k of CITY_KEYS) {
               if (event.message.text.includes(k)) {
-                city = k
-                  .replace("臺", "台")
-                  .endsWith("市") || k.endsWith("縣")
-                  ? k.replace("臺", "台")
-                  : k.replace("臺", "台") + "市";
+                // ✅ 統一轉成氣象署用字「臺」
+                const normalized = k.replace("台", "臺");
+                city =
+                  normalized.endsWith("市") || normalized.endsWith("縣")
+                    ? normalized
+                    : normalized + "市";
                 break;
               }
             }
