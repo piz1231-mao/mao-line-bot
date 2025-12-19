@@ -1,41 +1,57 @@
 // ======================================================
-// 毛怪天氣文案模組｜朋友版 v4.0（雨 × 溫度完整整合）
+// 毛怪天氣文案模組｜朋友版 v4.0.2（結構防炸最終版）
 // ======================================================
 
 function buildWeatherFriendText(weather) {
-  const city = weather.city;
-  const elements = weather.data.weatherElement;
+  // ========= 最外層防呆 =========
+  if (!weather) {
+    throw new Error("weather is undefined");
+  }
 
-  const wx = elements.find(e => e.elementName === "Wx")
-    .time[0].parameter.parameterName;
+  const city = weather.city || "未知地區";
 
-  const pop = Number(
-    elements.find(e => e.elementName === "PoP")
-      .time[0].parameter.parameterName
-  );
+  // 支援兩種資料結構
+  const elements =
+    weather.weatherElement ||
+    (weather.data && weather.data.weatherElement);
 
-  const minT = Number(
-    elements.find(e => e.elementName === "MinT")
-      .time[0].parameter.parameterName
-  );
+  if (!Array.isArray(elements)) {
+    throw new Error("weatherElement not found");
+  }
 
-  const maxT = Number(
-    elements.find(e => e.elementName === "MaxT")
-      .time[0].parameter.parameterName
-  );
+  // ========= 安全取值工具 =========
+  function getParam(names) {
+    for (const name of names) {
+      const el = elements.find(e => e.elementName === name);
+      if (el && el.time && el.time[0] && el.time[0].parameter) {
+        return Number(el.time[0].parameter.parameterName);
+      }
+    }
+    return null;
+  }
 
-  // ======================================================
-  // 標題 emoji（只看雨的重量）
-  // ======================================================
+  function getText(names) {
+    for (const name of names) {
+      const el = elements.find(e => e.elementName === name);
+      if (el && el.time && el.time[0] && el.time[0].parameter) {
+        return el.time[0].parameter.parameterName;
+      }
+    }
+    return "";
+  }
+
+  const wx = getText(["Wx"]);
+  const pop = getParam(["PoP12h", "PoP"]) ?? 0;
+  const minT = getParam(["MinT"]) ?? 0;
+  const maxT = getParam(["MaxT"]) ?? 0;
+
+  // ========= 標題 emoji =========
   let weatherEmoji = "☁️";
   if (pop >= 60) weatherEmoji = "🌧️";
   else if (wx.includes("晴")) weatherEmoji = "☀️";
 
-  // ======================================================
-  // 一、降雨主線（R0–R4）
-  // ======================================================
+  // ========= 降雨主線 =========
   let rainLine = "";
-
   if (pop >= 80) {
     rainLine = "這個基本上就是會下雨了，出門自己想清楚。";
   } else if (pop >= 60) {
@@ -48,17 +64,14 @@ function buildWeatherFriendText(weather) {
     rainLine = "幾乎不太會下雨，雨這件事可以先不用管。";
   }
 
-  // ======================================================
-  // 二、溫度補句（C0–C5｜C2 不說話）
-  // ======================================================
+  // ========= 溫度補句 =========
   let tempLine = "";
-
   if (maxT <= 17) {
     tempLine = "今天是真的偏冷，外出記得加件衣服。";
   } else if (maxT <= 21) {
     tempLine = "天氣偏涼，其實還蠻舒服的。";
   } else if (maxT <= 26) {
-    tempLine = ""; // C2 舒服，不補
+    tempLine = "";
   } else if (maxT <= 30) {
     tempLine = "天氣有點熱，跑來跑去會有點煩。";
   } else if (maxT <= 33) {
@@ -67,12 +80,7 @@ function buildWeatherFriendText(weather) {
     tempLine = "真的很熱，今天就是熱這件事最煩。";
   }
 
-  // ======================================================
-  // 三、組合毛怪說一句（雨主線＋溫度補句）
-  // ======================================================
-  const maoLine = tempLine
-    ? `${rainLine} ${tempLine}`
-    : rainLine;
+  const maoLine = tempLine ? `${rainLine} ${tempLine}` : rainLine;
 
   return `【毛怪天氣 ${weatherEmoji}】
 ━━━━━━━━━━━
