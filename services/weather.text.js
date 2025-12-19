@@ -1,56 +1,47 @@
 // ======================================================
-// 毛怪天氣文案模組｜朋友版 v4.0.2（結構防炸最終版）
+// 毛怪天氣文案模組｜朋友版 v4.1（結構對齊穩定版）
 // ======================================================
 
 function buildWeatherFriendText(weather) {
-  // ========= 最外層防呆 =========
-  if (!weather) {
-    throw new Error("weather is undefined");
-  }
-
-  const city = weather.city || "未知地區";
-
-  // 支援兩種資料結構
-  const elements =
-    weather.weatherElement ||
-    (weather.data && weather.data.weatherElement);
-
-  if (!Array.isArray(elements)) {
+  if (!weather || !Array.isArray(weather.weatherElement)) {
     throw new Error("weatherElement not found");
   }
 
-  // ========= 安全取值工具 =========
-  function getParam(names) {
-    for (const name of names) {
-      const el = elements.find(e => e.elementName === name);
-      if (el && el.time && el.time[0] && el.time[0].parameter) {
-        return Number(el.time[0].parameter.parameterName);
-      }
-    }
-    return null;
-  }
+  const city = weather.city || "未知地區";
+  const elements = weather.weatherElement;
 
+  // ---------- 安全取值 ----------
   function getText(names) {
-    for (const name of names) {
-      const el = elements.find(e => e.elementName === name);
-      if (el && el.time && el.time[0] && el.time[0].parameter) {
+    for (const n of names) {
+      const el = elements.find(e => e.elementName === n);
+      if (el?.time?.[0]?.parameter?.parameterName) {
         return el.time[0].parameter.parameterName;
       }
     }
     return "";
   }
 
-  const wx = getText(["Wx"]);
-  const pop = getParam(["PoP12h", "PoP"]) ?? 0;
-  const minT = getParam(["MinT"]) ?? 0;
-  const maxT = getParam(["MaxT"]) ?? 0;
+  function getNumber(names, def = 0) {
+    for (const n of names) {
+      const el = elements.find(e => e.elementName === n);
+      if (el?.time?.[0]?.parameter?.parameterName) {
+        return Number(el.time[0].parameter.parameterName);
+      }
+    }
+    return def;
+  }
 
-  // ========= 標題 emoji =========
+  const wx = getText(["Wx"]);
+  const pop = getNumber(["PoP12h", "PoP"], 0);
+  const minT = getNumber(["MinT"], 0);
+  const maxT = getNumber(["MaxT"], 0);
+
+  // ---------- 標題 emoji ----------
   let weatherEmoji = "☁️";
   if (pop >= 60) weatherEmoji = "🌧️";
   else if (wx.includes("晴")) weatherEmoji = "☀️";
 
-  // ========= 降雨主線 =========
+  // ---------- 降雨主線 ----------
   let rainLine = "";
   if (pop >= 80) {
     rainLine = "這個基本上就是會下雨了，出門自己想清楚。";
@@ -64,7 +55,7 @@ function buildWeatherFriendText(weather) {
     rainLine = "幾乎不太會下雨，雨這件事可以先不用管。";
   }
 
-  // ========= 溫度補句 =========
+  // ---------- 溫度補句 ----------
   let tempLine = "";
   if (maxT <= 17) {
     tempLine = "今天是真的偏冷，外出記得加件衣服。";
