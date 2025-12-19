@@ -1,5 +1,5 @@
 // ======================================================
-// 毛怪天氣文案模組｜朋友嘴砲版 v1.3（結構對齊版）
+// 毛怪天氣文案模組｜朋友嘴砲版 v1.4（結構自動偵測）
 // ======================================================
 
 function pick(arr) {
@@ -19,6 +19,26 @@ function isNight() {
   return h >= 18 || h < 6;
 }
 
+// 🔒 從任何可能位置安全抓 weatherElement
+function extractWeatherElement(weather) {
+  if (!weather) return null;
+
+  // 情況 A：data.weatherElement
+  if (Array.isArray(weather.data?.weatherElement)) {
+    return weather.data.weatherElement;
+  }
+
+  // 情況 B：data.records.location[0].weatherElement（CWA 常見）
+  if (
+    Array.isArray(weather.data?.records?.location) &&
+    weather.data.records.location[0]?.weatherElement
+  ) {
+    return weather.data.records.location[0].weatherElement;
+  }
+
+  return null;
+}
+
 function getElement(elements, name, fallback = "") {
   try {
     return (
@@ -31,28 +51,22 @@ function getElement(elements, name, fallback = "") {
 }
 
 function buildWeatherFriendText(weather) {
-  // 🔒 結構防呆（但不亂猜）
-  if (
-    !weather ||
-    !weather.data ||
-    !Array.isArray(weather.data.weatherElement)
-  ) {
-    return `${weather?.city || "這個地方"} 天氣資料暫時抓不到，晚點再看。`;
-  }
+  const city = weather?.city || "這個地方";
 
-  const city = weather.city;
-  const elements = weather.data.weatherElement;
+  const elements = extractWeatherElement(weather);
+  if (!elements) {
+    return `${city} 天氣資料暫時抓不到，晚點再看。`;
+  }
 
   const wx = getElement(elements, "Wx", "天氣不明");
   const pop = Number(getElement(elements, "PoP", 0));
   const tMin = Number(getElement(elements, "MinT", 0));
   const tMax = Number(getElement(elements, "MaxT", 0));
 
-  const night = isNight();
   let maoLine = "";
 
   // ======================================================
-  // 🌧️ 降雨機率分級（你定稿的版本）
+  // 🌧️ 降雨機率分級（你定稿）
   // ======================================================
   if (pop <= 20) {
     maoLine = pick([
@@ -89,7 +103,7 @@ function buildWeatherFriendText(weather) {
   }
 
   // 🌙 晚上語氣
-  if (night) {
+  if (isNight()) {
     maoLine += " 晚上要不要出門，你自己評估。";
   }
 
