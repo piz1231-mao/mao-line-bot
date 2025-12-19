@@ -1,68 +1,43 @@
-const axios = require("axios");
+/**
+ * 將氣象署 36 小時資料轉成毛怪朋友版文字
+ * @param {object} data - 來自 weather.service 的資料
+ */
+function buildWeatherFriendText(data) {
+  // 🔒 防呆：確保結構存在
+  const location =
+    data?.records?.location?.[0];
 
-const DEFAULT_CITY = process.env.DEFAULT_CITY || "高雄市";
-
-const CITY_MAP = {
-  "台北": "臺北市",
-  "台北市": "臺北市",
-  "臺北": "臺北市",
-  "臺北市": "臺北市",
-  "新北": "新北市",
-  "桃園": "桃園市",
-  "台中": "臺中市",
-  "臺中": "臺中市",
-  "台南": "臺南市",
-  "臺南": "臺南市",
-  "高雄": "高雄市",
-  "花蓮": "花蓮縣",
-  "台東": "臺東縣",
-  "臺東": "臺東縣"
-};
-
-function normalizeCity(input) {
-  if (!input || input.trim() === "") return DEFAULT_CITY;
-  return CITY_MAP[input.trim()] || DEFAULT_CITY;
-}
-
-async function get36hrWeather(cityName) {
-  const city = normalizeCity(cityName);
-
-  const url =
-    "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001";
-
-  const res = await axios.get(url, {
-    params: {
-      Authorization: process.env.CWA_API_KEY
-    },
-    timeout: 5000
-  });
-
-  const data = res.data;
-
-  if (!data || data.success !== "true") {
-    throw new Error(`CWA API error: ${data?.msg || "unknown"}`);
+  if (!location || !Array.isArray(location.weatherElement)) {
+    throw new Error("Invalid weather data structure (location/weatherElement)");
   }
 
-  const locations = data.records?.location;
-  if (!Array.isArray(locations)) {
-    throw new Error("Invalid CWA data format");
+  const city = location.locationName;
+  const elements = location.weatherElement;
+
+  // 找欄位
+  const wx = elements.find(e => e.elementName === "Wx");
+  const pop = elements.find(e => e.elementName === "PoP");
+  const minT = elements.find(e => e.elementName === "MinT");
+  const maxT = elements.find(e => e.elementName === "MaxT");
+
+  if (!wx || !wx.time?.length) {
+    throw new Error("Missing Wx data");
   }
 
-  const target = locations.find(l => l.locationName === city);
-  if (!target) {
-    throw new Error(`No weather data for city: ${city}`);
-  }
+  // 取第一段時間
+  const period = wx.time[0];
 
-  // ✅ 保持舊格式，只縮成單一城市
-  return {
-    ...data,
-    records: {
-      ...data.records,
-      location: [target]
-    }
-  };
+  const desc = period.parameter?.parameterName || "未知天氣";
+  const rain = pop?.time?.[0]?.parameter?.parameterName ?? "—";
+  const minTemp = minT?.time?.[0]?.parameter?.parameterName ?? "—";
+  const maxTemp = maxT?.time?.[0]?.parameter?.parameterName ?? "—";
+
+  return `【${city} 天氣預報】
+天氣：${desc}
+降雨機率：${rain}%
+氣溫：${minTemp}°C ～ ${maxTemp}°C`;
 }
 
 module.exports = {
-  get36hrWeather
+  buildWeatherFriendText
 };
