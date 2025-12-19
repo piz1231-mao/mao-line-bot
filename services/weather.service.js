@@ -33,7 +33,6 @@ async function get36hrWeather(cityName) {
   const res = await axios.get(url, {
     params: {
       Authorization: process.env.CWA_API_KEY
-      // ⚠️ 不用 locationName，先整包拿
     },
     timeout: 5000
   });
@@ -44,10 +43,9 @@ async function get36hrWeather(cityName) {
     throw new Error(`CWA API error: ${data?.msg || "unknown"}`);
   }
 
-  // 🔑 關鍵：只在 service 裡篩選城市
   const locations = data.records?.location;
   if (!Array.isArray(locations)) {
-    throw new Error("Invalid weather data format");
+    throw new Error("Invalid CWA data format");
   }
 
   const target = locations.find(l => l.locationName === city);
@@ -55,7 +53,7 @@ async function get36hrWeather(cityName) {
     throw new Error(`No weather data for city: ${city}`);
   }
 
-  // ✅ 回傳「舊格式」，但只剩目標城市
+  // ✅ 保持舊格式，只縮成單一城市
   return {
     ...data,
     records: {
