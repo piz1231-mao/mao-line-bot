@@ -121,20 +121,40 @@ async function getTXF() {
 }
 
 // ======================================================
-// 人性指令解析器（核心）
+// 指令解析（混合模式核心）
 // ======================================================
-function parseHumanCommand(text, keywordMap) {
+function parseCommand(text) {
   if (!text) return null;
   const t = text.trim();
+
+  // --- ① 精準模式（有冒號）---
+  if (t.includes("：")) {
+    const [cmd, arg = ""] = t.split("：");
+    return {
+      mode: "exact",
+      command: cmd.trim(),
+      arg: arg.trim()
+    };
+  }
+
+  // --- ② 人性模式（關鍵字在句首）---
+  const keywordMap = {
+    TXF: ["台指期", "查台指", "看台指"],
+    WEATHER: ["天氣", "查天氣", "看天氣"]
+  };
 
   for (const [type, keywords] of Object.entries(keywordMap)) {
     for (const k of keywords) {
       if (t === k || t.startsWith(k + " ")) {
-        const arg = t.slice(k.length).trim();
-        return { type, arg };
+        return {
+          mode: "human",
+          command: type,
+          arg: t.slice(k.length).trim()
+        };
       }
     }
   }
+
   return null;
 }
 
@@ -150,19 +170,14 @@ app.post(
         if (event.type !== "message") continue;
         if (event.message.type !== "text") continue;
 
-        const text = event.message.text;
-
-        // ===== 關鍵字白名單（人性版）=====
-        const keywordMap = {
-          TXF: ["台指期", "查台指", "看台指"],
-          WEATHER: ["天氣", "查天氣", "看天氣"]
-        };
-
-        const parsed = parseHumanCommand(text, keywordMap);
-        if (!parsed) continue; // ❗ 指令不成立 → 靜默
+        const parsed = parseCommand(event.message.text);
+        if (!parsed) continue; // ❗ 靜默
 
         // ===== 台指期 =====
-        if (parsed.type === "TXF") {
+        if (
+          parsed.command === "台指期" ||
+          parsed.command === "TXF"
+        ) {
           try {
             const txf = await getTXF();
             await client.replyMessage(event.replyToken, {
@@ -181,11 +196,16 @@ app.post(
           continue;
         }
 
-        // ===== 天氣 =====
-        if (parsed.type === "WEATHER") {
+        // ===== 天氣（全台）=====
+        if (
+          parsed.command === "天氣" ||
+          parsed.command === "WEATHER"
+        ) {
           try {
-            const result = await get36hrWeather(parsed.arg);
+            const city = parsed.arg || process.env.DEFAULT_CITY || "高雄";
+            const result = await get36hrWeather(city);
             const reply = buildWeatherFriendText(result);
+
             await client.replyMessage(event.replyToken, {
               type: "text",
               text: reply
@@ -199,13 +219,19 @@ app.post(
           continue;
         }
 
-        // ===== chat 指令模組（同樣人性判斷）=====
+        // ===== chat 指令模組（混合模式）=====
         for (const cmd of COMMANDS) {
-          const parsedCmd = parseHumanCommand(text, {
-            CHAT: cmd.commands
-          });
-          if (parsedCmd) {
-            await cmd.handler(client, event, parsedCmd.arg);
+          // 精準
+          if (parsed.mode === "exact" && cmd.commands.includes(parsed.command)) {
+            await cmd.handler(client, event, parsed.arg);
+            break;
+          }
+          // 人性
+          if (
+            parsed.mode === "human" &&
+            cmd.commands.includes(parsed.command)
+          ) {
+            await cmd.handler(client, event, parsed.arg);
             break;
           }
         }
