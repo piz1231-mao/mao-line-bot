@@ -1,5 +1,5 @@
 // ======================================================
-// 毛怪秘書 LINE Bot — index.js（線上正式版｜Yahoo 台指期定版）
+// 毛怪秘書 LINE Bot — index.js（線上正式版）
 // ======================================================
 
 require("dotenv").config();
@@ -49,10 +49,7 @@ if (fs.existsSync(commandsDir)) {
     .forEach(file => {
       const mod = require(path.join(commandsDir, file));
       if (Array.isArray(mod.commands) && typeof mod.handler === "function") {
-        COMMANDS.push({
-          commands: mod.commands, // ⚠️ 改成「完整指令前綴」
-          handler: mod.handler
-        });
+        COMMANDS.push(mod);
 
         global.MAO_COMMANDS.push({
           name: file.replace(".js", ""),
@@ -79,9 +76,7 @@ app.all(
       let content = req.body || "";
 
       if (typeof content === "string") {
-        try {
-          body = JSON.parse(content);
-        } catch {}
+        try { body = JSON.parse(content); } catch {}
       }
 
       const msg = body.message || body.alert || content;
@@ -126,18 +121,21 @@ async function getTXF() {
 }
 
 // ======================================================
-// 指令解析器（核心）
+// 人性指令解析器（核心）
 // ======================================================
-function parseCommand(text) {
-  if (!text || !text.includes("：")) return null;
+function parseHumanCommand(text, keywordMap) {
+  if (!text) return null;
+  const t = text.trim();
 
-  const [rawCmd, rawArg] = text.split("：");
-  const command = rawCmd.trim();
-  const arg = rawArg?.trim();
-
-  if (!command || !arg) return null;
-
-  return { command, arg };
+  for (const [type, keywords] of Object.entries(keywordMap)) {
+    for (const k of keywords) {
+      if (t === k || t.startsWith(k + " ")) {
+        const arg = t.slice(k.length).trim();
+        return { type, arg };
+      }
+    }
+  }
+  return null;
 }
 
 // ======================================================
@@ -152,15 +150,19 @@ app.post(
         if (event.type !== "message") continue;
         if (event.message.type !== "text") continue;
 
-        const rawText = event.message.text || "";
-        const parsed = parseCommand(rawText);
+        const text = event.message.text;
 
-        if (!parsed) continue; // ❗ 不合法指令 → 靜默
+        // ===== 關鍵字白名單（人性版）=====
+        const keywordMap = {
+          TXF: ["台指期", "查台指", "看台指"],
+          WEATHER: ["天氣", "查天氣", "看天氣"]
+        };
 
-        const { command, arg } = parsed;
+        const parsed = parseHumanCommand(text, keywordMap);
+        if (!parsed) continue; // ❗ 指令不成立 → 靜默
 
-        // ===== 台指期（明確指令制）=====
-        if (command === "台指期") {
+        // ===== 台指期 =====
+        if (parsed.type === "TXF") {
           try {
             const txf = await getTXF();
             await client.replyMessage(event.replyToken, {
@@ -179,10 +181,10 @@ app.post(
           continue;
         }
 
-        // ===== 天氣（明確指令制）=====
-        if (command === "天氣") {
+        // ===== 天氣 =====
+        if (parsed.type === "WEATHER") {
           try {
-            const result = await get36hrWeather(arg);
+            const result = await get36hrWeather(parsed.arg);
             const reply = buildWeatherFriendText(result);
             await client.replyMessage(event.replyToken, {
               type: "text",
@@ -197,10 +199,13 @@ app.post(
           continue;
         }
 
-        // ===== chat 指令模組（完整前綴比對）=====
+        // ===== chat 指令模組（同樣人性判斷）=====
         for (const cmd of COMMANDS) {
-          if (cmd.commands.includes(command)) {
-            await cmd.handler(client, event, arg);
+          const parsedCmd = parseHumanCommand(text, {
+            CHAT: cmd.commands
+          });
+          if (parsedCmd) {
+            await cmd.handler(client, event, parsedCmd.arg);
             break;
           }
         }
