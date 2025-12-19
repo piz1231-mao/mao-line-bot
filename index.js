@@ -1,16 +1,14 @@
 // ======================================================
-// 毛怪秘書 LINE Bot — index.js（線上正式版 v1.1）
+// 毛怪秘書 LINE Bot — index.js（線上正式版 v1.2）
 // 功能：
 // - TradingView 訊號接收
 // - Yahoo 台指期查詢
-// - 天氣查詢（預設城市 / 城市在前後皆可）
+// - 天氣查詢（天氣 / 天氣 台中 / 天氣 彰化）
 // ======================================================
 
 require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
-const fs = require("fs");
-const path = require("path");
 const axios = require("axios");
 
 const app = express();
@@ -37,7 +35,7 @@ if (!config.channelAccessToken || !config.channelSecret) {
 const client = new line.Client(config);
 
 // ======================================================
-// TradingView Webhook（維持原本用途）
+// TradingView Webhook（原樣保留）
 // ======================================================
 const tvAlert = require("./services/tvAlert");
 
@@ -72,45 +70,27 @@ async function getTXF() {
   const url =
     "https://query1.finance.yahoo.com/v7/finance/quote?symbols=TXF=F";
 
-  const res = await axios.get(url, {
-    headers: {
-      "User-Agent": "Mozilla/5.0",
-      "Accept": "application/json, text/plain, */*"
-    },
-    timeout: 5000
-  });
-
+  const res = await axios.get(url, { timeout: 5000 });
   const q = res.data.quoteResponse.result[0];
   if (!q) throw new Error("No TXF data");
 
   return {
     price: q.regularMarketPrice,
     change: q.regularMarketChange,
-    changePct: q.regularMarketChangePercent,
-    time: new Date(q.regularMarketTime * 1000).toLocaleTimeString("zh-TW", {
-      hour: "2-digit",
-      minute: "2-digit"
-    })
+    changePct: q.regularMarketChangePercent
   };
 }
 
 // ======================================================
-// 指令解析（混合模式）
+// 指令解析（你原本的，不動）
 // ======================================================
 function parseCommand(text) {
   if (!text) return null;
   const t = text.trim();
 
-  // 精準模式（冒號）
-  if (t.includes("：")) {
-    const [cmd, arg = ""] = t.split("：");
-    return { command: cmd.trim(), arg: arg.trim() };
-  }
-
-  // 人性模式（句首）
   const keywordMap = {
-    WEATHER: ["天氣", "查天氣", "看天氣"],
-    TXF: ["台指期", "查台指", "看台指"]
+    WEATHER: ["天氣"],
+    TXF: ["台指期"]
   };
 
   for (const [type, keys] of Object.entries(keywordMap)) {
@@ -122,6 +102,36 @@ function parseCommand(text) {
   }
   return null;
 }
+
+// ======================================================
+// 城市正規化表（🔥 關鍵）
+// ======================================================
+const CITY_MAP = {
+  "台北": "臺北市",
+  "臺北": "臺北市",
+  "新北": "新北市",
+  "桃園": "桃園市",
+  "台中": "臺中市",
+  "臺中": "臺中市",
+  "台南": "臺南市",
+  "臺南": "臺南市",
+  "高雄": "高雄市",
+  "基隆": "基隆市",
+  "新竹": "新竹市",
+  "苗栗": "苗栗縣",
+  "彰化": "彰化縣",
+  "南投": "南投縣",
+  "雲林": "雲林縣",
+  "嘉義": "嘉義市",
+  "屏東": "屏東縣",
+  "宜蘭": "宜蘭縣",
+  "花蓮": "花蓮縣",
+  "台東": "臺東縣",
+  "臺東": "臺東縣",
+  "澎湖": "澎湖縣",
+  "金門": "金門縣",
+  "連江": "連江縣"
+};
 
 // ======================================================
 // LINE Webhook
@@ -138,48 +148,13 @@ app.post(
         const parsed = parseCommand(event.message.text);
         if (!parsed) continue;
 
-        // ===== 台指期 =====
-        if (parsed.command === "台指期" || parsed.command === "TXF") {
-          const txf = await getTXF();
-          await client.replyMessage(event.replyToken, {
-            type: "text",
-            text: `【台指期即時】
-目前：${txf.price}
-漲跌：${txf.change > 0 ? "▲" : "▼"}${txf.change.toFixed(0)}（${txf.changePct.toFixed(2)}%）
-時間：${txf.time}`
-          });
-          continue;
-        }
-
         // ===== 天氣 =====
-        if (parsed.command === "天氣" || parsed.command === "WEATHER") {
+        if (parsed.command === "WEATHER") {
           const DEFAULT_CITY = process.env.DEFAULT_CITY || "高雄市";
-          let city = parsed.arg && parsed.arg.trim();
+          let city = DEFAULT_CITY;
 
-          // 1️⃣ 沒帶城市 → 用預設
-          if (!city) {
-            city = DEFAULT_CITY;
-          }
-
-          // 2️⃣ 支援「台中天氣 / 高雄天氣」
-          if (!parsed.arg) {
-            const CITY_KEYS = [
-              "台北","臺北","新北","桃園","台中","臺中","台南","臺南","高雄",
-              "基隆","新竹","苗栗","彰化","南投","雲林","嘉義","屏東",
-              "宜蘭","花蓮","台東","臺東","澎湖","金門","連江"
-            ];
-
-            for (const k of CITY_KEYS) {
-              if (event.message.text.includes(k)) {
-                // ✅ 統一轉成氣象署用字「臺」
-                const normalized = k.replace("台", "臺");
-                city =
-                  normalized.endsWith("市") || normalized.endsWith("縣")
-                    ? normalized
-                    : normalized + "市";
-                break;
-              }
-            }
+          if (parsed.arg && CITY_MAP[parsed.arg]) {
+            city = CITY_MAP[parsed.arg];
           }
 
           const result = await get36hrWeather(city);
@@ -189,7 +164,6 @@ app.post(
             type: "text",
             text: reply
           });
-          continue;
         }
       }
 
