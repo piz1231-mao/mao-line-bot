@@ -1,5 +1,9 @@
 // ======================================================
-// 毛怪秘書 LINE Bot — index.js（線上正式版｜Yahoo 台指期定版）
+// 毛怪秘書 LINE Bot — index.js（線上正式版 v1.1）
+// 功能：
+// - TradingView 訊號接收
+// - Yahoo 台指期查詢
+// - 天氣查詢（預設城市 / 城市在前後皆可）
 // ======================================================
 
 require("dotenv").config();
@@ -62,7 +66,7 @@ app.all(
 );
 
 // ======================================================
-// 台指期查詢（Yahoo Finance｜定版）
+// 台指期查詢（Yahoo Finance）
 // ======================================================
 async function getTXF() {
   const url =
@@ -149,22 +153,41 @@ app.post(
 
         // ===== 天氣 =====
         if (parsed.command === "天氣" || parsed.command === "WEATHER") {
-          try {
-            const result = await get36hrWeather(parsed.arg);
-            const reply = buildWeatherFriendText(result);
+          const DEFAULT_CITY = process.env.DEFAULT_CITY || "高雄市";
+          let city = parsed.arg && parsed.arg.trim();
 
-            await client.replyMessage(event.replyToken, {
-              type: "text",
-              text: reply
-            });
-          } catch (err) {
-            // 🔥 關鍵：一定會印出真正錯誤
-            console.error("🌧 WEATHER ERROR:", err);
-            await client.replyMessage(event.replyToken, {
-              type: "text",
-              text: "天氣資料暫時取得失敗（系統）"
-            });
+          // 1) 沒帶城市 → 用預設
+          if (!city) {
+            city = DEFAULT_CITY;
           }
+
+          // 2) 支援「台中天氣 / 高雄天氣」
+          if (!parsed.arg) {
+            const CITY_KEYS = [
+              "台北","臺北","新北","桃園","台中","臺中","台南","臺南","高雄",
+              "基隆","新竹","苗栗","彰化","南投","雲林","嘉義","屏東",
+              "宜蘭","花蓮","台東","臺東","澎湖","金門","連江"
+            ];
+
+            for (const k of CITY_KEYS) {
+              if (event.message.text.includes(k)) {
+                city = k
+                  .replace("臺", "台")
+                  .endsWith("市") || k.endsWith("縣")
+                  ? k.replace("臺", "台")
+                  : k.replace("臺", "台") + "市";
+                break;
+              }
+            }
+          }
+
+          const result = await get36hrWeather(city);
+          const reply = buildWeatherFriendText(result);
+
+          await client.replyMessage(event.replyToken, {
+            type: "text",
+            text: reply
+          });
           continue;
         }
       }
