@@ -2,9 +2,8 @@ const axios = require("axios");
 
 const DEFAULT_CITY = process.env.DEFAULT_CITY || "高雄市";
 
-// 中央氣象署正式縣市名稱對照
+// 中央氣象署正式縣市名稱
 const CITY_MAP = {
-  // 直轄市
   "台北": "臺北市",
   "台北市": "臺北市",
   "臺北": "臺北市",
@@ -29,60 +28,49 @@ const CITY_MAP = {
   "高雄": "高雄市",
   "高雄市": "高雄市",
 
-  // 縣
-  "基隆": "基隆市",
-  "新竹": "新竹市",
-  "新竹市": "新竹市",
-  "新竹縣": "新竹縣",
-
-  "苗栗": "苗栗縣",
-  "彰化": "彰化縣",
-  "南投": "南投縣",
-  "雲林": "雲林縣",
-  "嘉義": "嘉義市",
-  "嘉義市": "嘉義市",
-  "嘉義縣": "嘉義縣",
-
-  "屏東": "屏東縣",
   "宜蘭": "宜蘭縣",
   "花蓮": "花蓮縣",
   "台東": "臺東縣",
   "臺東": "臺東縣",
-  "臺東縣": "臺東縣",
-
+  "屏東": "屏東縣",
   "澎湖": "澎湖縣",
   "金門": "金門縣",
   "連江": "連江縣"
 };
 
 function normalizeCity(input) {
-  if (!input || input.trim() === "") {
-    return DEFAULT_CITY;
-  }
-
-  const key = input.trim();
-  return CITY_MAP[key] || DEFAULT_CITY;
+  if (!input || input.trim() === "") return DEFAULT_CITY;
+  return CITY_MAP[input.trim()] || DEFAULT_CITY;
 }
 
 /**
- * 取得 36 小時天氣資料
- * @param {string} cityName - 使用者輸入的城市名稱
+ * 取得 36 小時天氣
  */
 async function get36hrWeather(cityName) {
   const city = normalizeCity(cityName);
 
-  const url = "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001";
+  const url =
+    "https://opendata.cwa.gov.tw/api/v1/rest/datastore/F-C0032-001";
 
   const res = await axios.get(url, {
     params: {
-      Authorization: process.env.CWA_API_KEY,
+      Authorization: process.env.CWA_API_KEY, // ← 一定要確認這個有值
       locationName: city
     },
     timeout: 5000
   });
 
-  const locations = res.data?.records?.location;
-  if (!locations || locations.length === 0) {
+  const data = res.data;
+
+  // ===== 關鍵防呆 =====
+  if (!data || data.success !== "true") {
+    throw new Error(
+      `CWA API error: ${data?.msg || "unknown error"}`
+    );
+  }
+
+  const locations = data.records?.location;
+  if (!Array.isArray(locations) || locations.length === 0) {
     throw new Error(`No weather data for city: ${city}`);
   }
 
