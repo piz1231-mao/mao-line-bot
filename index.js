@@ -1,14 +1,17 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// 線上正式版 v1.2（穩定功能鎖死）＋
-// 私訊測試（大哥您好）＋
-// 待辦功能（依 commands/chat/todo.js 設計）
+// 基準定版 v1.2（穩定功能鎖死）＋
+// A-1 業績回報：私訊 → 原文寫入 Google Sheet
+// - 自動建立分頁（茶六博愛）
 // ======================================================
 
 require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
 const axios = require("axios");
+const fs = require("fs");
+const { GoogleAuth } = require("google-auth-library");
+const { google } = require("googleapis");
 
 const app = express();
 
@@ -34,9 +37,24 @@ const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
 
 // ======================================================
-// chat 指令模組（只接，不改內部）
+// chat 指令模組（待辦｜舊有功能）
 // ======================================================
 const todoCmd = require("./commands/chat/todo");
+
+// ======================================================
+// Google Sheet 設定（業績回報用）
+// ======================================================
+const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
+const SALES_SHEET_NAME = "茶六博愛";
+
+const credentials = JSON.parse(
+  fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
+);
+
+const auth = new GoogleAuth({
+  credentials,
+  scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+});
 
 // ======================================================
 // TradingView Webhook（原樣保留）
@@ -68,7 +86,7 @@ app.all(
 );
 
 // ======================================================
-// 指令解析（天氣｜舊有行為保留）
+// 天氣指令解析（舊有行為保留）
 // ======================================================
 function parseCommand(text) {
   if (!text) return null;
@@ -84,7 +102,7 @@ function parseCommand(text) {
 }
 
 // ======================================================
-// 城市正規化表（🔥 完整版，鎖死不再動）
+// 城市正規化表（完整鎖死版）
 // ======================================================
 const CITY_MAP = {
   "台北": "臺北市",
@@ -114,19 +132,99 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 🧪 私訊測試（業績回報第一階段）
-// 條件：1 對 1 私訊 + 開頭「大哥您好」
+// Google Sheet 工具：確保分頁存在
+// ======================================================
+async function ensureSheetExists(sheetName) {
+  const client = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: client });
+
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID
+  });
+
+  const exists = meta.data.sheets.some(
+    s => s.properties.title === sheetName
+  );
+
+  if (exists) return;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      requests: [{
+        addSheet: {
+          properties: { title: sheetName }
+        }
+      }]
+    }
+  });
+
+  // 建立標題列
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${sheetName}!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        "時間",
+        "回報者 userId",
+        "來源 sourceId",
+        "原始回報內容"
+      ]]
+    }
+  });
+}
+
+// ======================================================
+// 寫入業績回報（原文保存）
+// ======================================================
+async function appendSalesRaw({ timestamp, userId, sourceId, rawText }) {
+  const client = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: client });
+
+  await ensureSheetExists(SALES_SHEET_NAME);
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SALES_SHEET_NAME}!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[timestamp, userId, sourceId, rawText]]
+    }
+  });
+}
+
+// ======================================================
+// 🧪 私訊測試（業績回報 A-1）
 // ======================================================
 async function handlePrivateSalesTest(event) {
   if (event.type !== "message") return false;
   if (event.source.type !== "user") return false;
   if (event.message.type !== "text") return false;
 
-  if (!event.message.text.startsWith("大哥您好")) return false;
+  const text = event.message.text.trim();
+  if (!text.startsWith("大哥您好")) return false;
+
+  const timestamp = new Date().toLocaleString("zh-TW", {
+    timeZone: "Asia/Taipei"
+  });
+
+  const sourceId = event.source.userId;
+
+  try {
+    await appendSalesRaw({
+      timestamp,
+      userId: event.source.userId,
+      sourceId,
+      rawText: text
+    });
+  } catch (err) {
+    console.error("❌ 業績回報寫入失敗", err);
+  }
 
   await client.replyMessage(event.replyToken, {
     type: "text",
-    text: "收到（私訊測試中）"
+    text: "已記錄"
   });
 
   return true;
@@ -142,9 +240,7 @@ app.post(
     try {
       for (const event of req.body.events || []) {
 
-        // --------------------------------------------------
-        // ① 私訊測試（只吃「大哥您好」，不影響其他）
-        // --------------------------------------------------
+        // ① 業績回報（私訊）
         if (await handlePrivateSalesTest(event)) continue;
 
         if (event.type !== "message") continue;
@@ -152,9 +248,7 @@ app.post(
 
         const text = event.message.text.trim();
 
-        // --------------------------------------------------
-        // ② 待辦（依 todo.js 設計：keywords + handler）
-        // --------------------------------------------------
+        // ② 待辦（舊有功能）
         if (
           todoCmd.keywords &&
           todoCmd.keywords.some(k => text.startsWith(k))
@@ -163,9 +257,7 @@ app.post(
           continue;
         }
 
-        // --------------------------------------------------
-        // ③ 天氣（舊有穩定功能，行為不變）
-        // --------------------------------------------------
+        // ③ 天氣（舊有功能）
         const parsed = parseCommand(text);
         if (parsed && parsed.command === "WEATHER") {
           const DEFAULT_CITY = process.env.DEFAULT_CITY || "高雄市";
