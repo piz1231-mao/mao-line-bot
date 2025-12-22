@@ -1,6 +1,6 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// 線上正式版 v1.2 + 私訊測試 + chat 指令修復版
+// 線上正式版 v1.2 + 私訊測試 + chat 指令最終修正版
 // ======================================================
 
 require("dotenv").config();
@@ -32,7 +32,7 @@ const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
 
 // ======================================================
-// commands/chat（原本的待辦、help 都在這）
+// commands/chat（你原本就有的）
 // ======================================================
 const helpCmd = require("./commands/chat/help");
 const idCmd = require("./commands/chat/id");
@@ -91,7 +91,7 @@ function parseCommand(text) {
 }
 
 // ======================================================
-// 城市正規化表
+// 城市正規化
 // ======================================================
 const CITY_MAP = {
   "台北": "臺北市",
@@ -103,35 +103,7 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// ⭐ chat 指令安全執行器（關鍵修復）
-// 支援：
-// - module.exports = function
-// - module.exports = { execute() }
-// - module.exports = { run() }
-// ======================================================
-async function runChatCommand(cmd, event, client) {
-  if (!cmd) return false;
-
-  if (typeof cmd === "function") {
-    await cmd(event, client);
-    return true;
-  }
-
-  if (typeof cmd.execute === "function") {
-    await cmd.execute(event, client);
-    return true;
-  }
-
-  if (typeof cmd.run === "function") {
-    await cmd.run(event, client);
-    return true;
-  }
-
-  return false;
-}
-
-// ======================================================
-// 🧪 私訊測試｜業績回報（第一階段）
+// 🧪 私訊測試（業績回報第一階段）
 // ======================================================
 async function handlePrivateSalesTest(event) {
   if (event.type !== "message") return false;
@@ -140,9 +112,6 @@ async function handlePrivateSalesTest(event) {
 
   const text = event.message.text.trim();
   if (!text.startsWith("大哥您好")) return false;
-
-  console.log("🧪【私訊測試】命中業績回報");
-  console.log(text);
 
   await client.replyMessage(event.replyToken, {
     type: "text",
@@ -162,23 +131,18 @@ app.post(
     try {
       for (const event of req.body.events || []) {
 
-        // --------------------------------------------------
-        // 🧪 私訊測試（最高優先，不影響其他功能）
-        // --------------------------------------------------
-        const handled = await handlePrivateSalesTest(event);
-        if (handled) continue;
+        // ① 私訊測試（最優先）
+        if (await handlePrivateSalesTest(event)) {
+          continue;
+        }
 
-        // --------------------------------------------------
-        // chat 指令（help / id / interview / todo）
-        // --------------------------------------------------
-        if (await runChatCommand(helpCmd, event, client)) continue;
-        if (await runChatCommand(idCmd, event, client)) continue;
-        if (await runChatCommand(interviewCmd, event, client)) continue;
-        if (await runChatCommand(todoCmd, event, client)) continue;
+        // ② chat 指令（⚠️ 不要 continue，讓它們自己判斷）
+        if (helpCmd?.handle) await helpCmd.handle(event, client);
+        if (idCmd?.handle) await idCmd.handle(event, client);
+        if (interviewCmd?.handle) await interviewCmd.handle(event, client);
+        if (todoCmd?.handle) await todoCmd.handle(event, client);
 
-        // --------------------------------------------------
-        // 天氣 / 台指期（你原本的）
-        // --------------------------------------------------
+        // ③ 天氣 / 台指期
         if (event.type !== "message") continue;
         if (event.message.type !== "text") continue;
 
