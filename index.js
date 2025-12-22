@@ -1,8 +1,7 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
 // 基準定版 v1.2（穩定功能鎖死）＋
-// A-1 業績回報：私訊 → 原文寫入 Google Sheet
-// - 自動建立分頁（茶六博愛）
+// A-2 茶六博愛｜分類寫入 v1
 // ======================================================
 
 require("dotenv").config();
@@ -31,18 +30,15 @@ if (!config.channelAccessToken || !config.channelSecret) {
 const client = new line.Client(config);
 
 // ======================================================
-// 自家 services（舊有穩定功能）
+// 舊有穩定 services（不動）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
-
-// ======================================================
-// chat 指令模組（待辦｜舊有功能）
-// ======================================================
 const todoCmd = require("./commands/chat/todo");
+const tvAlert = require("./services/tvAlert");
 
 // ======================================================
-// Google Sheet 設定（業績回報用）
+// Google Sheet 設定
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const SALES_SHEET_NAME = "茶六博愛";
@@ -59,8 +55,6 @@ const auth = new GoogleAuth({
 // ======================================================
 // TradingView Webhook（原樣保留）
 // ======================================================
-const tvAlert = require("./services/tvAlert");
-
 app.all(
   "/tv-alert",
   express.text({ type: "*/*" }),
@@ -68,14 +62,11 @@ app.all(
     try {
       let body = {};
       let content = req.body || "";
-
       if (typeof content === "string") {
         try { body = JSON.parse(content); } catch {}
       }
-
       const msg = body.message || body.alert || content;
       const price = body.close ?? body.price ?? null;
-
       await tvAlert(client, msg, { ...body, price });
       res.status(200).send("OK");
     } catch (err) {
@@ -86,118 +77,85 @@ app.all(
 );
 
 // ======================================================
-// 天氣指令解析（舊有行為保留）
+// 天氣（舊有功能，不動）
 // ======================================================
 function parseCommand(text) {
   if (!text) return null;
   const t = text.trim();
-
   if (t === "天氣" || t.startsWith("天氣 ")) {
-    return {
-      command: "WEATHER",
-      arg: t.replace("天氣", "").trim()
-    };
+    return { command: "WEATHER", arg: t.replace("天氣", "").trim() };
   }
   return null;
 }
 
-// ======================================================
-// 城市正規化表（完整鎖死版）
-// ======================================================
 const CITY_MAP = {
-  "台北": "臺北市",
-  "臺北": "臺北市",
-  "新北": "新北市",
-  "桃園": "桃園市",
-  "台中": "臺中市",
-  "臺中": "臺中市",
-  "台南": "臺南市",
-  "臺南": "臺南市",
-  "高雄": "高雄市",
-  "基隆": "基隆市",
-  "新竹": "新竹市",
-  "苗栗": "苗栗縣",
-  "彰化": "彰化縣",
-  "南投": "南投縣",
-  "雲林": "雲林縣",
-  "嘉義": "嘉義市",
-  "屏東": "屏東縣",
-  "宜蘭": "宜蘭縣",
-  "花蓮": "花蓮縣",
-  "台東": "臺東縣",
-  "臺東": "臺東縣",
-  "澎湖": "澎湖縣",
-  "金門": "金門縣",
-  "連江": "連江縣"
+  "台北": "臺北市", "臺北": "臺北市",
+  "新北": "新北市", "桃園": "桃園市",
+  "台中": "臺中市", "臺中": "臺中市",
+  "台南": "臺南市", "臺南": "臺南市",
+  "高雄": "高雄市", "基隆": "基隆市",
+  "新竹": "新竹市", "苗栗": "苗栗縣",
+  "彰化": "彰化縣", "南投": "南投縣",
+  "雲林": "雲林縣", "嘉義": "嘉義市",
+  "屏東": "屏東縣", "宜蘭": "宜蘭縣",
+  "花蓮": "花蓮縣", "台東": "臺東縣",
+  "臺東": "臺東縣", "澎湖": "澎湖縣",
+  "金門": "金門縣", "連江": "連江縣"
 };
 
 // ======================================================
-// Google Sheet 工具：確保分頁存在
+// 🧠 分類解析工具（茶六博愛 v1）
 // ======================================================
-async function ensureSheetExists(sheetName) {
-  const client = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: client });
+function parseBusinessDate(text) {
+  const m = text.match(/(\d{1,2})\/(\d{1,2})/);
+  if (!m) return "";
+  const year = new Date().getFullYear();
+  const mm = m[1].padStart(2, "0");
+  const dd = m[2].padStart(2, "0");
+  return `${year}-${mm}-${dd}`;
+}
 
-  const meta = await sheets.spreadsheets.get({
-    spreadsheetId: SPREADSHEET_ID
-  });
-
-  const exists = meta.data.sheets.some(
-    s => s.properties.title === sheetName
-  );
-
-  if (exists) return;
-
-  await sheets.spreadsheets.batchUpdate({
-    spreadsheetId: SPREADSHEET_ID,
-    requestBody: {
-      requests: [{
-        addSheet: {
-          properties: { title: sheetName }
-        }
-      }]
-    }
-  });
-
-  // 建立標題列
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${sheetName}!A1`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [[
-        "時間",
-        "回報者 userId",
-        "來源 sourceId",
-        "原始回報內容"
-      ]]
-    }
-  });
+function parseRevenue(text) {
+  const m = text.match(/業績\s*[:：]\s*([\d,]+)/);
+  if (!m) return "";
+  return Number(m[1].replace(/,/g, ""));
 }
 
 // ======================================================
-// 寫入業績回報（原文保存）
+// 寫入分類欄位（E～H）
 // ======================================================
-async function appendSalesRaw({ timestamp, userId, sourceId, rawText }) {
-  const client = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: client });
+async function appendSalesWithCategory({
+  timestamp, userId, sourceId, rawText
+}) {
+  const clientAuth = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: clientAuth });
 
-  await ensureSheetExists(SALES_SHEET_NAME);
+  const businessDate = parseBusinessDate(rawText);
+  const revenue = parseRevenue(rawText);
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: `${SALES_SHEET_NAME}!A1`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: [[timestamp, userId, sourceId, rawText]]
+      values: [[
+        timestamp,          // A
+        userId,             // B
+        sourceId,           // C
+        rawText,            // D
+        "茶六博愛",         // E 店別
+        businessDate,       // F 營業日期
+        revenue,            // G 總業績
+        "業績"              // H 回報類型
+      ]]
     }
   });
 }
 
 // ======================================================
-// 🧪 私訊測試（業績回報 A-1）
+// 私訊業績回報（A-2）
 // ======================================================
-async function handlePrivateSalesTest(event) {
+async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
   if (event.source.type !== "user") return false;
   if (event.message.type !== "text") return false;
@@ -209,17 +167,15 @@ async function handlePrivateSalesTest(event) {
     timeZone: "Asia/Taipei"
   });
 
-  const sourceId = event.source.userId;
-
   try {
-    await appendSalesRaw({
+    await appendSalesWithCategory({
       timestamp,
       userId: event.source.userId,
-      sourceId,
+      sourceId: event.source.userId,
       rawText: text
     });
   } catch (err) {
-    console.error("❌ 業績回報寫入失敗", err);
+    console.error("❌ 茶六博愛分類寫入失敗", err);
   }
 
   await client.replyMessage(event.replyToken, {
@@ -241,14 +197,13 @@ app.post(
       for (const event of req.body.events || []) {
 
         // ① 業績回報（私訊）
-        if (await handlePrivateSalesTest(event)) continue;
+        if (await handlePrivateSales(event)) continue;
 
         if (event.type !== "message") continue;
         if (event.message.type !== "text") continue;
-
         const text = event.message.text.trim();
 
-        // ② 待辦（舊有功能）
+        // ② 待辦（舊有）
         if (
           todoCmd.keywords &&
           todoCmd.keywords.some(k => text.startsWith(k))
@@ -257,23 +212,13 @@ app.post(
           continue;
         }
 
-        // ③ 天氣（舊有功能）
+        // ③ 天氣（舊有）
         const parsed = parseCommand(text);
         if (parsed && parsed.command === "WEATHER") {
-          const DEFAULT_CITY = process.env.DEFAULT_CITY || "高雄市";
-          let city = DEFAULT_CITY;
-
-          if (parsed.arg && CITY_MAP[parsed.arg]) {
-            city = CITY_MAP[parsed.arg];
-          }
-
+          let city = CITY_MAP[parsed.arg] || (process.env.DEFAULT_CITY || "高雄市");
           const result = await get36hrWeather(city);
           const reply = buildWeatherFriendText(result);
-
-          await client.replyMessage(event.replyToken, {
-            type: "text",
-            text: reply
-          });
+          await client.replyMessage(event.replyToken, { type: "text", text: reply });
           continue;
         }
       }
