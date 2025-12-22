@@ -1,6 +1,8 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// 線上正式版 v1.2 + 私訊測試 + chat 指令最終修正版
+// 線上正式版 v1.2（穩定功能鎖死）＋
+// 私訊測試（大哥您好）＋
+// 待辦功能（依 commands/chat/todo.js 設計）
 // ======================================================
 
 require("dotenv").config();
@@ -26,17 +28,14 @@ if (!config.channelAccessToken || !config.channelSecret) {
 const client = new line.Client(config);
 
 // ======================================================
-// 自家 services
+// 自家 services（舊有穩定功能）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
 
 // ======================================================
-// commands/chat（你原本就有的）
+// chat 指令模組（只接，不改內部）
 // ======================================================
-const helpCmd = require("./commands/chat/help");
-const idCmd = require("./commands/chat/id");
-const interviewCmd = require("./commands/chat/interview");
 const todoCmd = require("./commands/chat/todo");
 
 // ======================================================
@@ -69,49 +68,61 @@ app.all(
 );
 
 // ======================================================
-// 指令解析（天氣 / 台指期）
+// 指令解析（天氣｜舊有行為保留）
 // ======================================================
 function parseCommand(text) {
   if (!text) return null;
   const t = text.trim();
 
-  const keywordMap = {
-    WEATHER: ["天氣"],
-    TXF: ["台指期"]
-  };
-
-  for (const [type, keys] of Object.entries(keywordMap)) {
-    for (const k of keys) {
-      if (t === k || t.startsWith(k + " ")) {
-        return { command: type, arg: t.slice(k.length).trim() };
-      }
-    }
+  if (t === "天氣" || t.startsWith("天氣 ")) {
+    return {
+      command: "WEATHER",
+      arg: t.replace("天氣", "").trim()
+    };
   }
   return null;
 }
 
 // ======================================================
-// 城市正規化
+// 城市正規化表（🔥 完整版，鎖死不再動）
 // ======================================================
 const CITY_MAP = {
   "台北": "臺北市",
   "臺北": "臺北市",
+  "新北": "新北市",
+  "桃園": "桃園市",
   "台中": "臺中市",
   "臺中": "臺中市",
+  "台南": "臺南市",
+  "臺南": "臺南市",
   "高雄": "高雄市",
-  "彰化": "彰化縣"
+  "基隆": "基隆市",
+  "新竹": "新竹市",
+  "苗栗": "苗栗縣",
+  "彰化": "彰化縣",
+  "南投": "南投縣",
+  "雲林": "雲林縣",
+  "嘉義": "嘉義市",
+  "屏東": "屏東縣",
+  "宜蘭": "宜蘭縣",
+  "花蓮": "花蓮縣",
+  "台東": "臺東縣",
+  "臺東": "臺東縣",
+  "澎湖": "澎湖縣",
+  "金門": "金門縣",
+  "連江": "連江縣"
 };
 
 // ======================================================
 // 🧪 私訊測試（業績回報第一階段）
+// 條件：1 對 1 私訊 + 開頭「大哥您好」
 // ======================================================
 async function handlePrivateSalesTest(event) {
   if (event.type !== "message") return false;
   if (event.source.type !== "user") return false;
   if (event.message.type !== "text") return false;
 
-  const text = event.message.text.trim();
-  if (!text.startsWith("大哥您好")) return false;
+  if (!event.message.text.startsWith("大哥您好")) return false;
 
   await client.replyMessage(event.replyToken, {
     type: "text",
@@ -131,25 +142,32 @@ app.post(
     try {
       for (const event of req.body.events || []) {
 
-        // ① 私訊測試（最優先）
-        if (await handlePrivateSalesTest(event)) {
-          continue;
-        }
+        // --------------------------------------------------
+        // ① 私訊測試（只吃「大哥您好」，不影響其他）
+        // --------------------------------------------------
+        if (await handlePrivateSalesTest(event)) continue;
 
-        // ② chat 指令（⚠️ 不要 continue，讓它們自己判斷）
-        if (helpCmd?.handle) await helpCmd.handle(event, client);
-        if (idCmd?.handle) await idCmd.handle(event, client);
-        if (interviewCmd?.handle) await interviewCmd.handle(event, client);
-        if (todoCmd?.handle) await todoCmd.handle(event, client);
-
-        // ③ 天氣 / 台指期
         if (event.type !== "message") continue;
         if (event.message.type !== "text") continue;
 
-        const parsed = parseCommand(event.message.text);
-        if (!parsed) continue;
+        const text = event.message.text.trim();
 
-        if (parsed.command === "WEATHER") {
+        // --------------------------------------------------
+        // ② 待辦（依 todo.js 設計：keywords + handler）
+        // --------------------------------------------------
+        if (
+          todoCmd.keywords &&
+          todoCmd.keywords.some(k => text.startsWith(k))
+        ) {
+          await todoCmd.handler(client, event);
+          continue;
+        }
+
+        // --------------------------------------------------
+        // ③ 天氣（舊有穩定功能，行為不變）
+        // --------------------------------------------------
+        const parsed = parseCommand(text);
+        if (parsed && parsed.command === "WEATHER") {
           const DEFAULT_CITY = process.env.DEFAULT_CITY || "高雄市";
           let city = DEFAULT_CITY;
 
@@ -164,6 +182,7 @@ app.post(
             type: "text",
             text: reply
           });
+          continue;
         }
       }
 
