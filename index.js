@@ -1,5 +1,6 @@
 // ======================================================
-// 毛怪秘書 LINE Bot — index.js（線上正式版 v1.2 + 私訊測試 + 待辦）
+// 毛怪秘書 LINE Bot — index.js
+// 線上正式版 v1.2 + 私訊測試 + chat 指令修復版
 // ======================================================
 
 require("dotenv").config();
@@ -31,12 +32,12 @@ const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
 
 // ======================================================
-// commands/chat（👉 這就是你待辦原本所在的位置）
+// commands/chat（原本的待辦、help 都在這）
 // ======================================================
 const helpCmd = require("./commands/chat/help");
 const idCmd = require("./commands/chat/id");
 const interviewCmd = require("./commands/chat/interview");
-const todoCmd = require("./commands/chat/todo"); // ✅ 待辦回來
+const todoCmd = require("./commands/chat/todo");
 
 // ======================================================
 // TradingView Webhook（原樣保留）
@@ -90,7 +91,7 @@ function parseCommand(text) {
 }
 
 // ======================================================
-// 城市正規化
+// 城市正規化表
 // ======================================================
 const CITY_MAP = {
   "台北": "臺北市",
@@ -100,6 +101,56 @@ const CITY_MAP = {
   "高雄": "高雄市",
   "彰化": "彰化縣"
 };
+
+// ======================================================
+// ⭐ chat 指令安全執行器（關鍵修復）
+// 支援：
+// - module.exports = function
+// - module.exports = { execute() }
+// - module.exports = { run() }
+// ======================================================
+async function runChatCommand(cmd, event, client) {
+  if (!cmd) return false;
+
+  if (typeof cmd === "function") {
+    await cmd(event, client);
+    return true;
+  }
+
+  if (typeof cmd.execute === "function") {
+    await cmd.execute(event, client);
+    return true;
+  }
+
+  if (typeof cmd.run === "function") {
+    await cmd.run(event, client);
+    return true;
+  }
+
+  return false;
+}
+
+// ======================================================
+// 🧪 私訊測試｜業績回報（第一階段）
+// ======================================================
+async function handlePrivateSalesTest(event) {
+  if (event.type !== "message") return false;
+  if (event.source.type !== "user") return false;
+  if (event.message.type !== "text") return false;
+
+  const text = event.message.text.trim();
+  if (!text.startsWith("大哥您好")) return false;
+
+  console.log("🧪【私訊測試】命中業績回報");
+  console.log(text);
+
+  await client.replyMessage(event.replyToken, {
+    type: "text",
+    text: "收到（私訊測試中）"
+  });
+
+  return true;
+}
 
 // ======================================================
 // LINE Webhook
@@ -112,21 +163,21 @@ app.post(
       for (const event of req.body.events || []) {
 
         // --------------------------------------------------
-        // 🧪 私訊測試（最優先，只吃「大哥您好」）
+        // 🧪 私訊測試（最高優先，不影響其他功能）
         // --------------------------------------------------
         const handled = await handlePrivateSalesTest(event);
         if (handled) continue;
 
         // --------------------------------------------------
-        // commands/chat（help / id / interview / todo）
+        // chat 指令（help / id / interview / todo）
         // --------------------------------------------------
-        if (await helpCmd(event, client)) continue;
-        if (await idCmd(event, client)) continue;
-        if (await interviewCmd(event, client)) continue;
-        if (await todoCmd(event, client)) continue; // ✅ 待辦恢復
+        if (await runChatCommand(helpCmd, event, client)) continue;
+        if (await runChatCommand(idCmd, event, client)) continue;
+        if (await runChatCommand(interviewCmd, event, client)) continue;
+        if (await runChatCommand(todoCmd, event, client)) continue;
 
         // --------------------------------------------------
-        // 天氣指令（你原本的）
+        // 天氣 / 台指期（你原本的）
         // --------------------------------------------------
         if (event.type !== "message") continue;
         if (event.message.type !== "text") continue;
@@ -159,28 +210,6 @@ app.post(
     }
   }
 );
-
-// ======================================================
-// 🧪 私訊測試｜業績回報（第一階段）
-// ======================================================
-async function handlePrivateSalesTest(event) {
-  if (event.type !== "message") return false;
-  if (event.source.type !== "user") return false;
-  if (event.message.type !== "text") return false;
-
-  const text = event.message.text.trim();
-  if (!text.startsWith("大哥您好")) return false;
-
-  console.log("🧪【私訊測試】命中業績回報");
-  console.log(text);
-
-  await client.replyMessage(event.replyToken, {
-    type: "text",
-    text: "收到（私訊測試中）"
-  });
-
-  return true;
-}
 
 // ======================================================
 // 啟動 Server
