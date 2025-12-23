@@ -1,14 +1,15 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// 基準定版 v1.2（穩定功能鎖死）＋
-// A-3 茶六博愛｜營運解析 v1（已完成）＋
-// B-1 摘要欄位 ＋ B-2 查詢指令
+// 穩定基準版 v1.2
+// 茶六博愛：
+// - A-3 營運資料完整寫入（A～P）
+// - B-1 摘要寫入（Q）
+// - B-2 查詢只讀摘要
 // ======================================================
 
 require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
-const axios = require("axios");
 const fs = require("fs");
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
@@ -22,11 +23,6 @@ const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.LINE_CHANNEL_SECRET
 };
-
-if (!config.channelAccessToken || !config.channelSecret) {
-  console.error("❌ LINE_CHANNEL_ACCESS_TOKEN 或 LINE_CHANNEL_SECRET 未設定");
-  process.exit(1);
-}
 
 const client = new line.Client(config);
 
@@ -54,107 +50,121 @@ const auth = new GoogleAuth({
 });
 
 // ======================================================
-// TradingView Webhook（原樣保留）
+// 工具函式
 // ======================================================
-app.all(
-  "/tv-alert",
-  express.text({ type: "*/*" }),
-  async (req, res) => {
-    try {
-      let body = {};
-      let content = req.body || "";
-      if (typeof content === "string") {
-        try { body = JSON.parse(content); } catch {}
-      }
-      const msg = body.message || body.alert || content;
-      const price = body.close ?? body.price ?? null;
-      await tvAlert(client, msg, { ...body, price });
-      res.status(200).send("OK");
-    } catch (err) {
-      console.error("❌ TV Webhook Error:", err);
-      res.status(200).send("OK");
-    }
-  }
-);
+const nowTW = () =>
+  new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+
+const num = v => (v ? Number(v.replace(/,/g, "")) : "");
+
+const pct = v => (v ? Number(v) : "");
+
+const toWan = n => (n ? (n / 10000).toFixed(1) : "");
 
 // ======================================================
-// 天氣（舊有，不動）
+// 解析函式（茶六博愛）
 // ======================================================
-function parseCommand(text) {
-  if (!text) return null;
-  const t = text.trim();
-  if (t === "天氣" || t.startsWith("天氣 ")) {
-    return { command: "WEATHER", arg: t.replace("天氣", "").trim() };
-  }
-  return null;
-}
+function parse(text) {
+  const d = text.match(/(\d{1,2})\/(\d{1,2})/);
+  const date = d
+    ? `${new Date().getFullYear()}-${d[1].padStart(2, "0")}-${d[2].padStart(2, "0")}`
+    : "";
 
-const CITY_MAP = {
-  "台北": "臺北市", "臺北": "臺北市",
-  "新北": "新北市", "桃園": "桃園市",
-  "台中": "臺中市", "臺中": "臺中市",
-  "台南": "臺南市", "臺南": "臺南市",
-  "高雄": "高雄市", "基隆": "基隆市",
-  "新竹": "新竹市", "苗栗": "苗栗縣",
-  "彰化": "彰化縣", "南投": "南投縣",
-  "雲林": "雲林縣", "嘉義": "嘉義市",
-  "屏東": "屏東縣", "宜蘭": "宜蘭縣",
-  "花蓮": "花蓮縣", "台東": "臺東縣",
-  "臺東": "臺東縣", "澎湖": "澎湖縣",
-  "金門": "金門縣", "連江": "連江縣"
-};
+  const revenue = text.match(/業績[:：]\s*([\d,]+)/);
+  const pkg = text.match(/套餐份數[:：]\s*([\d,]+)/);
+  const unit = text.match(/客單價[:：]\s*([\d.]+)/);
 
-// ======================================================
-// 工具：數字格式
-// ======================================================
-function toWan(n) {
-  if (!n) return "";
-  return (n / 10000).toFixed(1);
+  const fp = text.match(/外場薪資\s*([\d,]+)。([\d.]+)%/);
+  const bp = text.match(/內場薪資\s*([\d,]+)。([\d.]+)%/);
+  const tp = text.match(/總人事[:：]\s*([\d,]+)。([\d.]+)%/);
+
+  let frontPay = fp ? num(fp[1]) : "";
+  let frontPct = fp ? pct(fp[2]) : "";
+  let backPay = bp ? num(bp[1]) : "";
+  let backPct = bp ? pct(bp[2]) : "";
+
+  let totalPay = tp ? num(tp[1]) : "";
+  let totalPct = tp ? pct(tp[2]) : "";
+
+  if (!totalPay && frontPay && backPay) totalPay = frontPay + backPay;
+  if (!totalPct && frontPct && backPct)
+    totalPct = Number((frontPct + backPct).toFixed(2));
+
+  return {
+    date,
+    revenue: revenue ? num(revenue[1]) : "",
+    pkg: pkg ? num(pkg[1]) : "",
+    unit: unit ? unit[1] : "",
+    frontPay,
+    frontPct,
+    backPay,
+    backPct,
+    totalPay,
+    totalPct
+  };
 }
 
 // ======================================================
-// B-1：產生摘要並寫入 Q 欄
+// 核心寫入（唯一寫入點）
 // ======================================================
-async function buildAndWriteSummary(rowIndex) {
-  const clientAuth = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: clientAuth });
+async function appendSalesRow(rawText, userId) {
+  const authClient = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: authClient });
 
-  const range = `${SHEET_NAME}!A${rowIndex}:Q${rowIndex}`;
-  const res = await sheets.spreadsheets.values.get({
+  const meta = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range
+    range: `${SHEET_NAME}!A:A`
   });
 
-  const row = res.data.values?.[0];
-  if (!row) return;
+  const rowIndex = (meta.data.values?.length || 1) + 1;
+  const p = parse(rawText);
 
-  const date = row[5] || "";
-  const revenue = row[6] ? `${toWan(row[6])} 萬` : "";
-  const packages = row[8] ? `套餐 ${row[8]}` : "";
-  const unitPrice = row[9] ? `客單 ${row[9]}` : "";
-  const totalPct = row[15] ? `人事 ${row[15]}%` : "";
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        nowTW(),           // A
+        userId,            // B
+        userId,            // C
+        rawText,           // D
+        "茶六博愛",        // E
+        p.date,            // F
+        p.revenue,         // G
+        "業績",            // H
+        p.pkg,             // I
+        p.unit,            // J
+        p.frontPay,        // K
+        p.frontPct,        // L
+        p.backPay,         // M
+        p.backPct,         // N
+        p.totalPay,        // O
+        p.totalPct         // P
+      ]]
+    }
+  });
 
+  // 👉 摘要寫入 Q
   const summary = [
-    date?.slice(5),
+    p.date?.slice(5),
     "茶六博愛｜",
-    revenue,
-    packages,
-    unitPrice,
-    totalPct
+    p.revenue ? `業績 ${toWan(p.revenue)} 萬` : "",
+    p.pkg ? `套餐 ${p.pkg}` : "",
+    p.unit ? `客單 ${p.unit}` : "",
+    p.totalPct ? `人事 ${p.totalPct}%` : ""
   ].filter(Boolean).join(" ");
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
     range: `${SHEET_NAME}!Q${rowIndex}`,
     valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [[summary]]
-    }
+    requestBody: { values: [[summary]] }
   });
 }
 
 // ======================================================
-// 私訊業績回報（完成後補摘要）
+// 私訊處理
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -164,36 +174,7 @@ async function handlePrivateSales(event) {
   const text = event.message.text.trim();
   if (!text.startsWith("大哥您好")) return false;
 
-  const clientAuth = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: clientAuth });
-
-  // 取得目前最後一列
-  const meta = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A:A`
-  });
-
-  const nextRow = (meta.data.values?.length || 1) + 1;
-
-  // 🔁 呼叫你已存在的 A-3 寫入流程（直接 append）
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A1`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [[
-        new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }),
-        event.source.userId,
-        event.source.userId,
-        text,
-        "茶六博愛", "", "", "業績",
-        "", "", "", "", "", "", "", ""
-      ]]
-    }
-  });
-
-  // 🔧 補摘要
-  await buildAndWriteSummary(nextRow);
+  await appendSalesRow(text, event.source.userId);
 
   await client.replyMessage(event.replyToken, {
     type: "text",
@@ -204,27 +185,23 @@ async function handlePrivateSales(event) {
 }
 
 // ======================================================
-// B-2：查詢指令（只讀摘要）
+// 查詢指令（只讀摘要 Q）
 // ======================================================
 async function handleQuery(event) {
   if (event.message.type !== "text") return false;
   const text = event.message.text.trim();
-
   if (!text.startsWith("查業績")) return false;
 
-  const args = text.split(" ");
-  const dateArg = args[2]; // 可能有日期
-
-  const clientAuth = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: clientAuth });
+  const authClient = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: authClient });
 
   const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: `${SHEET_NAME}!Q:Q`
   });
 
-  const summaries = res.data.values?.map(v => v[0]).filter(Boolean) || [];
-  if (!summaries.length) {
+  const list = res.data.values?.map(v => v[0]).filter(Boolean) || [];
+  if (!list.length) {
     await client.replyMessage(event.replyToken, {
       type: "text",
       text: "目前沒有資料"
@@ -232,15 +209,9 @@ async function handleQuery(event) {
     return true;
   }
 
-  let target = summaries[summaries.length - 1];
-  if (dateArg) {
-    const found = summaries.find(s => s.includes(dateArg));
-    if (found) target = found;
-  }
-
   await client.replyMessage(event.replyToken, {
     type: "text",
-    text: `【茶六博愛】\n${target}`
+    text: `【茶六博愛｜最新】\n${list[list.length - 1]}`
   });
 
   return true;
@@ -249,47 +220,31 @@ async function handleQuery(event) {
 // ======================================================
 // LINE Webhook
 // ======================================================
-app.post(
-  "/webhook",
-  line.middleware(config),
-  async (req, res) => {
-    try {
-      for (const event of req.body.events || []) {
+app.post("/webhook", line.middleware(config), async (req, res) => {
+  try {
+    for (const event of req.body.events || []) {
+      if (await handlePrivateSales(event)) continue;
+      if (await handleQuery(event)) continue;
 
-        if (await handlePrivateSales(event)) continue;
-        if (await handleQuery(event)) continue;
+      if (event.type !== "message") continue;
+      if (event.message.type !== "text") continue;
 
-        if (event.type !== "message") continue;
-        if (event.message.type !== "text") continue;
-        const text = event.message.text.trim();
-
-        if (
-          todoCmd.keywords &&
-          todoCmd.keywords.some(k => text.startsWith(k))
-        ) {
-          await todoCmd.handler(client, event);
-          continue;
-        }
-
-        const parsed = parseCommand(text);
-        if (parsed && parsed.command === "WEATHER") {
-          let city = CITY_MAP[parsed.arg] || (process.env.DEFAULT_CITY || "高雄市");
-          const result = await get36hrWeather(city);
-          const reply = buildWeatherFriendText(result);
-          await client.replyMessage(event.replyToken, { type: "text", text: reply });
-        }
+      if (
+        todoCmd.keywords &&
+        todoCmd.keywords.some(k => event.message.text.startsWith(k))
+      ) {
+        await todoCmd.handler(client, event);
       }
-
-      res.status(200).send("OK");
-    } catch (err) {
-      console.error("❌ LINE Webhook Error:", err);
-      res.status(500).end();
     }
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error("❌ LINE Webhook Error:", err);
+    res.status(500).end();
   }
-);
+});
 
 // ======================================================
-// 啟動 Server
+// 啟動
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
