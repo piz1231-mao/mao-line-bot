@@ -351,15 +351,17 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 
       if (event.message?.type === "text") {
 
-        // ===== 🚄 高鐵查詢（新增，不影響原功能）=====
-        const hsrReply = handleHSR(event);
-        if (hsrReply) {
-          await client.replyMessage(event.replyToken, {
-            type: "text",
-            text: hsrReply
-          });
-          continue;
-        }
+// ===== 🚄 高鐵查詢 =====
+const hsrReply = await handleHSR(event);
+if (hsrReply) {
+  const message =
+    typeof hsrReply === "string"
+      ? { type: "text", text: hsrReply }
+      : hsrReply;
+
+  await client.replyMessage(event.replyToken, message);
+  continue;
+}
 
         // ===== 待辦 =====
         if (todoCmd.keywords?.some(k => event.message.text.startsWith(k))) {
