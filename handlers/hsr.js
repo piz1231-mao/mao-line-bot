@@ -19,9 +19,9 @@ function parseTimeInput(text) {
 }
 
 // ==============================
-// 高鐵主處理器
+// 🚄 高鐵主處理器（⚠️ 一定要 async）
 // ==============================
-module.exports = function handleHSR(event) {
+module.exports = async function handleHSR(event) {
   if (!event?.message?.text) return null;
 
   const userId = event.source.userId;
@@ -58,16 +58,18 @@ module.exports = function handleHSR(event) {
     session.destination = to.trim();
     session.state = "HSR_TIME";
 
-    return "🚄 要查什麼時間？\n未指定則查接下來 2 小時";
+    // ❗省錢：這一步不回訊息，等使用者直接打時間
+    return null;
   }
 
-  // ========= 時間 =========
+  // ========= 時間（這裡是關鍵） =========
   if (session.state === "HSR_TIME") {
     const parsedTime = parseTimeInput(text);
     session.startTime = parsedTime ? parsedTime : new Date();
     session.state = "HSR_RESULT";
 
-    return fetchAndRender(session);
+    // ✅ 一定要 await
+    return await fetchAndRender(session);
   }
 
   // ========= 分頁 =========
@@ -124,7 +126,7 @@ async function fetchAndRender(session) {
 }
 
 // ==============================
-// 顯示結果（分頁）
+// 顯示結果
 // ==============================
 function renderResult(session) {
   const pageSize = 8;
