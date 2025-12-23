@@ -1,5 +1,5 @@
 // ======================================================
-// 🚄 高鐵查詢 Handler（完整版｜穩定資料源）
+// 🚄 高鐵查詢 Handler（最終修正版｜資料結構正確）
 // ======================================================
 
 const { getSession, clearSession } = require("../sessions/sessionStore");
@@ -9,14 +9,16 @@ const stationMap = require("../utils/hsrStations");
 
 console.log("✅ HSR handler loaded");
 
-// HH:mm → minutes
+// HH:mm or HH:mm:ss → minutes
 function toMinutes(t) {
-  const [h, m] = t.split(":").map(Number);
-  return h * 60 + m;
+  if (!t) return null;
+  const parts = t.split(":").map(Number);
+  if (parts.length < 2) return null;
+  return parts[0] * 60 + parts[1];
 }
 
 function parseTime(text) {
-  const m = text.match(/^(\d{1,2}):(\d{2})$/);
+  const m = text.match(/^(\d{1,2}):(\d{2})/);
   if (!m) return null;
   return Number(m[1]) * 60 + Number(m[2]);
 }
@@ -85,7 +87,7 @@ module.exports = async function handleHSR(event) {
 };
 
 // ======================================================
-// 真正抓班次（全線 → 自行 filter）
+// 抓全線 → 自行 filter
 // ======================================================
 async function fetchResult(session, key) {
   const originId = stationMap[session.origin];
@@ -100,34 +102,43 @@ async function fetchResult(session, key) {
     .toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })
     .replace(/\//g, "-");
 
-  let data;
+  let trains;
   try {
-    data = await getHSRAllTimetable(today);
+    trains = await getHSRAllTimetable(today);
   } catch (err) {
     console.error("HSR API error:", err.message);
     return "🚄 無法取得高鐵時刻表";
   }
 
-  console.log("[HSR] raw trains:", data.length);
+  console.log("[HSR] raw trains:", Array.isArray(trains) ? trains.length : 0);
 
-  const trips = data
-    .map(train => {
-      const s = train.StopTimes || [];
-      const o = s.find(x => x.StationID === originId);
-      const d = s.find(x => x.StationID === destId);
-      if (!o || !d) return null;
+  const trips = [];
 
-      // 起站一定要在迄站之前
-      if (s.indexOf(o) >= s.indexOf(d)) return null;
+  for (const train of trains || []) {
+    const stops = train.StopTimes;
+    if (!Array.isArray(stops)) continue;
 
-      return {
-        dep: o.DepartureTime,
-        arr: d.ArrivalTime,
-        min: toMinutes(o.DepartureTime)
-      };
-    })
-    .filter(t => t && t.min >= session.startMin)
-    .sort((a, b) => a.min - b.min);
+    const oIdx = stops.findIndex(s => s.StationID === originId);
+    const dIdx = stops.findIndex(s => s.StationID === destId);
+
+    if (oIdx === -1 || dIdx === -1) continue;
+    if (oIdx >= dIdx) continue;
+
+    const depTime = stops[oIdx].DepartureTime;
+    const arrTime = stops[dIdx].ArrivalTime;
+    const depMin = toMinutes(depTime);
+
+    if (depMin === null) continue;
+    if (depMin < session.startMin) continue;
+
+    trips.push({
+      dep: depTime.slice(0, 5),
+      arr: arrTime.slice(0, 5),
+      min: depMin
+    });
+  }
+
+  trips.sort((a, b) => a.min - b.min);
 
   console.log("[HSR] filtered trips:", trips.length);
 
