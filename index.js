@@ -1,7 +1,7 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
 // 基準定版 v1.2（穩定功能鎖死）＋
-// A-2 茶六博愛｜分類寫入 v1
+// A-3 茶六博愛｜經營欄位解析 v1（含總人事備援）
 // ======================================================
 
 require("dotenv").config();
@@ -30,7 +30,7 @@ if (!config.channelAccessToken || !config.channelSecret) {
 const client = new line.Client(config);
 
 // ======================================================
-// 舊有穩定 services（不動）
+// 舊有穩定功能（完全不動）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
@@ -41,7 +41,7 @@ const tvAlert = require("./services/tvAlert");
 // Google Sheet 設定
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
-const SALES_SHEET_NAME = "茶六博愛";
+const SHEET_NAME = "茶六博愛";
 
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
@@ -77,7 +77,7 @@ app.all(
 );
 
 // ======================================================
-// 天氣（舊有功能，不動）
+// 天氣（舊有，不動）
 // ======================================================
 function parseCommand(text) {
   if (!text) return null;
@@ -104,56 +104,96 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 🧠 分類解析工具（茶六博愛 v1）
+// 解析工具（茶六博愛 v1）
 // ======================================================
 function parseBusinessDate(text) {
   const m = text.match(/(\d{1,2})\/(\d{1,2})/);
   if (!m) return "";
   const year = new Date().getFullYear();
-  const mm = m[1].padStart(2, "0");
-  const dd = m[2].padStart(2, "0");
-  return `${year}-${mm}-${dd}`;
+  return `${year}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
+}
+
+function num(v) {
+  if (!v) return "";
+  return Number(v.replace(/,/g, ""));
 }
 
 function parseRevenue(text) {
   const m = text.match(/業績\s*[:：]\s*([\d,]+)/);
-  if (!m) return "";
-  return Number(m[1].replace(/,/g, ""));
+  return m ? num(m[1]) : "";
+}
+
+function parseSingle(text, regex) {
+  const m = text.match(regex);
+  return m ? num(m[1]) : "";
+}
+
+function parsePercent(text, regex) {
+  const m = text.match(regex);
+  return m ? Number(m[1]) : "";
 }
 
 // ======================================================
-// 寫入分類欄位（E～H）
+// 寫入 A～P（含總人事備援）
 // ======================================================
-async function appendSalesWithCategory({
-  timestamp, userId, sourceId, rawText
-}) {
+async function appendSalesRow(rawText, userId) {
   const clientAuth = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: clientAuth });
+
+  const timestamp = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
 
   const businessDate = parseBusinessDate(rawText);
   const revenue = parseRevenue(rawText);
 
+  const packages = parseSingle(rawText, /套餐份數\s*[:：]\s*([\d,]+)/);
+  const unitPrice = parseSingle(rawText, /客單價\s*[:：]\s*([\d.]+)/);
+
+  const frontPay = parseSingle(rawText, /外場薪資\s*([\d,]+)/);
+  const frontPct = parsePercent(rawText, /外場薪資[\d,]+。([\d.]+)%/);
+
+  const backPay = parseSingle(rawText, /內場薪資\s*([\d,]+)/);
+  const backPct = parsePercent(rawText, /內場薪資[\d,]+。([\d.]+)%/);
+
+  let totalPay = parseSingle(rawText, /總人事\s*[:：]\s*([\d,]+)/);
+  let totalPct = parsePercent(rawText, /總人事[:：][\d,]+。([\d.]+)%/);
+
+  // 🔑 備援補算
+  if (!totalPay && frontPay && backPay) {
+    totalPay = frontPay + backPay;
+  }
+  if (!totalPct && frontPct && backPct) {
+    totalPct = Number((frontPct + backPct).toFixed(2));
+  }
+
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SALES_SHEET_NAME}!A1`,
+    range: `${SHEET_NAME}!A1`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [[
-        timestamp,          // A
-        userId,             // B
-        sourceId,           // C
-        rawText,            // D
-        "茶六博愛",         // E 店別
-        businessDate,       // F 營業日期
-        revenue,            // G 總業績
-        "業績"              // H 回報類型
+        timestamp,        // A
+        userId,           // B
+        userId,           // C
+        rawText,          // D
+        "茶六博愛",       // E
+        businessDate,     // F
+        revenue,          // G
+        "業績",           // H
+        packages,         // I
+        unitPrice,        // J
+        frontPay,         // K
+        frontPct,         // L
+        backPay,          // M
+        backPct,          // N
+        totalPay,         // O
+        totalPct          // P
       ]]
     }
   });
 }
 
 // ======================================================
-// 私訊業績回報（A-2）
+// 私訊業績回報（茶六博愛）
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -163,19 +203,10 @@ async function handlePrivateSales(event) {
   const text = event.message.text.trim();
   if (!text.startsWith("大哥您好")) return false;
 
-  const timestamp = new Date().toLocaleString("zh-TW", {
-    timeZone: "Asia/Taipei"
-  });
-
   try {
-    await appendSalesWithCategory({
-      timestamp,
-      userId: event.source.userId,
-      sourceId: event.source.userId,
-      rawText: text
-    });
+    await appendSalesRow(text, event.source.userId);
   } catch (err) {
-    console.error("❌ 茶六博愛分類寫入失敗", err);
+    console.error("❌ 茶六博愛 A-3 寫入失敗", err);
   }
 
   await client.replyMessage(event.replyToken, {
@@ -196,14 +227,12 @@ app.post(
     try {
       for (const event of req.body.events || []) {
 
-        // ① 業績回報（私訊）
         if (await handlePrivateSales(event)) continue;
 
         if (event.type !== "message") continue;
         if (event.message.type !== "text") continue;
         const text = event.message.text.trim();
 
-        // ② 待辦（舊有）
         if (
           todoCmd.keywords &&
           todoCmd.keywords.some(k => text.startsWith(k))
@@ -212,14 +241,12 @@ app.post(
           continue;
         }
 
-        // ③ 天氣（舊有）
         const parsed = parseCommand(text);
         if (parsed && parsed.command === "WEATHER") {
           let city = CITY_MAP[parsed.arg] || (process.env.DEFAULT_CITY || "高雄市");
           const result = await get36hrWeather(city);
           const reply = buildWeatherFriendText(result);
           await client.replyMessage(event.replyToken, { type: "text", text: reply });
-          continue;
         }
       }
 
