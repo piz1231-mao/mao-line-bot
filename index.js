@@ -1,12 +1,13 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
 // 基準定版 v1.2（功能鎖死）
+//
 // - TradingView Webhook（鎖死）
 // - 天氣查詢（縣市完整）
 // - 待辦功能
-// - 🚄 高鐵查詢（擴充）
+// - 🚄 高鐵查詢
 // - 私訊營運回報（三店分頁）
-// - 摘要寫入 Q 欄（emoji 版）【row 修正版】
+// - 摘要寫入 Q 欄（emoji 版）
 // - 查業績：單店 / 三店合併（A 分隔線）
 // ======================================================
 
@@ -63,22 +64,29 @@ const auth = new GoogleAuth({
 // ======================================================
 // TradingView Webhook（原樣鎖死）
 // ======================================================
-app.all("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
-  try {
-    let body = {};
-    let content = req.body || "";
-    if (typeof content === "string") {
-      try { body = JSON.parse(content); } catch {}
+app.all(
+  "/tv-alert",
+  express.text({ type: "*/*" }),
+  async (req, res) => {
+    try {
+      let body = {};
+      let content = req.body || "";
+
+      if (typeof content === "string") {
+        try { body = JSON.parse(content); } catch {}
+      }
+
+      const msg = body.message || body.alert || content;
+      const price = body.close ?? body.price ?? null;
+
+      await tvAlert(client, msg, { ...body, price });
+      res.status(200).send("OK");
+    } catch (err) {
+      console.error("❌ TV Webhook Error:", err);
+      res.status(200).send("OK");
     }
-    const msg = body.message || body.alert || content;
-    const price = body.close ?? body.price ?? null;
-    await tvAlert(client, msg, { ...body, price });
-    res.status(200).send("OK");
-  } catch (err) {
-    console.error("❌ TV Webhook Error:", err);
-    res.status(200).send("OK");
   }
-});
+);
 
 // ======================================================
 // 工具
@@ -90,7 +98,7 @@ const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
 const pct = v => (v ? Number(v) : "");
 
 // ======================================================
-// 天氣（完整原版）
+// 天氣（完整原版，不刪）
 // ======================================================
 function parseCommand(text) {
   if (!text) return null;
@@ -118,13 +126,14 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 解析（原版）
+// 正規化 / 解析（⭐ 本次重點修正）
 // ======================================================
 function normalize(text) {
   return text
     .replace(/：/g, ":")
     .replace(/。/g, ".")
     .replace(/％/g, "%")
+    .replace(/\u3000/g, " ")
     .replace(/\s+/g, " ")
     .trim();
 }
@@ -137,14 +146,21 @@ function parseSales(text) {
     ? `${new Date().getFullYear()}-${d[1].padStart(2, "0")}-${d[2].padStart(2, "0")}`
     : "";
 
-  const revenue = t.match(/業績[:：]?\s*([\d,]+)/);
-  const unit = t.match(/客單價[:：]?\s*([\d.]+)/);
-  const qty =
-    t.match(/套餐份數[:：]?\s*([\d,]+)/) ||
-    t.match(/總鍋數[:：]?\s*([\d,]+)/);
+  const revenue =
+    t.match(/(?:業績|總業績)\s*:\s*([\d,]+)/);
 
-  const fp = t.match(/外場薪資[:：]?\s*([\d,]+).([\d.]+)%/);
-  const bp = t.match(/內場薪資[:：]?\s*([\d,]+).([\d.]+)%/);
+  const unit =
+    t.match(/客單價\s*:\s*([\d.]+)/);
+
+  const qty =
+    t.match(/套餐份數\s*:\s*([\d,]+)/) ||
+    t.match(/總鍋數\s*:\s*([\d,]+)/);
+
+  const fp =
+    t.match(/外場薪資\s*:\s*([\d,]+)\s*([\d.]+)%/);
+
+  const bp =
+    t.match(/內場薪資\s*:\s*([\d,]+)\s*([\d.]+)%/);
 
   const frontPay = fp ? num(fp[1]) : "";
   const frontPct = fp ? pct(fp[2]) : "";
@@ -166,7 +182,7 @@ function parseSales(text) {
 }
 
 // ======================================================
-// 確保分店 Sheet 存在（不動）
+// 確保分店 Sheet 存在
 // ======================================================
 async function ensureSheet(shop) {
   if (shop === TEMPLATE_SHEET) return;
@@ -196,7 +212,7 @@ async function ensureSheet(shop) {
 }
 
 // ======================================================
-// 寫入分店（★ row 修正版）
+// 寫入分店（唯一寫入點）
 // ======================================================
 async function writeShop(shop, text, userId) {
   const c = await auth.getClient();
@@ -205,7 +221,6 @@ async function writeShop(shop, text, userId) {
   const p = parseSales(text);
   const qtyLabel = shop === "湯棧中山" ? "總鍋數" : "套餐數";
 
-  // ★ 先 append，拿實際 row
   const appendRes = await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: `${shop}!A1`,
@@ -223,7 +238,6 @@ async function writeShop(shop, text, userId) {
     }
   });
 
-  // ★ 從 API 回傳取得 row
   const updatedRange = appendRes.data.updates.updatedRange;
   const row = updatedRange.match(/\d+/)[0];
 
@@ -233,7 +247,7 @@ async function writeShop(shop, text, userId) {
 💰 業績：${p.revenue}
 
 📦 ${qtyLabel}：${p.qty}
-🧾 客單價：${p.unit || "XXXX"}
+🧾 客單價：${p.unit}
 
 👥 人事
 外場：${p.frontPay}（${p.frontPct}%）
@@ -272,7 +286,7 @@ async function handlePrivateSales(event) {
 }
 
 // ======================================================
-// 查業績（單店 / 三店合併）
+// 查詢（單店 / 三店合併）
 // ======================================================
 async function handleQuery(event) {
   if (event.message.type !== "text") return false;
@@ -317,7 +331,7 @@ async function handleQuery(event) {
 }
 
 // ======================================================
-// LINE Webhook 主入口
+// LINE Webhook（主入口）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
@@ -335,6 +349,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
       if (await handleQuery(event)) continue;
 
       if (event.message?.type === "text") {
+
         if (todoCmd.keywords?.some(k => event.message.text.startsWith(k))) {
           await todoCmd.handler(client, event);
           continue;
