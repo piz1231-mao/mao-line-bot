@@ -6,13 +6,12 @@ const stationMap = require("../utils/hsrStations");
 function parseTime(text) {
   const m = text.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
+
   const h = Number(m[1]);
   const min = Number(m[2]);
   if (h > 23 || min > 59) return null;
 
-  const d = new Date();
-  d.setHours(h, min, 0, 0);
-  return d;
+  return `${String(h).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
 }
 
 module.exports = async function handleHSR(event) {
@@ -51,7 +50,7 @@ module.exports = async function handleHSR(event) {
   }
 
   if (session.state === "HSR_TIME") {
-    session.startTime = parseTime(text) || new Date();
+    session.startTimeStr = parseTime(text) || "00:00";
     session.state = "HSR_RESULT";
     return await fetchAndRender(session, sessionKey);
   }
@@ -84,18 +83,21 @@ async function fetchAndRender(session, key) {
   }
 
   const trips = data
-    .map(x => {
-      const s = x.StopTimes;
+    .map(item => {
+      const s = item.StopTimes;
+      const o = s.find(x => x.StationID === originId);
+      const d = s.find(x => x.StationID === destId);
+      if (!o || !d) return null;
       return {
-        dep: s[0].DepartureTime,
-        arr: s[s.length - 1].ArrivalTime
+        dep: o.DepartureTime,
+        arr: d.ArrivalTime
       };
     })
+    .filter(Boolean)
     .sort((a, b) => a.dep.localeCompare(b.dep));
 
-  const startStr = session.startTime.toTimeString().slice(0, 5);
-  const idx = trips.findIndex(t => t.dep >= startStr);
-  const startIndex = idx === -1 ? 0 : idx;
+  const startIndex =
+    trips.findIndex(t => t.dep >= session.startTimeStr) ?? 0;
 
   session.trips = trips.slice(startIndex);
   session.page = 1;
