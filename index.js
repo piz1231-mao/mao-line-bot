@@ -7,6 +7,7 @@
 // - 私訊營運回報（三店分頁）
 // - 摘要寫入 Q 欄（emoji 版）
 // - 查業績：單店 / 三店合併（A 分隔線）
+// - 🚄 高鐵查詢（擴充，不影響既有功能）
 // ======================================================
 
 require("dotenv").config();
@@ -19,7 +20,6 @@ const { google } = require("googleapis");
 
 const app = express();
 
-
 // ======================================================
 // 原有 services（⚠️ 不動）
 // ======================================================
@@ -27,6 +27,11 @@ const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
 const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
+
+// ======================================================
+// 🚄 高鐵 handler（新增，只 require，不動其他）
+// ======================================================
+const handleHSR = require("./handlers/hsr");
 
 // ======================================================
 // LINE 設定（不動）
@@ -60,7 +65,7 @@ const auth = new GoogleAuth({
 });
 
 // ======================================================
-// TradingView Webhook（✅ 補回，原樣鎖死）
+// TradingView Webhook（原樣鎖死）
 // ======================================================
 app.all(
   "/tv-alert",
@@ -124,7 +129,7 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 正規化 / 解析
+// 正規化 / 解析（原版）
 // ======================================================
 function normalize(text) {
   return text
@@ -172,7 +177,7 @@ function parseSales(text) {
 }
 
 // ======================================================
-// 確保分店 Sheet 存在
+// 確保分店 Sheet 存在（原版）
 // ======================================================
 async function ensureSheet(shop) {
   if (shop === TEMPLATE_SHEET) return;
@@ -202,7 +207,7 @@ async function ensureSheet(shop) {
 }
 
 // ======================================================
-// 寫入分店（唯一寫入點）
+// 寫入分店（唯一寫入點，原版）
 // ======================================================
 async function writeShop(shop, text, userId) {
   const c = await auth.getClient();
@@ -255,7 +260,7 @@ async function writeShop(shop, text, userId) {
 }
 
 // ======================================================
-// 私訊營運回報
+// 私訊營運回報（原版）
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -278,7 +283,7 @@ async function handlePrivateSales(event) {
 }
 
 // ======================================================
-// 查詢（單店 / 三店合併）
+// 查詢（單店 / 三店合併，原版）
 // ======================================================
 async function handleQuery(event) {
   if (event.message.type !== "text") return false;
@@ -328,15 +333,32 @@ async function handleQuery(event) {
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const event of req.body.events || []) {
+
+      // ===== 私訊營運回報 =====
       if (await handlePrivateSales(event)) continue;
+
+      // ===== 查業績 =====
       if (await handleQuery(event)) continue;
 
       if (event.message?.type === "text") {
+
+        // ===== 🚄 高鐵查詢（新增，不影響原功能）=====
+        const hsrReply = handleHSR(event);
+        if (hsrReply) {
+          await client.replyMessage(event.replyToken, {
+            type: "text",
+            text: hsrReply
+          });
+          continue;
+        }
+
+        // ===== 待辦 =====
         if (todoCmd.keywords?.some(k => event.message.text.startsWith(k))) {
           await todoCmd.handler(client, event);
           continue;
         }
 
+        // ===== 天氣 =====
         const parsed = parseCommand(event.message.text);
         if (parsed?.command === "WEATHER") {
           const city = CITY_MAP[parsed.arg] || "高雄市";
