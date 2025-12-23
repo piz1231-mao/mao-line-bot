@@ -4,6 +4,8 @@
 // A-3 茶六博愛｜營運解析 v1
 // B-1 摘要欄位（v1 emoji）
 // B-2 查詢指令
+// ＋ C-1 分店 Sheet 自動建立（複製茶六）
+// ＋ C-2 分店資料寫入（不影響茶六）
 // ======================================================
 
 require("dotenv").config();
@@ -43,7 +45,8 @@ const client = new line.Client(config);
 // Google Sheet 設定（原有）
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
-const SHEET_NAME = "茶六博愛";
+const SHEET_NAME = "茶六博愛"; // ← 原本固定，不動
+const TEMPLATE_SHEET = "茶六博愛"; // ← 新增：作為分店範本
 
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
@@ -79,7 +82,7 @@ app.all(
 );
 
 // ======================================================
-// 工具
+// 工具（原有）
 // ======================================================
 const nowTW = () =>
   new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
@@ -158,7 +161,7 @@ function parse(text) {
 }
 
 // ======================================================
-// 核心寫入（唯一寫入點，原樣）
+// 核心寫入（原有，完全不動）
 // ======================================================
 async function appendSalesRow(rawText, userId) {
   const authClient = await auth.getClient();
@@ -195,7 +198,6 @@ async function appendSalesRow(rawText, userId) {
     }
   });
 
-  // ===== B-1：摘要（v1 emoji）=====
   const summary =
 `【茶六博愛｜${p.date.slice(5)}】
 
@@ -218,7 +220,104 @@ async function appendSalesRow(rawText, userId) {
 }
 
 // ======================================================
-// 私訊業績回報
+// 🆕 C-1：確保分店 Sheet 存在（複製茶六欄位）
+// ======================================================
+async function ensureShopSheetExists(shopName) {
+  if (shopName === TEMPLATE_SHEET) return;
+
+  const authClient = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: authClient });
+
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID
+  });
+
+  const exists = meta.data.sheets.some(
+    s => s.properties.title === shopName
+  );
+  if (exists) return;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      requests: [{ addSheet: { properties: { title: shopName } } }]
+    }
+  });
+
+  const header = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${TEMPLATE_SHEET}!A1:Q1`
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${shopName}!A1:Q1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: header.data.values }
+  });
+}
+
+// ======================================================
+// 🆕 C-2：寫入指定分店 Sheet（新增，不影響茶六）
+// ======================================================
+async function appendSalesRowByShop(shopName, rawText, userId) {
+  const authClient = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: authClient });
+
+  const meta = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${shopName}!A:A`
+  });
+  const rowIndex = (meta.data.values?.length || 1) + 1;
+
+  const p = parse(rawText);
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${shopName}!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        nowTW(), userId, userId, rawText,
+        shopName,
+        p.date,
+        p.revenue,
+        "業績",
+        p.pkg,
+        p.unit,
+        p.frontPay,
+        p.frontPct,
+        p.backPay,
+        p.backPct,
+        p.totalPay,
+        p.totalPct
+      ]]
+    }
+  });
+
+  const summary =
+`【${shopName}｜${p.date.slice(5)}】
+
+💰 業績：${p.revenue}
+
+🧾 客單價：${p.unit || "XXXX"}
+📦 套餐數：${p.pkg}
+
+👥 人事
+外場：${p.frontPay}（${p.frontPct}%）
+內場：${p.backPay}（${p.backPct}%）
+總計：${p.totalPay}（${p.totalPct}%）`;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${shopName}!Q${rowIndex}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[summary]] }
+  });
+}
+
+// ======================================================
+// 私訊業績回報（原流程＋新增分店路徑）
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -228,17 +327,26 @@ async function handlePrivateSales(event) {
   const text = event.message.text.trim();
   if (!text.startsWith("大哥您好")) return false;
 
-  await appendSalesRow(text, event.source.userId);
+  const shopLine = text.split("\n").map(l => l.trim())
+    .find(l => ["茶六博愛", "三山博愛", "湯棧中山"].includes(l));
+
+  if (shopLine && shopLine !== SHEET_NAME) {
+    await ensureShopSheetExists(shopLine);
+    await appendSalesRowByShop(shopLine, text, event.source.userId);
+  } else {
+    await appendSalesRow(text, event.source.userId);
+  }
 
   await client.replyMessage(event.replyToken, {
     type: "text",
     text: "已記錄"
   });
+
   return true;
 }
 
 // ======================================================
-// 查詢（只讀摘要 Q）
+// 查詢（原有）
 // ======================================================
 async function handleQuery(event) {
   if (event.message.type !== "text") return false;
@@ -269,7 +377,7 @@ async function handleQuery(event) {
 }
 
 // ======================================================
-// LINE Webhook（完整保留）
+// LINE Webhook（原樣保留）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
@@ -309,31 +417,24 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// 主動推播：每日老闆摘要（給 Render Cron 用）
+// 主動推播：每日老闆摘要（原有）
 // ======================================================
 app.post("/api/daily-summary", async (req, res) => {
   try {
     const authClient = await auth.getClient();
     const sheets = google.sheets({ version: "v4", auth: authClient });
 
-    // 讀 Q 欄（摘要）
     const result = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${SHEET_NAME}!Q:Q`
     });
 
     const list = result.data.values?.map(v => v[0]).filter(Boolean) || [];
+    if (!list.length) return res.status(200).send("no data");
 
-    if (!list.length) {
-      return res.status(200).send("no data");
-    }
-
-    const latestSummary = list[list.length - 1];
-
-    // 主動推播（push）
     await client.pushMessage(process.env.BOSS_USER_ID, {
       type: "text",
-      text: latestSummary
+      text: list[list.length - 1]
     });
 
     res.status(200).send("ok");
