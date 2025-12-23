@@ -1,4 +1,3 @@
-// services/tdx.js
 const axios = require("axios");
 
 const AUTH_URL =
@@ -9,11 +8,11 @@ const CLIENT_ID = process.env.TDX_CLIENT_ID;
 const CLIENT_SECRET = process.env.TDX_CLIENT_SECRET;
 
 let tokenCache = null;
-let tokenExpire = 0;
+let tokenExpireAt = 0;
 
 async function getToken() {
   const now = Date.now();
-  if (tokenCache && now < tokenExpire) return tokenCache;
+  if (tokenCache && now < tokenExpireAt) return tokenCache;
 
   const params = new URLSearchParams();
   params.append("grant_type", "client_credentials");
@@ -25,7 +24,7 @@ async function getToken() {
   });
 
   tokenCache = res.data.access_token;
-  tokenExpire = now + res.data.expires_in * 1000 - 60000;
+  tokenExpireAt = now + res.data.expires_in * 1000 - 60000;
   return tokenCache;
 }
 
