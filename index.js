@@ -214,12 +214,18 @@ async function writeShopRow(shop, text, userId) {
     }
   });
 
-  const summary =
+const summary =
 `【${shop}｜${p.date.slice(5)}】
+
 💰 業績：${p.revenue}
+
 📦 ${qtyLabel}：${p.pkg}
-🧾 客單價：${p.unit}
-👥 人事 外場 ${p.frontPay}（${p.frontPct}%） / 內場 ${p.backPay}（${p.backPct}%）
+🧾 客單價：${p.unit || "XXXX"}
+
+👥 人事
+外場：${p.frontPay}（${p.frontPct}%）
+內場：${p.backPay}（${p.backPct}%）
+總計：${p.totalPay}（${p.totalPct}%）
 `;
 
   await sheets.spreadsheets.values.update({
