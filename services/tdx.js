@@ -1,3 +1,4 @@
+// services/tdx.js
 const axios = require("axios");
 
 const AUTH_URL =
@@ -7,12 +8,12 @@ const API_BASE = "https://tdx.transportdata.tw/api/basic";
 const CLIENT_ID = process.env.TDX_CLIENT_ID;
 const CLIENT_SECRET = process.env.TDX_CLIENT_SECRET;
 
-let cachedToken = null;
-let tokenExpireAt = 0;
+let tokenCache = null;
+let tokenExpire = 0;
 
 async function getToken() {
   const now = Date.now();
-  if (cachedToken && now < tokenExpireAt) return cachedToken;
+  if (tokenCache && now < tokenExpire) return tokenCache;
 
   const params = new URLSearchParams();
   params.append("grant_type", "client_credentials");
@@ -23,21 +24,18 @@ async function getToken() {
     headers: { "Content-Type": "application/x-www-form-urlencoded" }
   });
 
-  cachedToken = res.data.access_token;
-  tokenExpireAt = now + res.data.expires_in * 1000 - 60_000;
-  return cachedToken;
+  tokenCache = res.data.access_token;
+  tokenExpire = now + res.data.expires_in * 1000 - 60000;
+  return tokenCache;
 }
 
 async function getHSRTimetable(originId, destId, date) {
   const token = await getToken();
-
   const url =
     `${API_BASE}/v2/Rail/THSR/DailyTimetable/OD/${originId}/to/${destId}/${date}?$format=JSON`;
 
   const res = await axios.get(url, {
-    headers: {
-      Authorization: `Bearer ${token}`
-    }
+    headers: { Authorization: `Bearer ${token}` }
   });
 
   return res.data;
