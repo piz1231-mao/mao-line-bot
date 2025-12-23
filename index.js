@@ -7,6 +7,8 @@
 // - 待辦功能
 // - 🚄 高鐵查詢
 // - 私訊營運回報（三店分頁）
+//   ✔ 成功不回應
+//   ✔ 失敗才回應
 // - 摘要寫入 Q 欄（emoji 版）
 // - 查業績：單店 / 三店合併（A 分隔線）
 // ======================================================
@@ -126,7 +128,7 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 正規化 / 解析（⭐ 本次重點修正）
+// 正規化 / 解析（已修正空白與全形問題）
 // ======================================================
 function normalize(text) {
   return text
@@ -157,10 +159,10 @@ function parseSales(text) {
     t.match(/總鍋數\s*:\s*([\d,]+)/);
 
   const fp =
-    t.match(/外場薪資\s*:\s*([\d,]+)\s*([\d.]+)%/);
+    t.match(/外場薪資\s*:\s*([\d,]+)[\s.]+([\d.]+)%/);
 
   const bp =
-    t.match(/內場薪資\s*:\s*([\d,]+)\s*([\d.]+)%/);
+    t.match(/內場薪資\s*:\s*([\d,]+)[\s.]+([\d.]+)%/);
 
   const frontPay = fp ? num(fp[1]) : "";
   const frontPct = fp ? pct(fp[2]) : "";
@@ -238,8 +240,7 @@ async function writeShop(shop, text, userId) {
     }
   });
 
-  const updatedRange = appendRes.data.updates.updatedRange;
-  const row = updatedRange.match(/\d+/)[0];
+  const row = appendRes.data.updates.updatedRange.match(/\d+/)[0];
 
   const summary =
 `【${shop}｜${p.date.slice(5)}】
@@ -263,7 +264,7 @@ async function writeShop(shop, text, userId) {
 }
 
 // ======================================================
-// 私訊營運回報
+// 私訊營運回報（成功靜默，失敗才回）
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -278,11 +279,18 @@ async function handlePrivateSales(event) {
     text.includes("三山博愛") ? "三山博愛" :
     "茶六博愛";
 
-  await ensureSheet(shop);
-  await writeShop(shop, text, event.source.userId);
-
-  await client.replyMessage(event.replyToken, { type: "text", text: "已記錄" });
-  return true;
+  try {
+    await ensureSheet(shop);
+    await writeShop(shop, text, event.source.userId);
+    return true; // ✅ 成功：不回應
+  } catch (err) {
+    console.error("❌ 業績回報寫入失敗:", err);
+    await client.replyMessage(event.replyToken, {
+      type: "text",
+      text: "⚠️ 業績回報失敗，請確認格式或稍後再傳一次"
+    });
+    return true;
+  }
 }
 
 // ======================================================
@@ -339,7 +347,8 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 
       const hsr = await handleHSR(event);
       if (hsr) {
-        await client.replyMessage(event.replyToken,
+        await client.replyMessage(
+          event.replyToken,
           typeof hsr === "string" ? { type: "text", text: hsr } : hsr
         );
         continue;
