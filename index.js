@@ -260,7 +260,7 @@ async function writeShop(shop, text, userId) {
 }
 
 // ======================================================
-// 私訊營運回報（成功不回訊息，省 LINE 則數）
+// 私訊營運回報（原版）
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -278,11 +278,9 @@ async function handlePrivateSales(event) {
   try {
     await ensureSheet(shop);
     await writeShop(shop, text, event.source.userId);
-    return true; // ✅ 成功：完全不回訊息（0 則）
+    return true;
   } catch (err) {
     console.error("❌ 業績回報寫入失敗:", err);
-
-    // ⚠️ 只有失敗才回（才花錢）
     await client.replyMessage(event.replyToken, {
       type: "text",
       text: "⚠️ 業績回報寫入失敗，請再傳一次或聯絡管理員"
@@ -292,7 +290,7 @@ async function handlePrivateSales(event) {
 }
 
 // ======================================================
-// 查詢（單店 / 三店合併，原版）
+// 查詢（原版）
 // ======================================================
 async function handleQuery(event) {
   if (event.message.type !== "text") return false;
@@ -343,6 +341,18 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const event of req.body.events || []) {
 
+      // ===== 🚄 高鐵查詢（優先權最高）=====
+      const hsrReply = await handleHSR(event);
+      if (hsrReply) {
+        const message =
+          typeof hsrReply === "string"
+            ? { type: "text", text: hsrReply }
+            : hsrReply;
+
+        await client.replyMessage(event.replyToken, message);
+        continue;
+      }
+
       // ===== 私訊營運回報 =====
       if (await handlePrivateSales(event)) continue;
 
@@ -350,18 +360,6 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
       if (await handleQuery(event)) continue;
 
       if (event.message?.type === "text") {
-
-// ===== 🚄 高鐵查詢 =====
-const hsrReply = await handleHSR(event);
-if (hsrReply) {
-  const message =
-    typeof hsrReply === "string"
-      ? { type: "text", text: hsrReply }
-      : hsrReply;
-
-  await client.replyMessage(event.replyToken, message);
-  continue;
-}
 
         // ===== 待辦 =====
         if (todoCmd.keywords?.some(k => event.message.text.startsWith(k))) {
