@@ -1,22 +1,26 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// 穩定基準 v1.2（功能鎖死）
-// 查詢規則：
-// - 查業績           → 三店合併（摘要原樣＋分隔線）
-// - 查業績 店名      → 單店摘要
+// 基準定版 v1.2（功能鎖死）
+// - TradingView Webhook（鎖死）
+// - 天氣查詢（縣市完整）
+// - 待辦功能
+// - 私訊營運回報（三店分頁）
+// - 摘要寫入 Q 欄（emoji 版）
+// - 查業績：單店 / 三店合併（A 分隔線）
 // ======================================================
 
 require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
 const fs = require("fs");
+const axios = require("axios");
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
 
 const app = express();
 
 // ======================================================
-// 原有 services（完全不動）
+// 原有 services（⚠️ 不動）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
@@ -55,6 +59,33 @@ const auth = new GoogleAuth({
 });
 
 // ======================================================
+// TradingView Webhook（✅ 補回，原樣鎖死）
+// ======================================================
+app.all(
+  "/tv-alert",
+  express.text({ type: "*/*" }),
+  async (req, res) => {
+    try {
+      let body = {};
+      let content = req.body || "";
+
+      if (typeof content === "string") {
+        try { body = JSON.parse(content); } catch {}
+      }
+
+      const msg = body.message || body.alert || content;
+      const price = body.close ?? body.price ?? null;
+
+      await tvAlert(client, msg, { ...body, price });
+      res.status(200).send("OK");
+    } catch (err) {
+      console.error("❌ TV Webhook Error:", err);
+      res.status(200).send("OK");
+    }
+  }
+);
+
+// ======================================================
 // 工具
 // ======================================================
 const nowTW = () =>
@@ -64,7 +95,7 @@ const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
 const pct = v => (v ? Number(v) : "");
 
 // ======================================================
-// 天氣（原版，不動）
+// 天氣（完整原版，不刪）
 // ======================================================
 function parseCommand(text) {
   if (!text) return null;
@@ -85,15 +116,16 @@ const CITY_MAP = {
   "彰化": "彰化縣", "南投": "南投縣",
   "雲林": "雲林縣", "嘉義": "嘉義市",
   "屏東": "屏東縣", "宜蘭": "宜蘭縣",
-  "花蓮": "花蓮縣", "台東": "臺東縣",
-  "臺東": "臺東縣", "澎湖": "澎湖縣",
-  "金門": "金門縣", "連江": "連江縣"
+  "花蓮": "花蓮縣",
+  "台東": "臺東縣", "臺東": "臺東縣",
+  "澎湖": "澎湖縣", "金門": "金門縣",
+  "連江": "連江縣"
 };
 
 // ======================================================
-// 正規化
+// 正規化 / 解析
 // ======================================================
-function normalizeText(text) {
+function normalize(text) {
   return text
     .replace(/：/g, ":")
     .replace(/。/g, ".")
@@ -102,32 +134,33 @@ function normalizeText(text) {
     .trim();
 }
 
-// ======================================================
-// parse（共用）
-// ======================================================
-function parseBase(text) {
-  const t = normalizeText(text);
+function parseSales(text) {
+  const t = normalize(text);
 
   const d = t.match(/(\d{1,2})\/(\d{1,2})/);
   const date = d
     ? `${new Date().getFullYear()}-${d[1].padStart(2, "0")}-${d[2].padStart(2, "0")}`
     : "";
 
-  const revenue = t.match(/業績\s*[:：]?\s*([\d,]+)/);
-  const unit = t.match(/客單價\s*[:：]?\s*([\d.]+)/);
+  const revenue = t.match(/業績[:：]?\s*([\d,]+)/);
+  const unit = t.match(/客單價[:：]?\s*([\d.]+)/);
+  const qty =
+    t.match(/套餐份數[:：]?\s*([\d,]+)/) ||
+    t.match(/總鍋數[:：]?\s*([\d,]+)/);
 
-  const fp = t.match(/外場薪資\s*[:：]?\s*([\d,]+).([\d.]+)%/);
-  const bp = t.match(/內場薪資\s*[:：]?\s*([\d,]+).([\d.]+)%/);
+  const fp = t.match(/外場薪資[:：]?\s*([\d,]+).([\d.]+)%/);
+  const bp = t.match(/內場薪資[:：]?\s*([\d,]+).([\d.]+)%/);
 
-  let frontPay = fp ? num(fp[1]) : "";
-  let frontPct = fp ? pct(fp[2]) : "";
-  let backPay = bp ? num(bp[1]) : "";
-  let backPct = bp ? pct(bp[2]) : "";
+  const frontPay = fp ? num(fp[1]) : "";
+  const frontPct = fp ? pct(fp[2]) : "";
+  const backPay = bp ? num(bp[1]) : "";
+  const backPct = bp ? pct(bp[2]) : "";
 
   return {
     date,
     revenue: revenue ? num(revenue[1]) : "",
     unit: unit ? unit[1] : "",
+    qty: qty ? num(qty[1]) : "",
     frontPay,
     frontPct,
     backPay,
@@ -138,32 +171,15 @@ function parseBase(text) {
 }
 
 // ======================================================
-// 分店 parse
+// 確保分店 Sheet 存在
 // ======================================================
-function parseShop(raw) {
-  const t = normalizeText(raw);
-  const base = parseBase(t);
-
-  const qty =
-    t.match(/套餐份數\s*[:：]?\s*([\d,]+)/) ||
-    t.match(/總鍋數\s*[:：]?\s*([\d,]+)/);
-
-  return {
-    ...base,
-    pkg: qty ? num(qty[1]) : ""
-  };
-}
-
-// ======================================================
-// 確保分店 sheet 存在
-// ======================================================
-async function ensureShopSheetExists(shop) {
+async function ensureSheet(shop) {
   if (shop === TEMPLATE_SHEET) return;
 
-  const authClient = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: authClient });
-
+  const c = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: c });
   const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+
   if (meta.data.sheets.some(s => s.properties.title === shop)) return;
 
   await sheets.spreadsheets.batchUpdate({
@@ -187,17 +203,17 @@ async function ensureShopSheetExists(shop) {
 // ======================================================
 // 寫入分店（唯一寫入點）
 // ======================================================
-async function writeShopRow(shop, text, userId) {
-  const authClient = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: authClient });
+async function writeShop(shop, text, userId) {
+  const c = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: c });
 
   const meta = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: `${shop}!A:A`
   });
-  const rowIndex = (meta.data.values?.length || 1) + 1;
+  const row = (meta.data.values?.length || 1) + 1;
 
-  const p = parseShop(text);
+  const p = parseSales(text);
   const qtyLabel = shop === "湯棧中山" ? "總鍋數" : "套餐數";
 
   await sheets.spreadsheets.values.append({
@@ -207,18 +223,11 @@ async function writeShopRow(shop, text, userId) {
     requestBody: {
       values: [[
         nowTW(), userId, userId, text,
-        shop,
-        p.date,
-        p.revenue,
-        "業績",
-        p.pkg,
-        p.unit,
-        p.frontPay,
-        p.frontPct,
-        p.backPay,
-        p.backPct,
-        p.totalPay,
-        p.totalPct
+        shop, p.date, p.revenue, "業績",
+        p.qty, p.unit,
+        p.frontPay, p.frontPct,
+        p.backPay, p.backPct,
+        p.totalPay, p.totalPct
       ]]
     }
   });
@@ -228,25 +237,24 @@ async function writeShopRow(shop, text, userId) {
 
 💰 業績：${p.revenue}
 
-📦 ${qtyLabel}：${p.pkg}
+📦 ${qtyLabel}：${p.qty}
 🧾 客單價：${p.unit || "XXXX"}
 
 👥 人事
 外場：${p.frontPay}（${p.frontPct}%）
 內場：${p.backPay}（${p.backPct}%）
-總計：${p.totalPay}（${p.totalPct}%）
-`;
+總計：${p.totalPay}（${p.totalPct}%）`;
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${shop}!Q${rowIndex}`,
+    range: `${shop}!Q${row}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [[summary]] }
   });
 }
 
 // ======================================================
-// 私訊回報
+// 私訊營運回報
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -261,8 +269,8 @@ async function handlePrivateSales(event) {
     text.includes("三山博愛") ? "三山博愛" :
     "茶六博愛";
 
-  await ensureShopSheetExists(shop);
-  await writeShopRow(shop, text, event.source.userId);
+  await ensureSheet(shop);
+  await writeShop(shop, text, event.source.userId);
 
   await client.replyMessage(event.replyToken, { type: "text", text: "已記錄" });
   return true;
@@ -278,16 +286,15 @@ async function handleQuery(event) {
   const parts = event.message.text.trim().split(/\s+/);
   const shopArg = parts[1];
 
-  const authClient = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: authClient });
+  const c = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: c });
 
-  // 指定店名
   if (shopArg && SHOP_LIST.includes(shopArg)) {
-    const res = await sheets.spreadsheets.values.get({
+    const r = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${shopArg}!Q:Q`
     });
-    const list = res.data.values?.map(v => v[0]).filter(Boolean) || [];
+    const list = r.data.values?.map(v => v[0]).filter(Boolean) || [];
     await client.replyMessage(event.replyToken, {
       type: "text",
       text: list.length ? list[list.length - 1] : "目前沒有資料"
@@ -295,14 +302,13 @@ async function handleQuery(event) {
     return true;
   }
 
-  // 未指定 → 三店合併（A 版分隔線）
   let combined = [];
   for (const shop of SHOP_LIST) {
-    const res = await sheets.spreadsheets.values.get({
+    const r = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${shop}!Q:Q`
     });
-    const list = res.data.values?.map(v => v[0]).filter(Boolean) || [];
+    const list = r.data.values?.map(v => v[0]).filter(Boolean) || [];
     if (list.length) combined.push(list[list.length - 1]);
   }
 
@@ -316,7 +322,7 @@ async function handleQuery(event) {
 }
 
 // ======================================================
-// Webhook
+// LINE Webhook（主入口）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
