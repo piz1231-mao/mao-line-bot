@@ -1,16 +1,15 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// 功能：
-// - 業績私訊回報（大哥您好）
-// - A～P 完整寫入（不破壞既有）
-// - Q 欄「數字版老闆摘要」（定版）
-// - 查詢只讀摘要
-// - 待辦 / 天氣 / TV Webhook 保留
+// 基準定版 v1.2（穩定功能鎖死）
+// A-3 茶六博愛｜營運解析 v1
+// B-1 摘要欄位（v1 emoji）
+// B-2 查詢指令
 // ======================================================
 
 require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
+const axios = require("axios");
 const fs = require("fs");
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
@@ -18,24 +17,30 @@ const { google } = require("googleapis");
 const app = express();
 
 // ======================================================
-// LINE 設定
+// 自家 services（原有）
+// ======================================================
+const { get36hrWeather } = require("./services/weather.service");
+const { buildWeatherFriendText } = require("./services/weather.text");
+const tvAlert = require("./services/tvAlert");
+const todoCmd = require("./commands/chat/todo");
+
+// ======================================================
+// LINE 設定（原有）
 // ======================================================
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.LINE_CHANNEL_SECRET
 };
+
+if (!config.channelAccessToken || !config.channelSecret) {
+  console.error("❌ LINE_CHANNEL_ACCESS_TOKEN 或 LINE_CHANNEL_SECRET 未設定");
+  process.exit(1);
+}
+
 const client = new line.Client(config);
 
 // ======================================================
-// 舊功能（保留）
-// ======================================================
-const todoCmd = require("./commands/chat/todo");
-const tvAlert = require("./services/tvAlert");
-const { get36hrWeather } = require("./services/weather.service");
-const { buildWeatherFriendText } = require("./services/weather.text");
-
-// ======================================================
-// Google Sheet 設定
+// Google Sheet 設定（原有）
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const SHEET_NAME = "茶六博愛";
@@ -50,15 +55,67 @@ const auth = new GoogleAuth({
 });
 
 // ======================================================
+// TradingView Webhook（原樣保留）
+// ======================================================
+app.all(
+  "/tv-alert",
+  express.text({ type: "*/*" }),
+  async (req, res) => {
+    try {
+      let body = {};
+      let content = req.body || "";
+      if (typeof content === "string") {
+        try { body = JSON.parse(content); } catch {}
+      }
+      const msg = body.message || body.alert || content;
+      const price = body.close ?? body.price ?? null;
+      await tvAlert(client, msg, { ...body, price });
+      res.status(200).send("OK");
+    } catch (err) {
+      console.error("❌ TV Webhook Error:", err);
+      res.status(200).send("OK");
+    }
+  }
+);
+
+// ======================================================
 // 工具
 // ======================================================
 const nowTW = () =>
   new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
 
 const num = v => (v ? Number(v.replace(/,/g, "")) : "");
+const pct = v => (v ? Number(v) : "");
 
 // ======================================================
-// 解析（A-3，保留）
+// 天氣（完整原版，不刪）
+// ======================================================
+function parseCommand(text) {
+  if (!text) return null;
+  const t = text.trim();
+  if (t === "天氣" || t.startsWith("天氣 ")) {
+    return { command: "WEATHER", arg: t.replace("天氣", "").trim() };
+  }
+  return null;
+}
+
+const CITY_MAP = {
+  "台北": "臺北市", "臺北": "臺北市",
+  "新北": "新北市", "桃園": "桃園市",
+  "台中": "臺中市", "臺中": "臺中市",
+  "台南": "臺南市", "臺南": "臺南市",
+  "高雄": "高雄市", "基隆": "基隆市",
+  "新竹": "新竹市", "苗栗": "苗栗縣",
+  "彰化": "彰化縣", "南投": "南投縣",
+  "雲林": "雲林縣", "嘉義": "嘉義市",
+  "屏東": "屏東縣", "宜蘭": "宜蘭縣",
+  "花蓮": "花蓮縣", "台東": "臺東縣",
+  "臺東": "臺東縣", "澎湖": "澎湖縣",
+  "金門": "金門縣", "連江": "連江縣"
+};
+
+// ======================================================
+// 解析（A-3，原樣）
 // ======================================================
 function parse(text) {
   const d = text.match(/(\d{1,2})\/(\d{1,2})/);
@@ -75,12 +132,12 @@ function parse(text) {
   const tp = text.match(/總人事\s*[:：]\s*([\d,]+)。([\d.]+)%/);
 
   let frontPay = fp ? num(fp[1]) : "";
-  let frontPct = fp ? Number(fp[2]) : "";
+  let frontPct = fp ? pct(fp[2]) : "";
   let backPay = bp ? num(bp[1]) : "";
-  let backPct = bp ? Number(bp[2]) : "";
+  let backPct = bp ? pct(bp[2]) : "";
 
   let totalPay = tp ? num(tp[1]) : "";
-  let totalPct = tp ? Number(tp[2]) : "";
+  let totalPct = tp ? pct(tp[2]) : "";
 
   if (!totalPay && frontPay && backPay) totalPay = frontPay + backPay;
   if (!totalPct && frontPct && backPct)
@@ -101,7 +158,7 @@ function parse(text) {
 }
 
 // ======================================================
-// 核心寫入（唯一寫入點）
+// 核心寫入（唯一寫入點，原樣）
 // ======================================================
 async function appendSalesRow(rawText, userId) {
   const authClient = await auth.getClient();
@@ -115,43 +172,42 @@ async function appendSalesRow(rawText, userId) {
 
   const p = parse(rawText);
 
-  // A～P 寫入
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: `${SHEET_NAME}!A1`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [[
-        nowTW(),            // A
-        userId,             // B
-        userId,             // C
-        rawText,            // D
-        "茶六博愛",         // E
-        p.date,             // F
-        p.revenue,          // G
-        "業績",             // H
-        p.pkg,              // I
-        p.unit,             // J
-        p.frontPay,         // K
-        p.frontPct,         // L
-        p.backPay,          // M
-        p.backPct,          // N
-        p.totalPay,         // O
-        p.totalPct          // P
+        nowTW(), userId, userId, rawText,
+        "茶六博愛",
+        p.date,
+        p.revenue,
+        "業績",
+        p.pkg,
+        p.unit,
+        p.frontPay,
+        p.frontPct,
+        p.backPay,
+        p.backPct,
+        p.totalPay,
+        p.totalPct
       ]]
     }
   });
 
-  // ======================================================
-  // Q 欄：數字版老闆摘要（定版）
-  // ======================================================
+  // ===== B-1：摘要（v1 emoji）=====
   const summary =
-    `茶六博愛 ${p.date?.slice(5)}｜` +
-    `業績 ${p.revenue}｜` +
-    `人事 外 ${p.frontPay}（${p.frontPct}%） / ` +
-    `內 ${p.backPay}（${p.backPct}%） / ` +
-    `總 ${p.totalPay}（${p.totalPct}%）｜` +
-    `${p.pkg} 套`;
+`【茶六博愛｜${p.date.slice(5)}】
+
+💰 業績：${p.revenue}
+
+🧾 客單價：${p.unit || "XXXX"}
+📦 套餐數：${p.pkg}
+
+👥 人事
+外場：${p.frontPay}（${p.frontPct}%）
+內場：${p.backPay}（${p.backPct}%）
+總計：${p.totalPay}（${p.totalPct}%）`;
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
@@ -182,7 +238,7 @@ async function handlePrivateSales(event) {
 }
 
 // ======================================================
-// 查詢（只讀摘要）
+// 查詢（只讀摘要 Q）
 // ======================================================
 async function handleQuery(event) {
   if (event.message.type !== "text") return false;
@@ -207,13 +263,13 @@ async function handleQuery(event) {
 
   await client.replyMessage(event.replyToken, {
     type: "text",
-    text: `【茶六博愛｜最新】\n${list[list.length - 1]}`
+    text: list[list.length - 1]
   });
   return true;
 }
 
 // ======================================================
-// LINE Webhook
+// LINE Webhook（完整保留）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
@@ -221,12 +277,28 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
       if (await handlePrivateSales(event)) continue;
       if (await handleQuery(event)) continue;
 
+      if (event.type !== "message") continue;
+      if (event.message.type !== "text") continue;
+      const text = event.message.text.trim();
+
       if (
-        event.type === "message" &&
-        event.message.type === "text" &&
-        todoCmd.keywords?.some(k => event.message.text.startsWith(k))
+        todoCmd.keywords &&
+        todoCmd.keywords.some(k => text.startsWith(k))
       ) {
         await todoCmd.handler(client, event);
+        continue;
+      }
+
+      const parsed = parseCommand(text);
+      if (parsed && parsed.command === "WEATHER") {
+        const city =
+          CITY_MAP[parsed.arg] || process.env.DEFAULT_CITY || "高雄市";
+        const result = await get36hrWeather(city);
+        const reply = buildWeatherFriendText(result);
+        await client.replyMessage(event.replyToken, {
+          type: "text",
+          text: reply
+        });
       }
     }
     res.status(200).send("OK");
@@ -236,6 +308,8 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
   }
 });
 
+// ======================================================
+// 啟動 Server
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
