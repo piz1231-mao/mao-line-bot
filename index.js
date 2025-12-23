@@ -2,7 +2,7 @@
 // 毛怪秘書 LINE Bot — index.js
 // 穩定基準 v1.2（功能鎖死）
 // 查詢規則：
-// - 查業績           → 三店合併（摘要原樣）
+// - 查業績           → 三店合併（摘要原樣＋分隔線）
 // - 查業績 店名      → 單店摘要
 // ======================================================
 
@@ -295,7 +295,7 @@ async function handleQuery(event) {
     return true;
   }
 
-  // 未指定 → 三店合併
+  // 未指定 → 三店合併（A 版分隔線）
   let combined = [];
   for (const shop of SHOP_LIST) {
     const res = await sheets.spreadsheets.values.get({
@@ -308,7 +308,9 @@ async function handleQuery(event) {
 
   await client.replyMessage(event.replyToken, {
     type: "text",
-    text: combined.length ? combined.join("\n\n") : "目前沒有資料"
+    text: combined.length
+      ? combined.join("\n\n━━━━━━━━━━━━━━\n\n")
+      : "目前沒有資料"
   });
   return true;
 }
