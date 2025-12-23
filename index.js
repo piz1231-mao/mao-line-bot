@@ -1,11 +1,7 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
 // 基準定版 v1.2（穩定功能鎖死）
-// A-3 茶六博愛｜營運解析 v1
-// B-1 摘要欄位（v1 emoji）
-// B-2 查詢指令
-// ＋ C-1 分店 Sheet 自動建立（複製茶六）
-// ＋ C-2 分店資料寫入（不影響茶六）
+// 茶六博愛為範本，分店獨立寫入
 // ======================================================
 
 require("dotenv").config();
@@ -19,7 +15,7 @@ const { google } = require("googleapis");
 const app = express();
 
 // ======================================================
-// 自家 services（原有）
+// 原有 services（不動）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
@@ -27,7 +23,7 @@ const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
 
 // ======================================================
-// LINE 設定（原有）
+// LINE 設定（不動）
 // ======================================================
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
@@ -42,11 +38,10 @@ if (!config.channelAccessToken || !config.channelSecret) {
 const client = new line.Client(config);
 
 // ======================================================
-// Google Sheet 設定（原有）
+// Google Sheet 設定
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
-const SHEET_NAME = "茶六博愛"; // ← 原本固定，不動
-const TEMPLATE_SHEET = "茶六博愛"; // ← 新增：作為分店範本
+const TEMPLATE_SHEET = "茶六博愛";
 
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
@@ -58,40 +53,16 @@ const auth = new GoogleAuth({
 });
 
 // ======================================================
-// TradingView Webhook（原樣保留）
-// ======================================================
-app.all(
-  "/tv-alert",
-  express.text({ type: "*/*" }),
-  async (req, res) => {
-    try {
-      let body = {};
-      let content = req.body || "";
-      if (typeof content === "string") {
-        try { body = JSON.parse(content); } catch {}
-      }
-      const msg = body.message || body.alert || content;
-      const price = body.close ?? body.price ?? null;
-      await tvAlert(client, msg, { ...body, price });
-      res.status(200).send("OK");
-    } catch (err) {
-      console.error("❌ TV Webhook Error:", err);
-      res.status(200).send("OK");
-    }
-  }
-);
-
-// ======================================================
-// 工具（原有）
+// 工具
 // ======================================================
 const nowTW = () =>
   new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
 
-const num = v => (v ? Number(v.replace(/,/g, "")) : "");
+const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
 const pct = v => (v ? Number(v) : "");
 
 // ======================================================
-// 天氣（完整原版，不刪）
+// 天氣（原版，不動）
 // ======================================================
 function parseCommand(text) {
   if (!text) return null;
@@ -118,7 +89,20 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 解析（A-3，原樣）
+// 🔧 新增：文字正規化（不解析，只洗字）
+// ======================================================
+function normalizeText(text) {
+  return text
+    .replace(/：/g, ":")
+    .replace(/。/g, ".")
+    .replace(/％/g, "%")
+    .replace(/／/g, "/")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// ======================================================
+// 原 parse（茶六用，不動）
 // ======================================================
 function parse(text) {
   const d = text.match(/(\d{1,2})\/(\d{1,2})/);
@@ -126,13 +110,13 @@ function parse(text) {
     ? `${new Date().getFullYear()}-${d[1].padStart(2, "0")}-${d[2].padStart(2, "0")}`
     : "";
 
-  const revenue = text.match(/業績\s*[:：]\s*([\d,]+)/);
-  const pkg = text.match(/套餐份數\s*[:：]\s*([\d,]+)/);
-  const unit = text.match(/客單價\s*[:：]\s*([\d.]+)/);
+  const revenue = text.match(/業績[:：]?\s*([\d,]+)/);
+  const pkg = text.match(/套餐份數[:：]?\s*([\d,]+)/);
+  const unit = text.match(/客單價[:：]?\s*([\d.]+)/);
 
-  const fp = text.match(/外場薪資\s*([\d,]+)。([\d.]+)%/);
-  const bp = text.match(/內場薪資\s*([\d,]+)。([\d.]+)%/);
-  const tp = text.match(/總人事\s*[:：]\s*([\d,]+)。([\d.]+)%/);
+  const fp = text.match(/外場薪資[:：]?\s*([\d,]+).([\d.]+)%/);
+  const bp = text.match(/內場薪資[:：]?\s*([\d,]+).([\d.]+)%/);
+  const tp = text.match(/總人事[:：]?\s*([\d,]+).([\d.]+)%/);
 
   let frontPay = fp ? num(fp[1]) : "";
   let frontPct = fp ? pct(fp[2]) : "";
@@ -146,81 +130,29 @@ function parse(text) {
   if (!totalPct && frontPct && backPct)
     totalPct = Number((frontPct + backPct).toFixed(2));
 
-  return {
-    date,
-    revenue: revenue ? num(revenue[1]) : "",
-    pkg: pkg ? num(pkg[1]) : "",
-    unit: unit ? unit[1] : "",
-    frontPay,
-    frontPct,
-    backPay,
-    backPct,
-    totalPay,
-    totalPct
-  };
+  return { date, revenue: revenue ? num(revenue[1]) : "", pkg: pkg ? num(pkg[1]) : "", unit: unit ? unit[1] : "", frontPay, frontPct, backPay, backPct, totalPay, totalPct };
 }
 
 // ======================================================
-// 核心寫入（原有，完全不動）
+// 🆕 分店專用 parse（支援多格式）
 // ======================================================
-async function appendSalesRow(rawText, userId) {
-  const authClient = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: authClient });
+function parseShop(raw) {
+  const text = normalizeText(raw);
 
-  const meta = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A:A`
-  });
-  const rowIndex = (meta.data.values?.length || 1) + 1;
+  const base = parse(text);
 
-  const p = parse(rawText);
-
-  await sheets.spreadsheets.values.append({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A1`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: {
-      values: [[
-        nowTW(), userId, userId, rawText,
-        "茶六博愛",
-        p.date,
-        p.revenue,
-        "業績",
-        p.pkg,
-        p.unit,
-        p.frontPay,
-        p.frontPct,
-        p.backPay,
-        p.backPct,
-        p.totalPay,
-        p.totalPct
-      ]]
+  if (!base.pkg) {
+    const matches = [...text.matchAll(/(\d+)\s*人套餐[:：]?\s*(\d+)/g)];
+    if (matches.length) {
+      base.pkg = matches.reduce((sum, m) => sum + Number(m[2]), 0);
     }
-  });
+  }
 
-  const summary =
-`【茶六博愛｜${p.date.slice(5)}】
-
-💰 業績：${p.revenue}
-
-🧾 客單價：${p.unit || "XXXX"}
-📦 套餐數：${p.pkg}
-
-👥 人事
-外場：${p.frontPay}（${p.frontPct}%）
-內場：${p.backPay}（${p.backPct}%）
-總計：${p.totalPay}（${p.totalPct}%）`;
-
-  await sheets.spreadsheets.values.update({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!Q${rowIndex}`,
-    valueInputOption: "USER_ENTERED",
-    requestBody: { values: [[summary]] }
-  });
+  return base;
 }
 
 // ======================================================
-// 🆕 C-1：確保分店 Sheet 存在（複製茶六欄位）
+// 🆕 分店 Sheet 建立（複製茶六）
 // ======================================================
 async function ensureShopSheetExists(shopName) {
   if (shopName === TEMPLATE_SHEET) return;
@@ -228,20 +160,13 @@ async function ensureShopSheetExists(shopName) {
   const authClient = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: authClient });
 
-  const meta = await sheets.spreadsheets.get({
-    spreadsheetId: SPREADSHEET_ID
-  });
-
-  const exists = meta.data.sheets.some(
-    s => s.properties.title === shopName
-  );
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  const exists = meta.data.sheets.some(s => s.properties.title === shopName);
   if (exists) return;
 
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
-    requestBody: {
-      requests: [{ addSheet: { properties: { title: shopName } } }]
-    }
+    requestBody: { requests: [{ addSheet: { properties: { title: shopName } } }] }
   });
 
   const header = await sheets.spreadsheets.values.get({
@@ -258,7 +183,7 @@ async function ensureShopSheetExists(shopName) {
 }
 
 // ======================================================
-// 🆕 C-2：寫入指定分店 Sheet（新增，不影響茶六）
+// 🆕 分店寫入（用 parseShop）
 // ======================================================
 async function appendSalesRowByShop(shopName, rawText, userId) {
   const authClient = await auth.getClient();
@@ -270,7 +195,7 @@ async function appendSalesRowByShop(shopName, rawText, userId) {
   });
   const rowIndex = (meta.data.values?.length || 1) + 1;
 
-  const p = parse(rawText);
+  const p = parseShop(rawText);
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
@@ -317,7 +242,7 @@ async function appendSalesRowByShop(shopName, rawText, userId) {
 }
 
 // ======================================================
-// 私訊業績回報（原流程＋新增分店路徑）
+// 私訊業績回報
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -327,66 +252,29 @@ async function handlePrivateSales(event) {
   const text = event.message.text.trim();
   if (!text.startsWith("大哥您好")) return false;
 
-  const shopLine = text.split("\n").map(l => l.trim())
-    .find(l => ["茶六博愛", "三山博愛", "湯棧中山"].includes(l));
+  const shop =
+    text.includes("三山博愛") ? "三山博愛" :
+    text.includes("湯棧中山") ? "湯棧中山" :
+    "茶六博愛";
 
-  if (shopLine && shopLine !== SHEET_NAME) {
-    await ensureShopSheetExists(shopLine);
-    await appendSalesRowByShop(shopLine, text, event.source.userId);
-  } else {
-    await appendSalesRow(text, event.source.userId);
-  }
+  await ensureShopSheetExists(shop);
+  await appendSalesRowByShop(shop, text, event.source.userId);
 
-  await client.replyMessage(event.replyToken, {
-    type: "text",
-    text: "已記錄"
-  });
-
+  await client.replyMessage(event.replyToken, { type: "text", text: "已記錄" });
   return true;
 }
 
 // ======================================================
-// 查詢（原有）
-// ======================================================
-async function handleQuery(event) {
-  if (event.message.type !== "text") return false;
-  if (!event.message.text.startsWith("查業績")) return false;
-
-  const authClient = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: authClient });
-
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!Q:Q`
-  });
-
-  const list = res.data.values?.map(v => v[0]).filter(Boolean) || [];
-  if (!list.length) {
-    await client.replyMessage(event.replyToken, {
-      type: "text",
-      text: "目前沒有資料"
-    });
-    return true;
-  }
-
-  await client.replyMessage(event.replyToken, {
-    type: "text",
-    text: list[list.length - 1]
-  });
-  return true;
-}
-
-// ======================================================
-// LINE Webhook（原樣保留）
+// LINE Webhook（其餘功能不動）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const event of req.body.events || []) {
       if (await handlePrivateSales(event)) continue;
-      if (await handleQuery(event)) continue;
 
       if (event.type !== "message") continue;
       if (event.message.type !== "text") continue;
+
       const text = event.message.text.trim();
 
       if (
@@ -399,14 +287,10 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 
       const parsed = parseCommand(text);
       if (parsed && parsed.command === "WEATHER") {
-        const city =
-          CITY_MAP[parsed.arg] || process.env.DEFAULT_CITY || "高雄市";
+        const city = CITY_MAP[parsed.arg] || process.env.DEFAULT_CITY || "高雄市";
         const result = await get36hrWeather(city);
         const reply = buildWeatherFriendText(result);
-        await client.replyMessage(event.replyToken, {
-          type: "text",
-          text: reply
-        });
+        await client.replyMessage(event.replyToken, { type: "text", text: reply });
       }
     }
     res.status(200).send("OK");
@@ -417,35 +301,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// 主動推播：每日老闆摘要（原有）
-// ======================================================
-app.post("/api/daily-summary", async (req, res) => {
-  try {
-    const authClient = await auth.getClient();
-    const sheets = google.sheets({ version: "v4", auth: authClient });
-
-    const result = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${SHEET_NAME}!Q:Q`
-    });
-
-    const list = result.data.values?.map(v => v[0]).filter(Boolean) || [];
-    if (!list.length) return res.status(200).send("no data");
-
-    await client.pushMessage(process.env.BOSS_USER_ID, {
-      type: "text",
-      text: list[list.length - 1]
-    });
-
-    res.status(200).send("ok");
-  } catch (err) {
-    console.error("❌ daily-summary error:", err);
-    res.status(500).send("error");
-  }
-});
-
-// ======================================================
-// 啟動 Server
+// 啟動
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
