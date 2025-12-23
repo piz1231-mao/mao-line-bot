@@ -260,7 +260,7 @@ async function writeShop(shop, text, userId) {
 }
 
 // ======================================================
-// 私訊營運回報（原版）
+// 私訊營運回報（成功不回訊息，省 LINE 則數）
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -275,11 +275,20 @@ async function handlePrivateSales(event) {
     text.includes("三山博愛") ? "三山博愛" :
     "茶六博愛";
 
-  await ensureSheet(shop);
-  await writeShop(shop, text, event.source.userId);
+  try {
+    await ensureSheet(shop);
+    await writeShop(shop, text, event.source.userId);
+    return true; // ✅ 成功：完全不回訊息（0 則）
+  } catch (err) {
+    console.error("❌ 業績回報寫入失敗:", err);
 
-  await client.replyMessage(event.replyToken, { type: "text", text: "已記錄" });
-  return true;
+    // ⚠️ 只有失敗才回（才花錢）
+    await client.replyMessage(event.replyToken, {
+      type: "text",
+      text: "⚠️ 業績回報寫入失敗，請再傳一次或聯絡管理員"
+    });
+    return true;
+  }
 }
 
 // ======================================================
