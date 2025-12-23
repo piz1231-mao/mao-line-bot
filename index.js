@@ -1,6 +1,6 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// 基準定版 v1.2（穩定功能鎖死）
+// 穩定基準 v1.2（功能鎖死）
 // 茶六博愛為範本，分店獨立寫入
 // ======================================================
 
@@ -89,7 +89,7 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 🔧 新增：文字正規化（不解析，只洗字）
+// 文字正規化（只洗字）
 // ======================================================
 function normalizeText(text) {
   return text
@@ -130,17 +130,40 @@ function parse(text) {
   if (!totalPct && frontPct && backPct)
     totalPct = Number((frontPct + backPct).toFixed(2));
 
-  return { date, revenue: revenue ? num(revenue[1]) : "", pkg: pkg ? num(pkg[1]) : "", unit: unit ? unit[1] : "", frontPay, frontPct, backPay, backPct, totalPay, totalPct };
+  return {
+    date,
+    revenue: revenue ? num(revenue[1]) : "",
+    pkg: pkg ? num(pkg[1]) : "",
+    unit: unit ? unit[1] : "",
+    frontPay,
+    frontPct,
+    backPay,
+    backPct,
+    totalPay,
+    totalPct
+  };
 }
 
 // ======================================================
-// 🆕 分店專用 parse（支援多格式）
+// 分店專用 parse（已定版）
 // ======================================================
 function parseShop(raw) {
   const text = normalizeText(raw);
-
   const base = parse(text);
 
+  // ① 套餐份數（茶六 / 三山）
+  if (!base.pkg) {
+    const pkg = text.match(/套餐份數[:：]?\s*([\d,]+)/);
+    if (pkg) base.pkg = num(pkg[1]);
+  }
+
+  // ② 總鍋數（湯棧）
+  if (!base.pkg) {
+    const pot = text.match(/總鍋數[:：]?\s*([\d,]+)/);
+    if (pot) base.pkg = num(pot[1]);
+  }
+
+  // ③ 舊格式備援（不主用）
   if (!base.pkg) {
     const matches = [...text.matchAll(/(\d+)\s*人套餐[:：]?\s*(\d+)/g)];
     if (matches.length) {
@@ -152,7 +175,7 @@ function parseShop(raw) {
 }
 
 // ======================================================
-// 🆕 分店 Sheet 建立（複製茶六）
+// 分店 Sheet 建立（複製茶六）
 // ======================================================
 async function ensureShopSheetExists(shopName) {
   if (shopName === TEMPLATE_SHEET) return;
@@ -166,7 +189,9 @@ async function ensureShopSheetExists(shopName) {
 
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
-    requestBody: { requests: [{ addSheet: { properties: { title: shopName } } }] }
+    requestBody: {
+      requests: [{ addSheet: { properties: { title: shopName } } }]
+    }
   });
 
   const header = await sheets.spreadsheets.values.get({
@@ -183,7 +208,7 @@ async function ensureShopSheetExists(shopName) {
 }
 
 // ======================================================
-// 🆕 分店寫入（用 parseShop）
+// 分店寫入
 // ======================================================
 async function appendSalesRowByShop(shopName, rawText, userId) {
   const authClient = await auth.getClient();
@@ -220,13 +245,15 @@ async function appendSalesRowByShop(shopName, rawText, userId) {
     }
   });
 
+  const qtyLabel = shopName === "湯棧中山" ? "總鍋數" : "套餐數";
+
   const summary =
 `【${shopName}｜${p.date.slice(5)}】
 
 💰 業績：${p.revenue}
 
+📦 ${qtyLabel}：${p.pkg}
 🧾 客單價：${p.unit || "XXXX"}
-📦 套餐數：${p.pkg}
 
 👥 人事
 外場：${p.frontPay}（${p.frontPct}%）
@@ -260,7 +287,11 @@ async function handlePrivateSales(event) {
   await ensureShopSheetExists(shop);
   await appendSalesRowByShop(shop, text, event.source.userId);
 
-  await client.replyMessage(event.replyToken, { type: "text", text: "已記錄" });
+  await client.replyMessage(event.replyToken, {
+    type: "text",
+    text: "已記錄"
+  });
+
   return true;
 }
 
@@ -287,10 +318,14 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 
       const parsed = parseCommand(text);
       if (parsed && parsed.command === "WEATHER") {
-        const city = CITY_MAP[parsed.arg] || process.env.DEFAULT_CITY || "高雄市";
+        const city =
+          CITY_MAP[parsed.arg] || process.env.DEFAULT_CITY || "高雄市";
         const result = await get36hrWeather(city);
         const reply = buildWeatherFriendText(result);
-        await client.replyMessage(event.replyToken, { type: "text", text: reply });
+        await client.replyMessage(event.replyToken, {
+          type: "text",
+          text: reply
+        });
       }
     }
     res.status(200).send("OK");
