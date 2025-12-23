@@ -3,13 +3,13 @@ const { getSessionKey } = require("../utils/sessionKey");
 const { getHSRTimetable } = require("../services/tdx");
 const stationMap = require("../utils/hsrStations");
 
-/** HH:mm -> minutes */
+// HH:mm → 分鐘
 function toMinutes(t) {
   const [h, m] = t.split(":").map(Number);
   return h * 60 + m;
 }
 
-/** 解析使用者輸入時間 */
+// 解析使用者輸入時間
 function parseInputTime(text) {
   const m = text.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
@@ -23,7 +23,7 @@ module.exports = async function handleHSR(event) {
   const sessionKey = getSessionKey(event);
   const session = getSession(sessionKey);
 
-  // 中斷
+  // 取消 / 結束
   if (["取消", "結束"].includes(text)) {
     clearSession(sessionKey);
     return "🚄 已結束高鐵查詢";
@@ -37,6 +37,7 @@ module.exports = async function handleHSR(event) {
 
   if (!session.state?.startsWith("HSR_")) return null;
 
+  // 方向
   if (session.state === "HSR_DIRECTION") {
     if (!["北上", "南下"].includes(text)) {
       return "請回覆：北上 或 南下";
@@ -45,6 +46,7 @@ module.exports = async function handleHSR(event) {
     return "🚄 請輸入起訖站\n例如：左營到台中";
   }
 
+  // 起訖站
   if (session.state === "HSR_STATION") {
     if (!text.includes("到")) {
       return "格式錯誤，請輸入：左營到台中";
@@ -56,6 +58,7 @@ module.exports = async function handleHSR(event) {
     return "🚄 請輸入時間（例如 20:55）";
   }
 
+  // 時間
   if (session.state === "HSR_TIME") {
     const min = parseInputTime(text);
     if (min === null) {
@@ -66,6 +69,7 @@ module.exports = async function handleHSR(event) {
     return await fetchAndRender(session, sessionKey);
   }
 
+  // 下一頁
   if (session.state === "HSR_RESULT" && text === "後面") {
     session.page++;
     return render(session);
@@ -77,21 +81,26 @@ module.exports = async function handleHSR(event) {
 async function fetchAndRender(session, key) {
   const originId = stationMap[session.origin];
   const destId = stationMap[session.destination];
+
   if (!originId || !destId) {
     clearSession(key);
-    return "找不到站名";
+    return "找不到站名，請重新查詢";
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  // ⚠️ 關鍵修正：一定用台灣日期（不能用 toISOString）
+  const today = new Date()
+    .toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })
+    .replace(/\//g, "-");
 
   let data;
   try {
     data = await getHSRTimetable(originId, destId, today);
-  } catch {
+  } catch (err) {
+    console.error("HSR API error:", err.message);
     return "🚄 無法取得高鐵時刻表";
   }
 
-  // ⭐ 核心：只保留「>= 使用者輸入時間」
+  // 只留下「使用者輸入時間之後」的班次
   const trips = data
     .map(item => {
       const s = item.StopTimes;
@@ -118,9 +127,9 @@ async function fetchAndRender(session, key) {
 }
 
 function render(session) {
-  const size = 8;
-  const start = (session.page - 1) * size;
-  const list = session.trips.slice(start, start + size);
+  const pageSize = 8;
+  const start = (session.page - 1) * pageSize;
+  const list = session.trips.slice(start, start + pageSize);
 
   if (!list.length) return "沒有更多班次";
 
@@ -129,7 +138,7 @@ function render(session) {
     msg += `${start + i + 1}️⃣ ${t.dep} → ${t.arr}\n`;
   });
 
-  if (start + size < session.trips.length) {
+  if (start + pageSize < session.trips.length) {
     msg += "\n輸入「後面」查看後續班次";
   }
 
