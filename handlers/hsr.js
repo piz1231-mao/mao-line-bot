@@ -1,10 +1,10 @@
 // ======================================================
-// 🚄 高鐵查詢 Handler（完整版｜流程穩定＋群組隔離）
+// 🚄 高鐵查詢 Handler（完整版｜穩定資料源）
 // ======================================================
 
 const { getSession, clearSession } = require("../sessions/sessionStore");
 const { getSessionKey } = require("../utils/sessionKey");
-const { getHSRTimetable } = require("../services/tdx");
+const { getHSRAllTimetable } = require("../services/tdx");
 const stationMap = require("../utils/hsrStations");
 
 console.log("✅ HSR handler loaded");
@@ -15,7 +15,6 @@ function toMinutes(t) {
   return h * 60 + m;
 }
 
-// parse HH:mm
 function parseTime(text) {
   const m = text.match(/^(\d{1,2}):(\d{2})$/);
   if (!m) return null;
@@ -23,47 +22,29 @@ function parseTime(text) {
 }
 
 module.exports = async function handleHSR(event) {
-  // 只處理文字訊息
-  if (event.type !== "message" || event.message.type !== "text") {
-    return null;
-  }
+  if (event.type !== "message" || event.message.type !== "text") return null;
 
   const text = event.message.text.trim();
   const key = getSessionKey(event);
   const session = getSession(key);
 
-  // ======================================================
-  // ⭐ 關鍵隔離邏輯
-  // 不是「查高鐵」，而且也不在 HSR 流程中 → 直接忽略
-  // ======================================================
-  if (
-    text !== "查高鐵" &&
-    !session.state?.startsWith("HSR")
-  ) {
+  // 非高鐵流程直接忽略
+  if (text !== "查高鐵" && !session.state?.startsWith("HSR")) {
     return null;
   }
 
   console.log("[HSR] event:", text);
 
-  // ======================================================
-  // 中斷
-  // ======================================================
   if (["取消", "結束"].includes(text)) {
     clearSession(key);
     return "🚄 已結束高鐵查詢";
   }
 
-  // ======================================================
-  // 起手
-  // ======================================================
   if (text === "查高鐵") {
     session.state = "HSR_DIR";
     return "🚄 查高鐵\n請選擇方向：\n北上 / 南下";
   }
 
-  // ======================================================
-  // 方向
-  // ======================================================
   if (session.state === "HSR_DIR") {
     if (!["北上", "南下"].includes(text)) {
       return "請回覆：北上 或 南下";
@@ -73,9 +54,6 @@ module.exports = async function handleHSR(event) {
     return "🚄 請輸入起訖站\n例如：左營到台中";
   }
 
-  // ======================================================
-  // 起訖站
-  // ======================================================
   if (session.state === "HSR_STATION") {
     if (!text.includes("到")) {
       return "格式錯誤，請輸入：左營到台中";
@@ -87,9 +65,6 @@ module.exports = async function handleHSR(event) {
     return "🚄 請輸入時間（例如 21:30）";
   }
 
-  // ======================================================
-  // 時間
-  // ======================================================
   if (session.state === "HSR_TIME") {
     const min = parseTime(text);
     if (min === null) {
@@ -101,9 +76,6 @@ module.exports = async function handleHSR(event) {
     return await fetchResult(session, key);
   }
 
-  // ======================================================
-  // 翻頁
-  // ======================================================
   if (session.state === "HSR_RESULT" && text === "後面") {
     session.page++;
     return render(session);
@@ -113,7 +85,7 @@ module.exports = async function handleHSR(event) {
 };
 
 // ======================================================
-// 取得班次（⚠️ 目前仍使用舊 TDX 查法，下一步會改）
+// 真正抓班次（全線 → 自行 filter）
 // ======================================================
 async function fetchResult(session, key) {
   const originId = stationMap[session.origin];
@@ -124,27 +96,29 @@ async function fetchResult(session, key) {
     return "找不到站名，請重新查詢";
   }
 
-  // 使用台灣日期（避免 UTC 問題）
   const today = new Date()
     .toLocaleDateString("zh-TW", { timeZone: "Asia/Taipei" })
     .replace(/\//g, "-");
 
   let data;
   try {
-    data = await getHSRTimetable(originId, destId, today);
+    data = await getHSRAllTimetable(today);
   } catch (err) {
     console.error("HSR API error:", err.message);
     return "🚄 無法取得高鐵時刻表";
   }
 
-  console.log("[HSR] raw data length:", Array.isArray(data) ? data.length : data);
+  console.log("[HSR] raw trains:", data.length);
 
-  const trips = (Array.isArray(data) ? data : [])
-    .map(item => {
-      const s = item.StopTimes || [];
+  const trips = data
+    .map(train => {
+      const s = train.StopTimes || [];
       const o = s.find(x => x.StationID === originId);
       const d = s.find(x => x.StationID === destId);
       if (!o || !d) return null;
+
+      // 起站一定要在迄站之前
+      if (s.indexOf(o) >= s.indexOf(d)) return null;
 
       return {
         dep: o.DepartureTime,
@@ -165,8 +139,6 @@ async function fetchResult(session, key) {
   return render(session);
 }
 
-// ======================================================
-// 顯示
 // ======================================================
 function render(session) {
   const pageSize = 8;
