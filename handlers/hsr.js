@@ -1,4 +1,4 @@
-const { getSession } = require("../sessions/sessionStore");
+const { getSession, clearSession } = require("../sessions/sessionStore");
 const { getHSRTimetable } = require("../services/tdx");
 const stationMap = require("../utils/hsrStations");
 
@@ -19,35 +19,61 @@ function parseTimeInput(text) {
 }
 
 // ==============================
-// 🚄 高鐵主處理器（完整不卡版）
+// 🚄 高鐵主處理器（穩定版）
 // ==============================
 module.exports = async function handleHSR(event) {
-  if (!event?.message?.text) return null;
+  // ✅ 非文字訊息，一律不處理（照片、貼圖、影片）
+  if (event.message.type !== "text") return null;
 
-  const userId = event.source.userId;
   const text = event.message.text.trim();
-  const session = getSession(userId);
+  const userId = event.source.userId;
 
-  // ========= 入口 =========
+  // 🔑 session 綁定對話空間
+  const sourceId =
+    event.source.type === "group"
+      ? event.source.groupId
+      : event.source.type === "room"
+      ? event.source.roomId
+      : event.source.userId;
+
+  const sessionKey = `${userId}:${sourceId}`;
+  const session = getSession(sessionKey);
+
+  // ==============================
+  // 🔴 強制中斷指令
+  // ==============================
+  if (["取消", "結束", "離開"].includes(text)) {
+    clearSession(sessionKey);
+    return "🚄 已結束高鐵查詢";
+  }
+
+  // ==============================
+  // 入口
+  // ==============================
   if (text === "查高鐵") {
     session.state = "HSR_DIRECTION";
     session.page = 1;
     return "🚄 查高鐵\n請選擇方向：\n北上 / 南下";
   }
 
+  // 沒在高鐵流程中就不理
   if (!session.state?.startsWith("HSR_")) return null;
 
-  // ========= 方向 =========
+  // ==============================
+  // 方向
+  // ==============================
   if (session.state === "HSR_DIRECTION") {
     if (text === "北上") session.direction = "NORTH";
     else if (text === "南下") session.direction = "SOUTH";
     else return "請回覆：北上 或 南下";
 
     session.state = "HSR_STATION";
-    return "🚄 請輸入起訖站\n格式：A到B\n例如：左營到台中";
+    return "🚄 請輸入起訖站\n格式：左營到台中";
   }
 
-  // ========= 站名 =========
+  // ==============================
+  // 站名
+  // ==============================
   if (session.state === "HSR_STATION") {
     if (!text.includes("到")) {
       return "站名格式錯誤，請輸入：左營到台中";
@@ -61,16 +87,20 @@ module.exports = async function handleHSR(event) {
     return "🚄 請輸入時間（例如 20:00）\n未輸入則查最近 2 小時";
   }
 
-  // ========= 時間 =========
+  // ==============================
+  // 時間
+  // ==============================
   if (session.state === "HSR_TIME") {
     const parsedTime = parseTimeInput(text);
     session.startTime = parsedTime ? parsedTime : new Date();
     session.state = "HSR_RESULT";
 
-    return await fetchAndRender(session);
+    return await fetchAndRender(session, sessionKey);
   }
 
-  // ========= 分頁 =========
+  // ==============================
+  // 分頁
+  // ==============================
   if (
     session.state === "HSR_RESULT" &&
     ["後面", "下一頁", "看後面"].includes(text)
@@ -85,13 +115,13 @@ module.exports = async function handleHSR(event) {
 // ==============================
 // 呼叫 TDX + 過濾時間
 // ==============================
-async function fetchAndRender(session) {
+async function fetchAndRender(session, sessionKey) {
   const originId = stationMap[session.origin];
   const destId = stationMap[session.destination];
 
   if (!originId || !destId) {
-    session.state = "HSR_STATION";
-    return "找不到站名，請重新輸入（例如：左營到台中）";
+    clearSession(sessionKey);
+    return "找不到站名，請重新輸入查高鐵";
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -101,8 +131,7 @@ async function fetchAndRender(session) {
     data = await getHSRTimetable(originId, destId, today);
   } catch (e) {
     console.error("HSR API error:", e.message);
-    session.state = "HSR_TIME";
-    return "🚄 高鐵系統忙碌中，請稍後再輸入時間重試";
+    return "🚄 高鐵系統忙碌中，請稍後再試";
   }
 
   const start = session.startTime;
@@ -140,7 +169,7 @@ function renderResult(session) {
 
   let msg =
 `🚄 高鐵｜${session.origin} → ${session.destination}
-🕒 查詢區間：${fmt(session.startTime)}–${fmt(
+🕒 ${fmt(session.startTime)}–${fmt(
     new Date(session.startTime.getTime() + 2 * 60 * 60 * 1000)
   )}
 （共 ${session.trips.length} 班）
@@ -152,7 +181,7 @@ function renderResult(session) {
   });
 
   if (end < session.trips.length) {
-    msg += "\n輸入「後面」查看後續班次";
+    msg += "\n輸入「後面」查看後續班次\n輸入「取消」結束查詢";
   }
 
   return msg;
