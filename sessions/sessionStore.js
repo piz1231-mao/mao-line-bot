@@ -1,18 +1,13 @@
 // sessions/sessionStore.js
 const sessions = {};
 
-function getSession(sessionKey) {
-  if (!sessions[sessionKey]) {
-    sessions[sessionKey] = {};
-  }
-  return sessions[sessionKey];
+function getSession(key) {
+  if (!sessions[key]) sessions[key] = {};
+  return sessions[key];
 }
 
-function clearSession(sessionKey) {
-  delete sessions[sessionKey];
+function clearSession(key) {
+  delete sessions[key];
 }
 
-module.exports = {
-  getSession,
-  clearSession
-};
+module.exports = { getSession, clearSession };
