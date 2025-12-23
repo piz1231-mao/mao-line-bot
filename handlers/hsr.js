@@ -1,5 +1,5 @@
 // ======================================================
-// 🚄 高鐵查詢 Handler（最終封版・實戰穩定）
+// 🚄 高鐵查詢 Handler（最終更新封版）
 // ======================================================
 
 const { getSession, clearSession } = require("../sessions/sessionStore");
@@ -53,7 +53,7 @@ module.exports = async function handleHSR(event) {
   // ====================================================
   if (text === "查高鐵") {
     clearSession(key);
-    session = getSession(key); // 🔥 重新取得乾淨 session
+    session = getSession(key); // 重新取得乾淨 session
     session.inHSR = true;
     session.state = "DIR";
     return "🚄 查高鐵\n請選擇方向：\n北上 / 南下";
@@ -70,7 +70,7 @@ module.exports = async function handleHSR(event) {
   // 狀態機
   // ====================================================
   switch (session.state) {
-    // ---------------- DIR ----------------
+    // ---------- DIR ----------
     case "DIR":
       if (!text.includes("北上") && !text.includes("南下")) {
         return "請選擇方向：北上 或 南下";
@@ -79,7 +79,7 @@ module.exports = async function handleHSR(event) {
       session.state = "STATION";
       return "🚄 請輸入起訖站\n例如：左營到台中";
 
-    // -------------- STATION --------------
+    // -------- STATION --------
     case "STATION":
       if (!text.includes("到")) {
         return "格式錯誤，請輸入：左營到台中";
@@ -90,7 +90,7 @@ module.exports = async function handleHSR(event) {
       session.state = "TIME";
       return `🚄 從 ${o} 到 ${d}\n請輸入出發時間（例如 21:30）`;
 
-    // ---------------- TIME ----------------
+    // ---------- TIME ----------
     case "TIME":
       const startMin = parseTime(text);
       if (startMin === null) {
@@ -100,7 +100,7 @@ module.exports = async function handleHSR(event) {
       session.startMin = startMin;
       const result = await queryHSR(session);
 
-      clearSession(key); // 🔥 結束流程
+      clearSession(key); // 查完一定清
       return result;
 
     default:
@@ -110,7 +110,7 @@ module.exports = async function handleHSR(event) {
 };
 
 // ======================================================
-// 查詢高鐵（站名模糊比對版）
+// 查詢高鐵（站名模糊比對 + 車次相容）
 // ======================================================
 async function queryHSR(session) {
   try {
@@ -144,8 +144,15 @@ async function queryHSR(session) {
 
       if (toMinutes(dep) < session.startMin) continue;
 
+      const trainNo =
+        t.TrainNo ??
+        t.trainNo ??
+        t.TrainCode ??
+        t.DailyTrainInfo?.TrainNo ??
+        "";
+
       trips.push({
-        trainNo: t.TrainNo,
+        trainNo,
         dep: dep.slice(0, 5),
         arr: arr.slice(0, 5),
         depMin: toMinutes(dep)
@@ -160,9 +167,15 @@ async function queryHSR(session) {
       return "🚄 該時間之後沒有可搭乘班次";
     }
 
-    let msg = `🚄 高鐵｜${session.origin} → ${session.dest}\n`;
+    let msg = `🚄 高鐵時刻表\n${session.origin} → ${session.dest}\n`;
+    msg += `━━━━━━━━━━━━━`;
+
     trips.slice(0, 8).forEach(t => {
-      msg += `\n#${t.trainNo}｜${t.dep} → ${t.arr}`;
+      if (t.trainNo) {
+        msg += `\n🕒 ${t.dep} → ${t.arr}　🚆 ${t.trainNo}`;
+      } else {
+        msg += `\n🕒 ${t.dep} → ${t.arr}`;
+      }
     });
 
     return msg;
