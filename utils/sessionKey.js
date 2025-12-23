@@ -1,4 +1,3 @@
-// utils/sessionKey.js
 function getSessionKey(event) {
   const userId = event.source.userId;
   const sourceId =
