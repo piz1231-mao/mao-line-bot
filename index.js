@@ -309,6 +309,41 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
+// 主動推播：每日老闆摘要（給 Render Cron 用）
+// ======================================================
+app.post("/api/daily-summary", async (req, res) => {
+  try {
+    const authClient = await auth.getClient();
+    const sheets = google.sheets({ version: "v4", auth: authClient });
+
+    // 讀 Q 欄（摘要）
+    const result = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!Q:Q`
+    });
+
+    const list = result.data.values?.map(v => v[0]).filter(Boolean) || [];
+
+    if (!list.length) {
+      return res.status(200).send("no data");
+    }
+
+    const latestSummary = list[list.length - 1];
+
+    // 主動推播（push）
+    await client.pushMessage(process.env.BOSS_USER_ID, {
+      type: "text",
+      text: latestSummary
+    });
+
+    res.status(200).send("ok");
+  } catch (err) {
+    console.error("❌ daily-summary error:", err);
+    res.status(500).send("error");
+  }
+});
+
+// ======================================================
 // 啟動 Server
 // ======================================================
 const PORT = process.env.PORT || 3000;
