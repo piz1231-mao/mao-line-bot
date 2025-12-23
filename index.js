@@ -18,6 +18,8 @@ const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
 
 const app = express();
+const handleHSR = require("./handlers/hsr");
+console.log(handleHSR());
 
 // ======================================================
 // 原有 services（⚠️ 不動）
