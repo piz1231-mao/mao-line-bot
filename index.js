@@ -1,7 +1,9 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
 // 穩定基準 v1.2（功能鎖死）
-// 三店各寫各的 sheet（不再寫回茶六）
+// 查詢規則：
+// - 查業績           → 三店合併（摘要原樣）
+// - 查業績 店名      → 單店摘要
 // ======================================================
 
 require("dotenv").config();
@@ -22,12 +24,17 @@ const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
 
 // ======================================================
-// LINE 設定
+// LINE 設定（不動）
 // ======================================================
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.LINE_CHANNEL_SECRET
 };
+
+if (!config.channelAccessToken || !config.channelSecret) {
+  console.error("❌ LINE_CHANNEL_ACCESS_TOKEN 或 LINE_CHANNEL_SECRET 未設定");
+  process.exit(1);
+}
 
 const client = new line.Client(config);
 
@@ -36,8 +43,8 @@ const client = new line.Client(config);
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const TEMPLATE_SHEET = "茶六博愛";
+const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山"];
 
-// ======================================================
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
@@ -57,7 +64,7 @@ const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
 const pct = v => (v ? Number(v) : "");
 
 // ======================================================
-// 天氣（不動）
+// 天氣（原版，不動）
 // ======================================================
 function parseCommand(text) {
   if (!text) return null;
@@ -96,7 +103,7 @@ function normalizeText(text) {
 }
 
 // ======================================================
-// parse（共用，已修正客單價）
+// parse（共用）
 // ======================================================
 function parseBase(text) {
   const t = normalizeText(text);
@@ -131,19 +138,19 @@ function parseBase(text) {
 }
 
 // ======================================================
-// 分店 parse（主數量）
+// 分店 parse
 // ======================================================
 function parseShop(raw) {
   const t = normalizeText(raw);
   const base = parseBase(t);
 
-  const pkg =
+  const qty =
     t.match(/套餐份數\s*[:：]?\s*([\d,]+)/) ||
     t.match(/總鍋數\s*[:：]?\s*([\d,]+)/);
 
   return {
     ...base,
-    pkg: pkg ? num(pkg[1]) : ""
+    pkg: qty ? num(qty[1]) : ""
   };
 }
 
@@ -151,6 +158,8 @@ function parseShop(raw) {
 // 確保分店 sheet 存在
 // ======================================================
 async function ensureShopSheetExists(shop) {
+  if (shop === TEMPLATE_SHEET) return;
+
   const authClient = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: authClient });
 
@@ -214,7 +223,7 @@ async function writeShopRow(shop, text, userId) {
     }
   });
 
-const summary =
+  const summary =
 `【${shop}｜${p.date.slice(5)}】
 
 💰 業績：${p.revenue}
@@ -237,7 +246,7 @@ const summary =
 }
 
 // ======================================================
-// 私訊回報（唯一入口）
+// 私訊回報
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -260,34 +269,85 @@ async function handlePrivateSales(event) {
 }
 
 // ======================================================
+// 查詢（單店 / 三店合併）
+// ======================================================
+async function handleQuery(event) {
+  if (event.message.type !== "text") return false;
+  if (!event.message.text.startsWith("查業績")) return false;
+
+  const parts = event.message.text.trim().split(/\s+/);
+  const shopArg = parts[1];
+
+  const authClient = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: authClient });
+
+  // 指定店名
+  if (shopArg && SHOP_LIST.includes(shopArg)) {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${shopArg}!Q:Q`
+    });
+    const list = res.data.values?.map(v => v[0]).filter(Boolean) || [];
+    await client.replyMessage(event.replyToken, {
+      type: "text",
+      text: list.length ? list[list.length - 1] : "目前沒有資料"
+    });
+    return true;
+  }
+
+  // 未指定 → 三店合併
+  let combined = [];
+  for (const shop of SHOP_LIST) {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${shop}!Q:Q`
+    });
+    const list = res.data.values?.map(v => v[0]).filter(Boolean) || [];
+    if (list.length) combined.push(list[list.length - 1]);
+  }
+
+  await client.replyMessage(event.replyToken, {
+    type: "text",
+    text: combined.length ? combined.join("\n\n") : "目前沒有資料"
+  });
+  return true;
+}
+
+// ======================================================
 // Webhook
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
-  for (const event of req.body.events || []) {
-    if (await handlePrivateSales(event)) continue;
+  try {
+    for (const event of req.body.events || []) {
+      if (await handlePrivateSales(event)) continue;
+      if (await handleQuery(event)) continue;
 
-    if (event.message?.type === "text") {
-      if (todoCmd.keywords?.some(k => event.message.text.startsWith(k))) {
-        await todoCmd.handler(client, event);
-        continue;
-      }
+      if (event.message?.type === "text") {
+        if (todoCmd.keywords?.some(k => event.message.text.startsWith(k))) {
+          await todoCmd.handler(client, event);
+          continue;
+        }
 
-      const parsed = parseCommand(event.message.text);
-      if (parsed?.command === "WEATHER") {
-        const city = CITY_MAP[parsed.arg] || "高雄市";
-        const r = await get36hrWeather(city);
-        await client.replyMessage(event.replyToken, {
-          type: "text",
-          text: buildWeatherFriendText(r)
-        });
+        const parsed = parseCommand(event.message.text);
+        if (parsed?.command === "WEATHER") {
+          const city = CITY_MAP[parsed.arg] || "高雄市";
+          const r = await get36hrWeather(city);
+          await client.replyMessage(event.replyToken, {
+            type: "text",
+            text: buildWeatherFriendText(r)
+          });
+        }
       }
     }
+    res.send("OK");
+  } catch (err) {
+    console.error("❌ LINE Webhook Error:", err);
+    res.status(500).end();
   }
-  res.send("OK");
 });
 
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 毛怪秘書服務啟動 ${PORT}`);
+  console.log(`🚀 毛怪秘書服務啟動，PORT ${PORT}`);
 });
