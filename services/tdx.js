@@ -1,43 +1,53 @@
+// services/tdx.js
 const axios = require("axios");
 
-const AUTH_URL =
-  "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token";
-const API_BASE = "https://tdx.transportdata.tw/api/basic";
-
+const BASE_URL = "https://tdx.transportdata.tw/api/basic/v2";
 const CLIENT_ID = process.env.TDX_CLIENT_ID;
 const CLIENT_SECRET = process.env.TDX_CLIENT_SECRET;
 
-let tokenCache = null;
-let tokenExpireAt = 0;
+let tokenCache = {
+  access_token: null,
+  expire_at: 0
+};
 
 async function getToken() {
   const now = Date.now();
-  if (tokenCache && now < tokenExpireAt) return tokenCache;
+  if (tokenCache.access_token && now < tokenCache.expire_at) {
+    return tokenCache.access_token;
+  }
 
-  const params = new URLSearchParams();
-  params.append("grant_type", "client_credentials");
-  params.append("client_id", CLIENT_ID);
-  params.append("client_secret", CLIENT_SECRET);
+  const res = await axios.post(
+    "https://tdx.transportdata.tw/auth/realms/TDXConnect/protocol/openid-connect/token",
+    new URLSearchParams({
+      grant_type: "client_credentials",
+      client_id: CLIENT_ID,
+      client_secret: CLIENT_SECRET
+    }).toString(),
+    { headers: { "Content-Type": "application/x-www-form-urlencoded" } }
+  );
 
-  const res = await axios.post(AUTH_URL, params, {
-    headers: { "Content-Type": "application/x-www-form-urlencoded" }
-  });
-
-  tokenCache = res.data.access_token;
-  tokenExpireAt = now + res.data.expires_in * 1000 - 60000;
-  return tokenCache;
+  tokenCache.access_token = res.data.access_token;
+  tokenCache.expire_at = now + (res.data.expires_in - 60) * 1000;
+  return tokenCache.access_token;
 }
 
-async function getHSRTimetable(originId, destId, date) {
+/**
+ * 取得「當天全部高鐵班次」
+ */
+async function getHSRAllTimetable(date) {
   const token = await getToken();
-  const url =
-    `${API_BASE}/v2/Rail/THSR/DailyTimetable/OD/${originId}/to/${destId}/${date}?$format=JSON`;
+
+  const url = `${BASE_URL}/Rail/THSR/DailyTimetable/TrainDate/${date}`;
 
   const res = await axios.get(url, {
-    headers: { Authorization: `Bearer ${token}` }
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
   });
 
   return res.data;
 }
 
-module.exports = { getHSRTimetable };
+module.exports = {
+  getHSRAllTimetable
+};
