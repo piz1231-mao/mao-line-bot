@@ -1,4 +1,3 @@
-// sessions/sessionStore.js
 const sessions = {};
 
 function getSession(key) {
