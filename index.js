@@ -315,7 +315,7 @@ async function handleQuery(event) {
   await client.replyMessage(event.replyToken, {
     type: "text",
     text: combined.length
-      ? combined.join("\n\n━━━━━━━━━━━━━━\n\n")
+      ? combined.join("\n\n━━━━━━━━━━━\n\n")
       : "目前沒有資料"
   });
   return true;
