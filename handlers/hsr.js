@@ -167,16 +167,16 @@ async function queryHSR(session) {
       return "🚄 該時間之後沒有可搭乘班次";
     }
 
-    let msg = `🚄 高鐵時刻表\n${session.origin} → ${session.dest}\n`;
-    msg += `━━━━━━━━━━━━━`;
+  let msg = `🚄 高鐵時刻表\n${session.origin} → ${session.dest}\n`;
+msg += `━━━━━━━━━━\n`;
 
-    trips.slice(0, 8).forEach(t => {
-      if (t.trainNo) {
-        msg += `\n🕒 ${t.dep} → ${t.arr}　🚆 ${t.trainNo}`;
-      } else {
-        msg += `\n🕒 ${t.dep} → ${t.arr}`;
-      }
-    });
+trips.slice(0, 8).forEach(t => {
+  if (t.trainNo) {
+    msg += `\n🚆 ${t.trainNo}\n🕒 ${t.dep} → ${t.arr}\n`;
+  } else {
+    msg += `\n🕒 ${t.dep} → ${t.arr}\n`;
+  }
+});
 
     return msg;
 
