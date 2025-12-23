@@ -4,10 +4,10 @@
 // - TradingView Webhook（鎖死）
 // - 天氣查詢（縣市完整）
 // - 待辦功能
+// - 🚄 高鐵查詢（擴充）
 // - 私訊營運回報（三店分頁）
-// - 摘要寫入 Q 欄（emoji 版）
+// - 摘要寫入 Q 欄（emoji 版）【row 修正版】
 // - 查業績：單店 / 三店合併（A 分隔線）
-// - 🚄 高鐵查詢（擴充，不影響既有功能）
 // ======================================================
 
 require("dotenv").config();
@@ -27,10 +27,6 @@ const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
 const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
-
-// ======================================================
-// 🚄 高鐵 handler（新增，只 require，不動其他）
-// ======================================================
 const handleHSR = require("./handlers/hsr");
 
 // ======================================================
@@ -67,29 +63,22 @@ const auth = new GoogleAuth({
 // ======================================================
 // TradingView Webhook（原樣鎖死）
 // ======================================================
-app.all(
-  "/tv-alert",
-  express.text({ type: "*/*" }),
-  async (req, res) => {
-    try {
-      let body = {};
-      let content = req.body || "";
-
-      if (typeof content === "string") {
-        try { body = JSON.parse(content); } catch {}
-      }
-
-      const msg = body.message || body.alert || content;
-      const price = body.close ?? body.price ?? null;
-
-      await tvAlert(client, msg, { ...body, price });
-      res.status(200).send("OK");
-    } catch (err) {
-      console.error("❌ TV Webhook Error:", err);
-      res.status(200).send("OK");
+app.all("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
+  try {
+    let body = {};
+    let content = req.body || "";
+    if (typeof content === "string") {
+      try { body = JSON.parse(content); } catch {}
     }
+    const msg = body.message || body.alert || content;
+    const price = body.close ?? body.price ?? null;
+    await tvAlert(client, msg, { ...body, price });
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error("❌ TV Webhook Error:", err);
+    res.status(200).send("OK");
   }
-);
+});
 
 // ======================================================
 // 工具
@@ -101,7 +90,7 @@ const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
 const pct = v => (v ? Number(v) : "");
 
 // ======================================================
-// 天氣（完整原版，不刪）
+// 天氣（完整原版）
 // ======================================================
 function parseCommand(text) {
   if (!text) return null;
@@ -129,7 +118,7 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 正規化 / 解析（原版）
+// 解析（原版）
 // ======================================================
 function normalize(text) {
   return text
@@ -177,7 +166,7 @@ function parseSales(text) {
 }
 
 // ======================================================
-// 確保分店 Sheet 存在（原版）
+// 確保分店 Sheet 存在（不動）
 // ======================================================
 async function ensureSheet(shop) {
   if (shop === TEMPLATE_SHEET) return;
@@ -207,25 +196,21 @@ async function ensureSheet(shop) {
 }
 
 // ======================================================
-// 寫入分店（唯一寫入點，原版）
+// 寫入分店（★ row 修正版）
 // ======================================================
 async function writeShop(shop, text, userId) {
   const c = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: c });
 
-  const meta = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${shop}!A:A`
-  });
-  const row = (meta.data.values?.length || 1) + 1;
-
   const p = parseSales(text);
   const qtyLabel = shop === "湯棧中山" ? "總鍋數" : "套餐數";
 
-  await sheets.spreadsheets.values.append({
+  // ★ 先 append，拿實際 row
+  const appendRes = await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: `${shop}!A1`,
     valueInputOption: "USER_ENTERED",
+    insertDataOption: "INSERT_ROWS",
     requestBody: {
       values: [[
         nowTW(), userId, userId, text,
@@ -237,6 +222,10 @@ async function writeShop(shop, text, userId) {
       ]]
     }
   });
+
+  // ★ 從 API 回傳取得 row
+  const updatedRange = appendRes.data.updates.updatedRange;
+  const row = updatedRange.match(/\d+/)[0];
 
   const summary =
 `【${shop}｜${p.date.slice(5)}】
@@ -260,7 +249,7 @@ async function writeShop(shop, text, userId) {
 }
 
 // ======================================================
-// 私訊營運回報（原版）
+// 私訊營運回報
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -275,22 +264,15 @@ async function handlePrivateSales(event) {
     text.includes("三山博愛") ? "三山博愛" :
     "茶六博愛";
 
-  try {
-    await ensureSheet(shop);
-    await writeShop(shop, text, event.source.userId);
-    return true;
-  } catch (err) {
-    console.error("❌ 業績回報寫入失敗:", err);
-    await client.replyMessage(event.replyToken, {
-      type: "text",
-      text: "⚠️ 業績回報寫入失敗，請再傳一次或聯絡管理員"
-    });
-    return true;
-  }
+  await ensureSheet(shop);
+  await writeShop(shop, text, event.source.userId);
+
+  await client.replyMessage(event.replyToken, { type: "text", text: "已記錄" });
+  return true;
 }
 
 // ======================================================
-// 查詢（原版）
+// 查業績（單店 / 三店合併）
 // ======================================================
 async function handleQuery(event) {
   if (event.message.type !== "text") return false;
@@ -335,39 +317,29 @@ async function handleQuery(event) {
 }
 
 // ======================================================
-// LINE Webhook（主入口）
+// LINE Webhook 主入口
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const event of req.body.events || []) {
 
-      // ===== 🚄 高鐵查詢（優先權最高）=====
-      const hsrReply = await handleHSR(event);
-      if (hsrReply) {
-        const message =
-          typeof hsrReply === "string"
-            ? { type: "text", text: hsrReply }
-            : hsrReply;
-
-        await client.replyMessage(event.replyToken, message);
+      const hsr = await handleHSR(event);
+      if (hsr) {
+        await client.replyMessage(event.replyToken,
+          typeof hsr === "string" ? { type: "text", text: hsr } : hsr
+        );
         continue;
       }
 
-      // ===== 私訊營運回報 =====
       if (await handlePrivateSales(event)) continue;
-
-      // ===== 查業績 =====
       if (await handleQuery(event)) continue;
 
       if (event.message?.type === "text") {
-
-        // ===== 待辦 =====
         if (todoCmd.keywords?.some(k => event.message.text.startsWith(k))) {
           await todoCmd.handler(client, event);
           continue;
         }
 
-        // ===== 天氣 =====
         const parsed = parseCommand(event.message.text);
         if (parsed?.command === "WEATHER") {
           const city = CITY_MAP[parsed.arg] || "高雄市";
