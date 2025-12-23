@@ -1,13 +1,12 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
 // 穩定基準 v1.2（功能鎖死）
-// 茶六博愛為範本，分店獨立寫入
+// 三店各寫各的 sheet（不再寫回茶六）
 // ======================================================
 
 require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
-const axios = require("axios");
 const fs = require("fs");
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
@@ -15,7 +14,7 @@ const { google } = require("googleapis");
 const app = express();
 
 // ======================================================
-// 原有 services（不動）
+// 原有 services（完全不動）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
@@ -23,17 +22,12 @@ const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
 
 // ======================================================
-// LINE 設定（不動）
+// LINE 設定
 // ======================================================
 const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.LINE_CHANNEL_SECRET
 };
-
-if (!config.channelAccessToken || !config.channelSecret) {
-  console.error("❌ LINE_CHANNEL_ACCESS_TOKEN 或 LINE_CHANNEL_SECRET 未設定");
-  process.exit(1);
-}
 
 const client = new line.Client(config);
 
@@ -43,6 +37,7 @@ const client = new line.Client(config);
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const TEMPLATE_SHEET = "茶六博愛";
 
+// ======================================================
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
@@ -62,7 +57,7 @@ const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
 const pct = v => (v ? Number(v) : "");
 
 // ======================================================
-// 天氣（原版，不動）
+// 天氣（不動）
 // ======================================================
 function parseCommand(text) {
   if (!text) return null;
@@ -89,109 +84,82 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 文字正規化（只洗字）
+// 正規化
 // ======================================================
 function normalizeText(text) {
   return text
     .replace(/：/g, ":")
     .replace(/。/g, ".")
     .replace(/％/g, "%")
-    .replace(/／/g, "/")
     .replace(/\s+/g, " ")
     .trim();
 }
 
 // ======================================================
-// 原 parse（茶六用，不動）
+// parse（共用，已修正客單價）
 // ======================================================
-function parse(text) {
-  const d = text.match(/(\d{1,2})\/(\d{1,2})/);
+function parseBase(text) {
+  const t = normalizeText(text);
+
+  const d = t.match(/(\d{1,2})\/(\d{1,2})/);
   const date = d
     ? `${new Date().getFullYear()}-${d[1].padStart(2, "0")}-${d[2].padStart(2, "0")}`
     : "";
 
-  const revenue = text.match(/業績[:：]?\s*([\d,]+)/);
-  const pkg = text.match(/套餐份數[:：]?\s*([\d,]+)/);
-  const unit = text.match(/客單價[:：]?\s*([\d.]+)/);
+  const revenue = t.match(/業績\s*[:：]?\s*([\d,]+)/);
+  const unit = t.match(/客單價\s*[:：]?\s*([\d.]+)/);
 
-  const fp = text.match(/外場薪資[:：]?\s*([\d,]+).([\d.]+)%/);
-  const bp = text.match(/內場薪資[:：]?\s*([\d,]+).([\d.]+)%/);
-  const tp = text.match(/總人事[:：]?\s*([\d,]+).([\d.]+)%/);
+  const fp = t.match(/外場薪資\s*[:：]?\s*([\d,]+).([\d.]+)%/);
+  const bp = t.match(/內場薪資\s*[:：]?\s*([\d,]+).([\d.]+)%/);
 
   let frontPay = fp ? num(fp[1]) : "";
   let frontPct = fp ? pct(fp[2]) : "";
   let backPay = bp ? num(bp[1]) : "";
   let backPct = bp ? pct(bp[2]) : "";
 
-  let totalPay = tp ? num(tp[1]) : "";
-  let totalPct = tp ? pct(tp[2]) : "";
-
-  if (!totalPay && frontPay && backPay) totalPay = frontPay + backPay;
-  if (!totalPct && frontPct && backPct)
-    totalPct = Number((frontPct + backPct).toFixed(2));
-
   return {
     date,
     revenue: revenue ? num(revenue[1]) : "",
-    pkg: pkg ? num(pkg[1]) : "",
     unit: unit ? unit[1] : "",
     frontPay,
     frontPct,
     backPay,
     backPct,
-    totalPay,
-    totalPct
+    totalPay: frontPay && backPay ? frontPay + backPay : "",
+    totalPct: frontPct && backPct ? Number((frontPct + backPct).toFixed(2)) : ""
   };
 }
 
 // ======================================================
-// 分店專用 parse（已定版）
+// 分店 parse（主數量）
 // ======================================================
 function parseShop(raw) {
-  const text = normalizeText(raw);
-  const base = parse(text);
+  const t = normalizeText(raw);
+  const base = parseBase(t);
 
-  // ① 套餐份數（茶六 / 三山）
-  if (!base.pkg) {
-    const pkg = text.match(/套餐份數[:：]?\s*([\d,]+)/);
-    if (pkg) base.pkg = num(pkg[1]);
-  }
+  const pkg =
+    t.match(/套餐份數\s*[:：]?\s*([\d,]+)/) ||
+    t.match(/總鍋數\s*[:：]?\s*([\d,]+)/);
 
-  // ② 總鍋數（湯棧）
-  if (!base.pkg) {
-    const pot = text.match(/總鍋數[:：]?\s*([\d,]+)/);
-    if (pot) base.pkg = num(pot[1]);
-  }
-
-  // ③ 舊格式備援（不主用）
-  if (!base.pkg) {
-    const matches = [...text.matchAll(/(\d+)\s*人套餐[:：]?\s*(\d+)/g)];
-    if (matches.length) {
-      base.pkg = matches.reduce((sum, m) => sum + Number(m[2]), 0);
-    }
-  }
-
-  return base;
+  return {
+    ...base,
+    pkg: pkg ? num(pkg[1]) : ""
+  };
 }
 
 // ======================================================
-// 分店 Sheet 建立（複製茶六）
+// 確保分店 sheet 存在
 // ======================================================
-async function ensureShopSheetExists(shopName) {
-  if (shopName === TEMPLATE_SHEET) return;
-
+async function ensureShopSheetExists(shop) {
   const authClient = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: authClient });
 
   const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
-  const exists = meta.data.sheets.some(s => s.properties.title === shopName);
-  if (exists) return;
+  if (meta.data.sheets.some(s => s.properties.title === shop)) return;
 
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
-    requestBody: {
-      requests: [{ addSheet: { properties: { title: shopName } } }]
-    }
+    requestBody: { requests: [{ addSheet: { properties: { title: shop } } }] }
   });
 
   const header = await sheets.spreadsheets.values.get({
@@ -201,35 +169,36 @@ async function ensureShopSheetExists(shopName) {
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${shopName}!A1:Q1`,
+    range: `${shop}!A1:Q1`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: header.data.values }
   });
 }
 
 // ======================================================
-// 分店寫入
+// 寫入分店（唯一寫入點）
 // ======================================================
-async function appendSalesRowByShop(shopName, rawText, userId) {
+async function writeShopRow(shop, text, userId) {
   const authClient = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: authClient });
 
   const meta = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${shopName}!A:A`
+    range: `${shop}!A:A`
   });
   const rowIndex = (meta.data.values?.length || 1) + 1;
 
-  const p = parseShop(rawText);
+  const p = parseShop(text);
+  const qtyLabel = shop === "湯棧中山" ? "總鍋數" : "套餐數";
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${shopName}!A1`,
+    range: `${shop}!A1`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [[
-        nowTW(), userId, userId, rawText,
-        shopName,
+        nowTW(), userId, userId, text,
+        shop,
         p.date,
         p.revenue,
         "業績",
@@ -245,31 +214,24 @@ async function appendSalesRowByShop(shopName, rawText, userId) {
     }
   });
 
-  const qtyLabel = shopName === "湯棧中山" ? "總鍋數" : "套餐數";
-
   const summary =
-`【${shopName}｜${p.date.slice(5)}】
-
+`【${shop}｜${p.date.slice(5)}】
 💰 業績：${p.revenue}
-
 📦 ${qtyLabel}：${p.pkg}
-🧾 客單價：${p.unit || "XXXX"}
-
-👥 人事
-外場：${p.frontPay}（${p.frontPct}%）
-內場：${p.backPay}（${p.backPct}%）
-總計：${p.totalPay}（${p.totalPct}%）`;
+🧾 客單價：${p.unit}
+👥 人事 外場 ${p.frontPay}（${p.frontPct}%） / 內場 ${p.backPay}（${p.backPct}%）
+`;
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${shopName}!Q${rowIndex}`,
+    range: `${shop}!Q${rowIndex}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [[summary]] }
   });
 }
 
 // ======================================================
-// 私訊業績回報
+// 私訊回報（唯一入口）
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -280,65 +242,46 @@ async function handlePrivateSales(event) {
   if (!text.startsWith("大哥您好")) return false;
 
   const shop =
-    text.includes("三山博愛") ? "三山博愛" :
     text.includes("湯棧中山") ? "湯棧中山" :
+    text.includes("三山博愛") ? "三山博愛" :
     "茶六博愛";
 
   await ensureShopSheetExists(shop);
-  await appendSalesRowByShop(shop, text, event.source.userId);
+  await writeShopRow(shop, text, event.source.userId);
 
-  await client.replyMessage(event.replyToken, {
-    type: "text",
-    text: "已記錄"
-  });
-
+  await client.replyMessage(event.replyToken, { type: "text", text: "已記錄" });
   return true;
 }
 
 // ======================================================
-// LINE Webhook（其餘功能不動）
+// Webhook
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
-  try {
-    for (const event of req.body.events || []) {
-      if (await handlePrivateSales(event)) continue;
+  for (const event of req.body.events || []) {
+    if (await handlePrivateSales(event)) continue;
 
-      if (event.type !== "message") continue;
-      if (event.message.type !== "text") continue;
-
-      const text = event.message.text.trim();
-
-      if (
-        todoCmd.keywords &&
-        todoCmd.keywords.some(k => text.startsWith(k))
-      ) {
+    if (event.message?.type === "text") {
+      if (todoCmd.keywords?.some(k => event.message.text.startsWith(k))) {
         await todoCmd.handler(client, event);
         continue;
       }
 
-      const parsed = parseCommand(text);
-      if (parsed && parsed.command === "WEATHER") {
-        const city =
-          CITY_MAP[parsed.arg] || process.env.DEFAULT_CITY || "高雄市";
-        const result = await get36hrWeather(city);
-        const reply = buildWeatherFriendText(result);
+      const parsed = parseCommand(event.message.text);
+      if (parsed?.command === "WEATHER") {
+        const city = CITY_MAP[parsed.arg] || "高雄市";
+        const r = await get36hrWeather(city);
         await client.replyMessage(event.replyToken, {
           type: "text",
-          text: reply
+          text: buildWeatherFriendText(r)
         });
       }
     }
-    res.status(200).send("OK");
-  } catch (err) {
-    console.error("❌ LINE Webhook Error:", err);
-    res.status(500).end();
   }
+  res.send("OK");
 });
 
 // ======================================================
-// 啟動
-// ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 毛怪秘書服務啟動，監聽 PORT ${PORT}`);
+  console.log(`🚀 毛怪秘書服務啟動 ${PORT}`);
 });
