@@ -1,7 +1,8 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
 // 基準定版 v1.2（穩定功能鎖死）＋
-// A-3 茶六博愛｜經營欄位解析 v1（含總人事備援）
+// A-3 茶六博愛｜營運解析 v1（已完成）＋
+// B-1 摘要欄位 ＋ B-2 查詢指令
 // ======================================================
 
 require("dotenv").config();
@@ -30,7 +31,7 @@ if (!config.channelAccessToken || !config.channelSecret) {
 const client = new line.Client(config);
 
 // ======================================================
-// 舊有穩定功能（完全不動）
+// 舊有穩定功能（不動）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
@@ -104,96 +105,56 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 解析工具（茶六博愛 v1）
+// 工具：數字格式
 // ======================================================
-function parseBusinessDate(text) {
-  const m = text.match(/(\d{1,2})\/(\d{1,2})/);
-  if (!m) return "";
-  const year = new Date().getFullYear();
-  return `${year}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}`;
-}
-
-function num(v) {
-  if (!v) return "";
-  return Number(v.replace(/,/g, ""));
-}
-
-function parseRevenue(text) {
-  const m = text.match(/業績\s*[:：]\s*([\d,]+)/);
-  return m ? num(m[1]) : "";
-}
-
-function parseSingle(text, regex) {
-  const m = text.match(regex);
-  return m ? num(m[1]) : "";
-}
-
-function parsePercent(text, regex) {
-  const m = text.match(regex);
-  return m ? Number(m[1]) : "";
+function toWan(n) {
+  if (!n) return "";
+  return (n / 10000).toFixed(1);
 }
 
 // ======================================================
-// 寫入 A～P（含總人事備援）
+// B-1：產生摘要並寫入 Q 欄
 // ======================================================
-async function appendSalesRow(rawText, userId) {
+async function buildAndWriteSummary(rowIndex) {
   const clientAuth = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: clientAuth });
 
-  const timestamp = new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
-
-  const businessDate = parseBusinessDate(rawText);
-  const revenue = parseRevenue(rawText);
-
-  const packages = parseSingle(rawText, /套餐份數\s*[:：]\s*([\d,]+)/);
-  const unitPrice = parseSingle(rawText, /客單價\s*[:：]\s*([\d.]+)/);
-
-  const frontPay = parseSingle(rawText, /外場薪資\s*([\d,]+)/);
-  const frontPct = parsePercent(rawText, /外場薪資[\d,]+。([\d.]+)%/);
-
-  const backPay = parseSingle(rawText, /內場薪資\s*([\d,]+)/);
-  const backPct = parsePercent(rawText, /內場薪資[\d,]+。([\d.]+)%/);
-
-  let totalPay = parseSingle(rawText, /總人事\s*[:：]\s*([\d,]+)/);
-  let totalPct = parsePercent(rawText, /總人事[:：][\d,]+。([\d.]+)%/);
-
-  // 🔑 備援補算
-  if (!totalPay && frontPay && backPay) {
-    totalPay = frontPay + backPay;
-  }
-  if (!totalPct && frontPct && backPct) {
-    totalPct = Number((frontPct + backPct).toFixed(2));
-  }
-
-  await sheets.spreadsheets.values.append({
+  const range = `${SHEET_NAME}!A${rowIndex}:Q${rowIndex}`;
+  const res = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A1`,
+    range
+  });
+
+  const row = res.data.values?.[0];
+  if (!row) return;
+
+  const date = row[5] || "";
+  const revenue = row[6] ? `${toWan(row[6])} 萬` : "";
+  const packages = row[8] ? `套餐 ${row[8]}` : "";
+  const unitPrice = row[9] ? `客單 ${row[9]}` : "";
+  const totalPct = row[15] ? `人事 ${row[15]}%` : "";
+
+  const summary = [
+    date?.slice(5),
+    "茶六博愛｜",
+    revenue,
+    packages,
+    unitPrice,
+    totalPct
+  ].filter(Boolean).join(" ");
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!Q${rowIndex}`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: [[
-        timestamp,        // A
-        userId,           // B
-        userId,           // C
-        rawText,          // D
-        "茶六博愛",       // E
-        businessDate,     // F
-        revenue,          // G
-        "業績",           // H
-        packages,         // I
-        unitPrice,        // J
-        frontPay,         // K
-        frontPct,         // L
-        backPay,          // M
-        backPct,          // N
-        totalPay,         // O
-        totalPct          // P
-      ]]
+      values: [[summary]]
     }
   });
 }
 
 // ======================================================
-// 私訊業績回報（茶六博愛）
+// 私訊業績回報（完成後補摘要）
 // ======================================================
 async function handlePrivateSales(event) {
   if (event.type !== "message") return false;
@@ -203,15 +164,83 @@ async function handlePrivateSales(event) {
   const text = event.message.text.trim();
   if (!text.startsWith("大哥您好")) return false;
 
-  try {
-    await appendSalesRow(text, event.source.userId);
-  } catch (err) {
-    console.error("❌ 茶六博愛 A-3 寫入失敗", err);
-  }
+  const clientAuth = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: clientAuth });
+
+  // 取得目前最後一列
+  const meta = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!A:A`
+  });
+
+  const nextRow = (meta.data.values?.length || 1) + 1;
+
+  // 🔁 呼叫你已存在的 A-3 寫入流程（直接 append）
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" }),
+        event.source.userId,
+        event.source.userId,
+        text,
+        "茶六博愛", "", "", "業績",
+        "", "", "", "", "", "", "", ""
+      ]]
+    }
+  });
+
+  // 🔧 補摘要
+  await buildAndWriteSummary(nextRow);
 
   await client.replyMessage(event.replyToken, {
     type: "text",
     text: "已記錄"
+  });
+
+  return true;
+}
+
+// ======================================================
+// B-2：查詢指令（只讀摘要）
+// ======================================================
+async function handleQuery(event) {
+  if (event.message.type !== "text") return false;
+  const text = event.message.text.trim();
+
+  if (!text.startsWith("查業績")) return false;
+
+  const args = text.split(" ");
+  const dateArg = args[2]; // 可能有日期
+
+  const clientAuth = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: clientAuth });
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${SHEET_NAME}!Q:Q`
+  });
+
+  const summaries = res.data.values?.map(v => v[0]).filter(Boolean) || [];
+  if (!summaries.length) {
+    await client.replyMessage(event.replyToken, {
+      type: "text",
+      text: "目前沒有資料"
+    });
+    return true;
+  }
+
+  let target = summaries[summaries.length - 1];
+  if (dateArg) {
+    const found = summaries.find(s => s.includes(dateArg));
+    if (found) target = found;
+  }
+
+  await client.replyMessage(event.replyToken, {
+    type: "text",
+    text: `【茶六博愛】\n${target}`
   });
 
   return true;
@@ -228,6 +257,7 @@ app.post(
       for (const event of req.body.events || []) {
 
         if (await handlePrivateSales(event)) continue;
+        if (await handleQuery(event)) continue;
 
         if (event.type !== "message") continue;
         if (event.message.type !== "text") continue;
