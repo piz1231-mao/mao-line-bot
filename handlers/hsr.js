@@ -19,7 +19,7 @@ function parseTimeInput(text) {
 }
 
 // ==============================
-// 🚄 高鐵主處理器（⚠️ 一定要 async）
+// 🚄 高鐵主處理器（完整不卡版）
 // ==============================
 module.exports = async function handleHSR(event) {
   if (!event?.message?.text) return null;
@@ -44,13 +44,13 @@ module.exports = async function handleHSR(event) {
     else return "請回覆：北上 或 南下";
 
     session.state = "HSR_STATION";
-    return "🚄 請輸入起訖站\n格式：A到B\n例如：台中到台北";
+    return "🚄 請輸入起訖站\n格式：A到B\n例如：左營到台中";
   }
 
   // ========= 站名 =========
   if (session.state === "HSR_STATION") {
     if (!text.includes("到")) {
-      return "站名格式錯誤，請輸入：台中到台北";
+      return "站名格式錯誤，請輸入：左營到台中";
     }
 
     const [from, to] = text.split("到");
@@ -58,17 +58,15 @@ module.exports = async function handleHSR(event) {
     session.destination = to.trim();
     session.state = "HSR_TIME";
 
-    // ❗省錢：這一步不回訊息，等使用者直接打時間
-    return null;
+    return "🚄 請輸入時間（例如 20:00）\n未輸入則查最近 2 小時";
   }
 
-  // ========= 時間（這裡是關鍵） =========
+  // ========= 時間 =========
   if (session.state === "HSR_TIME") {
     const parsedTime = parseTimeInput(text);
     session.startTime = parsedTime ? parsedTime : new Date();
     session.state = "HSR_RESULT";
 
-    // ✅ 一定要 await
     return await fetchAndRender(session);
   }
 
@@ -92,7 +90,8 @@ async function fetchAndRender(session) {
   const destId = stationMap[session.destination];
 
   if (!originId || !destId) {
-    return "找不到站名，請重新輸入（例如：台中到台北）";
+    session.state = "HSR_STATION";
+    return "找不到站名，請重新輸入（例如：左營到台中）";
   }
 
   const today = new Date().toISOString().slice(0, 10);
@@ -102,7 +101,8 @@ async function fetchAndRender(session) {
     data = await getHSRTimetable(originId, destId, today);
   } catch (e) {
     console.error("HSR API error:", e.message);
-    return "🚄 高鐵系統忙碌中，請稍後再試";
+    session.state = "HSR_TIME";
+    return "🚄 高鐵系統忙碌中，請稍後再輸入時間重試";
   }
 
   const start = session.startTime;
@@ -135,7 +135,7 @@ function renderResult(session) {
   const list = session.trips.slice(start, end);
 
   if (!list.length) {
-    return "🚄 查無符合時間的班次";
+    return "🚄 該時段沒有班次，請嘗試其他時間";
   }
 
   let msg =
@@ -152,7 +152,7 @@ function renderResult(session) {
   });
 
   if (end < session.trips.length) {
-    msg += "\n▶︎ 查看後面班次";
+    msg += "\n輸入「後面」查看後續班次";
   }
 
   return msg;
