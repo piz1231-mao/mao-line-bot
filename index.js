@@ -1,16 +1,14 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// 基準定版 v1.2（功能鎖死）
+// 基準定版 v1.3（修復待辦事項）
 //
 // - TradingView Webhook（鎖死）
 // - 天氣查詢（縣市完整）
-// - 待辦功能
+// - 待辦功能（✅ 已修復）
 // - 🚄 高鐵查詢
 // - 私訊營運回報（三店分頁）
-//   ✔ 成功不回應
-//   ✔ 失敗才回應
 // - 摘要寫入 Q 欄（emoji 版）
-// - 查業績：單店 / 三店合併（A 分隔線）
+// - 查業績：單店 / 三店合併
 // - ⏰ 每日 08:00 主動推播（/api/daily-summary）
 // ======================================================
 
@@ -25,12 +23,12 @@ const { google } = require("googleapis");
 const app = express();
 
 // ======================================================
-// 原有 services（不刪）
+// 原有 services
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
 const tvAlert = require("./services/tvAlert");
-const todoCmd = require("./commands/chat/todo");
+const todoCmd = require("./commands/chat/todo"); // ✅ 這裡有引入，下面要記得用
 const handleHSR = require("./handlers/hsr");
 
 // ======================================================
@@ -58,7 +56,7 @@ const auth = new GoogleAuth({
 });
 
 // ======================================================
-// TradingView Webhook（原樣）
+// TradingView Webhook
 // ======================================================
 app.all(
   "/tv-alert",
@@ -87,7 +85,7 @@ const nowTW = () =>
 const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
 
 // ======================================================
-// 天氣
+// 天氣解析
 // ======================================================
 function parseWeather(text) {
   if (!text) return null;
@@ -109,7 +107,7 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 解析業績（原邏輯）
+// 解析業績
 // ======================================================
 function parseSales(text) {
   const t = text.replace(/：/g, ":").replace(/。/g, ".").replace(/％/g, "%");
@@ -128,7 +126,7 @@ function parseSales(text) {
 }
 
 // ======================================================
-// 確保 Sheet 存在
+// Sheet 操作
 // ======================================================
 async function ensureSheet(shop) {
   if (shop === TEMPLATE_SHEET) return;
@@ -157,9 +155,6 @@ async function ensureSheet(shop) {
   });
 }
 
-// ======================================================
-// 寫入業績
-// ======================================================
 async function writeShop(shop, text, userId) {
   const c = await auth.getClient();
   const sheets = google.sheets({ version:"v4", auth:c });
@@ -207,14 +202,16 @@ async function writeShop(shop, text, userId) {
 }
 
 // ======================================================
-// LINE Webhook
+// LINE Webhook（🔥 已修復）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const e of req.body.events || []) {
 
+      // 1. 高鐵優先
       if (await handleHSR(e)) continue;
 
+      // 2. 營運回報（私訊）
       if (e.message?.type === "text" && e.message.text.startsWith("大哥您好")) {
         const shop =
           e.message.text.includes("湯棧") ? "湯棧中山" :
@@ -233,6 +230,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         continue;
       }
 
+      // 3. 查業績
       if (e.message?.type === "text" && e.message.text.startsWith("查業績")) {
         const arg = e.message.text.split(" ")[1];
         const c = await auth.getClient();
@@ -256,6 +254,15 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         continue;
       }
 
+      // 4. 待辦事項（🔥 補回這裡）
+      if (e.message?.type === "text") {
+        if (todoCmd.keywords?.some(k => e.message.text.startsWith(k))) {
+          await todoCmd.handler(client, e);
+          continue;
+        }
+      }
+
+      // 5. 天氣查詢
       if (e.message?.type === "text") {
         const city = parseWeather(e.message.text);
         if (city !== null) {
@@ -275,7 +282,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// 每日摘要 API（給 Cron）
+// 每日摘要 API（08:00 推播用）
 // ======================================================
 app.post("/api/daily-summary", async (req, res) => {
   try {
@@ -294,10 +301,13 @@ app.post("/api/daily-summary", async (req, res) => {
 
     if (!out.length) return res.send("no data");
 
-    await client.pushMessage(process.env.BOSS_USER_ID, {
-      type:"text",
-      text: out.join("\n\n━━━━━━━━━━━\n\n")
-    });
+    // ⚠️ 請確認 env 裡有 BOSS_USER_ID
+    if (process.env.BOSS_USER_ID) {
+        await client.pushMessage(process.env.BOSS_USER_ID, {
+            type:"text",
+            text: out.join("\n\n━━━━━━━━━━━\n\n")
+        });
+    }
 
     res.send("ok");
   } catch (err) {
@@ -306,8 +316,6 @@ app.post("/api/daily-summary", async (req, res) => {
   }
 });
 
-// ======================================================
-// 啟動 Server（⚠️ 修正過的正確版本）
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
