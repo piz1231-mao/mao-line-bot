@@ -1,11 +1,16 @@
 // ======================================================
-// 🛒 Stock List Flex（購物車定版 v1.2｜字級微調）
+// 🛒 Stock List Flex Formatter（購物車｜定版）
+// ------------------------------------------------------
+// 顯示：
+// - 代號 + 名稱（加大）
+// - 💎 價位｜漲跌｜漲跌幅（同一行、對齊）
 // ======================================================
 
+// ===== 券商風色碼 =====
 function colorByChange(change) {
   if (change > 0) return "#D32F2F"; // 紅
-  if (change < 0) return "#0B8F3A"; // 綠
-  return "#666666";
+  if (change < 0) return "#008A3B"; // 深券商綠
+  return "#666666";                // 平盤灰
 }
 
 function sign(change) {
@@ -20,13 +25,19 @@ function fmt(n, digits = 2) {
 }
 
 // ======================================================
-// 單一股票區塊（兩行）
+// 單一商品 Row
 // ======================================================
-function buildItem(stock) {
-  const { id, name, price, yPrice } = stock;
+function buildRow(data) {
+  const {
+    id,
+    name,
+    price,
+    yPrice
+  } = data;
 
   const change =
     price !== null && yPrice !== null ? price - yPrice : 0;
+
   const pct =
     yPrice ? (change / yPrice) * 100 : 0;
 
@@ -37,16 +48,17 @@ function buildItem(stock) {
     layout: "vertical",
     spacing: "xs",
     contents: [
-      // ===== 第一行：代號＋名稱（字體加大）=====
+      // ===== 代號＋名稱（加大一點）=====
       {
         type: "text",
         text: `${id}  ${name}`,
-        size: "md",          // ← 原本 sm，改成 md
+        size: "md",          // ✅ 比之前大一點
         weight: "bold",
-        color: "#111111"
+        color: "#222222",
+        wrap: true
       },
 
-      // ===== 第二行：價格列（不動）=====
+      // ===== 價位主行（對齊版）=====
       {
         type: "box",
         layout: "baseline",
@@ -57,6 +69,13 @@ function buildItem(stock) {
             size: "sm",
             flex: 0
           },
+
+          // 💎 與價位間距（安全 filler）
+          {
+            type: "filler",
+            flex: 0.3
+          },
+
           {
             type: "text",
             text: fmt(price, id === "TXF" ? 0 : 2),
@@ -65,23 +84,28 @@ function buildItem(stock) {
             color,
             flex: 3
           },
+
           {
-            type: "filler"
+            type: "filler",
+            flex: 1
           },
+
           {
             type: "text",
             text: `${sign(change)} ${fmt(Math.abs(change), id === "TXF" ? 0 : 2)}`,
             size: "sm",
             weight: "bold",
             color,
-            flex: 2
+            flex: 2,
+            align: "end"
           },
           {
             type: "text",
             text: `(${fmt(Math.abs(pct), 2)}%)`,
             size: "sm",
             color,
-            flex: 2
+            flex: 2,
+            align: "end"
           }
         ]
       }
@@ -90,24 +114,9 @@ function buildItem(stock) {
 }
 
 // ======================================================
-// 主 Flex
+// 🛒 購物車 Flex
 // ======================================================
-function buildStockListFlex(list = []) {
-  if (!list.length) {
-    return {
-      type: "text",
-      text: "📋 我的購物車\n━━━━━━━━━━━\n\n（清單是空的）"
-    };
-  }
-
-  const items = [];
-  list.forEach((s, i) => {
-    items.push(buildItem(s));
-    if (i !== list.length - 1) {
-      items.push({ type: "separator" });
-    }
-  });
-
+function buildStockListFlex(list) {
   return {
     type: "flex",
     altText: "🛒 我的購物車",
@@ -119,15 +128,17 @@ function buildStockListFlex(list = []) {
         layout: "vertical",
         spacing: "md",
         contents: [
-          // ===== 標題字體加大 =====
+          // ===== 標題（加大一點）=====
           {
             type: "text",
             text: "🛒 我的購物車",
-            size: "xl",        // ← 原本 lg，改成 xl
+            size: "lg",       // ✅ 比剛剛再大一點
             weight: "bold"
           },
           { type: "separator" },
-          ...items
+
+          // ===== 清單 =====
+          ...list.map(buildRow)
         ]
       }
     }
