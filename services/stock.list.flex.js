@@ -1,12 +1,11 @@
 // ======================================================
-// 🛒 Stock List Flex（購物車定版 v1.2.0）
+// 🛒 Stock Cart Flex（最終穩定對齊版）
 // ======================================================
 
-// ===== 色碼 =====
 function colorByChange(change) {
   if (change > 0) return "#D32F2F";   // 紅
-  if (change < 0) return "#008A3B";   // 綠（更明顯）
-  return "#666666";                   // 灰
+  if (change < 0) return "#008A3B";   // 綠（明顯一點）
+  return "#666666";                  // 平盤
 }
 
 function sign(change) {
@@ -21,92 +20,73 @@ function fmt(n, digits = 2) {
 }
 
 // ======================================================
-// 🧩 單一項目 Row
+// 🔹 單筆購物車 Row（重點在這）
 // ======================================================
-function buildItemRow(data) {
-  const { id, name, price, yPrice } = data;
-
+function buildCartRow({ price, yPrice }) {
   const change =
     price !== null && yPrice !== null ? price - yPrice : 0;
-  const pct =
-    yPrice ? (change / yPrice) * 100 : 0;
-
+  const pct = yPrice ? (change / yPrice) * 100 : 0;
   const color = colorByChange(change);
 
   return {
     type: "box",
-    layout: "vertical",
-    spacing: "xs",
+    layout: "baseline",
     contents: [
-      // ===== 代號 + 名稱 =====
+      // 💎
       {
         type: "text",
-        text: `${id}  ${name}`,
-        size: "md",
-        weight: "bold",
-        color: "#222222",
-        wrap: true
+        text: "💎",
+        size: "sm",
+        flex: 0
       },
 
-      // ===== 價位 / 漲跌 / 漲跌幅（對齊關鍵）=====
+      // 價位（鎖死，不再動）
       {
-        type: "box",
-        layout: "baseline",
-        contents: [
-          {
-            type: "text",
-            text: "💎",
-            size: "sm",
-            flex: 0
-          },
+        type: "text",
+        text: fmt(price),
+        size: "md",
+        weight: "bold",
+        color,
+        flex: 3
+      },
 
-          {
-            type: "text",
-            text: fmt(price, id === "TXF" ? 0 : 2),
-            size: "md",
-            weight: "bold",
-            color,
-            flex: 3
-          },
+      // ⭐ 漲跌（固定錨點，往左一點）
+      {
+        type: "text",
+        text: `${sign(change)} ${fmt(Math.abs(change))}`,
+        size: "md",
+        weight: "bold",
+        color,
+        flex: 2,          // ← 關鍵：固定欄位
+        align: "start"    // ← 左對齊，所有列都一樣
+      },
 
-          // ===== 漲跌（固定欄位，右對齊）=====
-          {
-            type: "text",
-            text: `${sign(change)} ${fmt(Math.abs(change), id === "TXF" ? 0 : 2)}`,
-            size: "md",
-            weight: "bold",
-            color,
-            flex: 2,
-            align: "end"
-          },
+      // ⭐ 固定留白欄位（只負責間距）
+      {
+        type: "text",
+        text: " ",
+        size: "md",
+        flex: 0.5
+      },
 
-          // ===== 漲跌幅（固定欄位，右對齊）=====
-          {
-            type: "text",
-            text: `(${fmt(Math.abs(pct), 2)}%)`,
-            size: "md",
-            weight: "bold",
-            color,
-            flex: 2,
-            align: "end"
-          }
-        ]
+      // 漲跌幅（位置鎖死）
+      {
+        type: "text",
+        text: `(${fmt(Math.abs(pct), 2)}%)`,
+        size: "md",
+        weight: "bold",   // ← 不用細字
+        color,
+        flex: 2,
+        align: "start"
       }
     ]
   };
 }
 
 // ======================================================
-// 🛒 購物車 Flex
+// 🛒 購物車 Flex 主體
 // ======================================================
 function buildStockListFlex(list) {
-  if (!list || !list.length) {
-    return {
-      type: "text",
-      text: "📋 我的購物車\n━━━━━━━━━━━\n（清單是空的）"
-    };
-  }
-
   return {
     type: "flex",
     altText: "🛒 我的購物車",
@@ -126,14 +106,27 @@ function buildStockListFlex(list) {
           },
           { type: "separator" },
 
-          ...list.map(buildItemRow)
+          ...list.map(d => ({
+            type: "box",
+            layout: "vertical",
+            spacing: "xs",
+            contents: [
+              {
+                type: "text",
+                text: `${d.id}  ${d.name}`,
+                size: "md",
+                weight: "bold",
+                color: "#222222"
+              },
+              buildCartRow(d)
+            ]
+          }))
         ]
       }
     }
   };
 }
 
-// ======================================================
 module.exports = {
   buildStockListFlex
 };
