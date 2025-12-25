@@ -275,7 +275,7 @@ if (
       : text.replace("查股票", "").replace("股", "").trim();
 
   const data = await getStockQuote(id);
-  const flex = buildStockSingleFlex(data);
+const flex = buildStockSingleFlexMessage(data);
 await client.replyMessage(e.replyToken, flex);
   continue;
 }
