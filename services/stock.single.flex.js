@@ -1,15 +1,14 @@
 // ======================================================
-// 📊 Stock Single Flex Formatter（單一股票 / 指數 / 期貨）
+// 📊 Stock Single Flex Formatter（完整版）
 // ------------------------------------------------------
-// 使用時機：
-// - 股 2330
-// - 查股票 3105
-// - 台指期 / 櫃買 / 大盤
+// 適用：
+// - 查個股
+// - 查指數
+// - 查台指期
 //
-// 顯示定位：
-// - 一檔一個 Bubble
-// - 資訊完整但不雜
-// - 專業券商風格
+// 目標：
+// - 保留原本文字版的「全部資訊」
+// - 用 Flex 重新排版，不洗版
 // ======================================================
 
 function colorByChange(change) {
@@ -27,6 +26,30 @@ function sign(n) {
 function fmt(n, digits = 2) {
   if (n === null || n === undefined || isNaN(n)) return "—";
   return Number(n).toFixed(digits);
+}
+
+function row(label, value) {
+  return {
+    type: "box",
+    layout: "baseline",
+    contents: [
+      {
+        type: "text",
+        text: label,
+        size: "sm",
+        color: "#888888",
+        flex: 2
+      },
+      {
+        type: "text",
+        text: value,
+        size: "sm",
+        color: "#222222",
+        flex: 4,
+        wrap: true
+      }
+    ]
+  };
 }
 
 function buildStockSingleFlex(data) {
@@ -70,11 +93,9 @@ function buildStockSingleFlex(data) {
             wrap: true
           },
 
-          {
-            type: "separator"
-          },
+          { type: "separator" },
 
-          // ===== 價格 =====
+          // ===== 現價 =====
           {
             type: "text",
             text: `💎 ${fmt(price, 2)}`,
@@ -90,7 +111,20 @@ function buildStockSingleFlex(data) {
             size: "md",
             weight: "bold",
             color
-          }
+          },
+
+          { type: "separator" },
+
+          // ===== 其他資訊 =====
+          row("🌅 開盤", fmt(data.open, 2)),
+          row("🏔️ 最高", fmt(data.high, 2)),
+          row("🌊 最低", fmt(data.low, 2)),
+          row("📉 昨收", fmt(data.yPrice, 2)),
+          row(
+            "📦 成交",
+            data.vol !== null ? `${data.vol} 張` : "—"
+          ),
+          row("🕒 時間", data.time || "—")
         ]
       }
     }
