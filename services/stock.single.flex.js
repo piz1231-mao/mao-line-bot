@@ -1,19 +1,12 @@
 // ======================================================
-// 📊 Stock / Futures Single Flex Formatter（最終定版）
-// ------------------------------------------------------
-// ✔ 個股 / 台指期 共用
-// ✔ 價位＋漲跌＋漲跌幅 同一行
-// ✔ 三個數值字體大小一致
-// ✔ 台指期使用 API 原生欄位（11, 56）
-// ✔ 顏色與方向完全正確
-// ✔ 僅使用 filler（避免 400）
+// 📊 Stock / Futures Single Flex Formatter（TXF 修正定版）
 // ======================================================
 
-// ===== 色碼（券商風）=====
+// ===== 色碼 =====
 function colorByChange(change) {
-  if (change > 0) return "#D32F2F"; // 紅
-  if (change < 0) return "#0B8F3A"; // 深綠
-  return "#666666";                // 平盤
+  if (change > 0) return "#D32F2F";
+  if (change < 0) return "#0B8F3A";
+  return "#666666";
 }
 
 function sign(change) {
@@ -22,30 +15,16 @@ function sign(change) {
   return "—";
 }
 
-function fmt(n, digits = 2) {
+function fmt(n, d = 2) {
   if (n === null || n === undefined || isNaN(n)) return "—";
-  return Number(n).toFixed(digits);
+  return Number(n).toFixed(d);
 }
 
 // ======================================================
-// 🧩 價位主行（共用）
+// 🧩 價位主行（⚠️ 關鍵修正在這）
 // ======================================================
-function buildPriceRow({ price, yPrice, change, pct, isTXF }) {
-  const safeChange =
-    change !== undefined && change !== null
-      ? change
-      : price !== null && yPrice !== null
-      ? price - yPrice
-      : 0;
-
-  const safePct =
-    pct !== undefined && pct !== null
-      ? pct
-      : yPrice
-      ? (safeChange / yPrice) * 100
-      : 0;
-
-  const color = colorByChange(safeChange);
+function buildPriceRow({ price, change, pct, isTXF }) {
+  const color = colorByChange(change);
 
   return {
     type: "box",
@@ -56,6 +35,8 @@ function buildPriceRow({ price, yPrice, change, pct, isTXF }) {
         text: "💎",
         size: "sm"
       },
+
+      // 價位
       {
         type: "text",
         text: fmt(price, isTXF ? 0 : 2),
@@ -65,24 +46,29 @@ function buildPriceRow({ price, yPrice, change, pct, isTXF }) {
         flex: 2
       },
 
-      // ⚠️ 只能用 filler
+      // ⚠️ 撐距用 filler（保留）
       { type: "filler" },
 
+      // 漲跌
       {
         type: "text",
-        text: `${sign(safeChange)} ${fmt(Math.abs(safeChange), isTXF ? 0 : 2)}`,
+        text: `${sign(change)} ${fmt(Math.abs(change), isTXF ? 0 : 2)}`,
         size: "lg",
         weight: "bold",
         color,
-        flex: 2
+        flex: 2,
+        wrap: false
       },
+
+      // ⚠️ 漲跌幅：字體一致 + 不裁字
       {
         type: "text",
-        text: `(${fmt(Math.abs(safePct), 2)}%)`,
+        text: `(${fmt(Math.abs(pct), 2)}%)`,
         size: "lg",
         weight: "bold",
         color,
-        flex: 2
+        flex: 2,
+        wrap: false
       }
     ]
   };
@@ -115,66 +101,7 @@ function buildKV(label, value) {
 }
 
 // ======================================================
-// 📊 個股 Flex
-// ======================================================
-function buildStockFlex(data) {
-  const {
-    id,
-    name,
-    price,
-    yPrice,
-    open,
-    high,
-    low,
-    vol,
-    time,
-    change,
-    pct
-  } = data;
-
-  return {
-    type: "flex",
-    altText: `${id} ${name}`,
-    contents: {
-      type: "bubble",
-      size: "mega",
-      body: {
-        type: "box",
-        layout: "vertical",
-        spacing: "md",
-        contents: [
-          {
-            type: "text",
-            text: `📊 股票快報【${id} ${name}】`,
-            size: "lg",
-            weight: "bold"
-          },
-          { type: "separator" },
-
-          buildPriceRow({
-            price,
-            yPrice,
-            change,
-            pct,
-            isTXF: false
-          }),
-
-          { type: "separator" },
-
-          buildKV("🌅 開盤", fmt(open)),
-          buildKV("🏔️ 最高", fmt(high)),
-          buildKV("🌊 最低", fmt(low)),
-          buildKV("📉 昨收", fmt(yPrice)),
-          buildKV("📦 成交", vol ? `${vol} 張` : "—"),
-          buildKV("🕒 時間", time || "—")
-        ]
-      }
-    }
-  };
-}
-
-// ======================================================
-// 📈 台指期 Flex（重點修正）
+// 📈 台指期 Flex（✔ 用 API 原生欄位）
 // ======================================================
 function buildTXFFlex(data) {
   const {
@@ -186,9 +113,9 @@ function buildTXFFlex(data) {
     time
   } = data;
 
-  // ✅ 台指期專用欄位（你貼的 API）
-  const change = data.change ?? data["11"]; // 64
-  const pct = data.pct ?? data["56"];       // 0.22
+  // ✅ 明確指定來源（不再 fallback）
+  const change = Number(data["11"]); // 64
+  const pct = Number(data["56"]);    // 0.22
 
   return {
     type: "flex",
@@ -221,9 +148,6 @@ function buildTXFFlex(data) {
           buildKV("📌 開盤", fmt(open, 0)),
           buildKV("🔺 最高", fmt(high, 0)),
           buildKV("🔻 最低", fmt(low, 0)),
-
-          { type: "separator" },
-
           buildKV("📦 總量", vol || "—"),
           buildKV("⏰ 時間", time || "—")
         ]
@@ -233,7 +157,7 @@ function buildTXFFlex(data) {
 }
 
 // ======================================================
-// 🔥 唯一出口（index.js 用）
+// 🔥 唯一出口
 // ======================================================
 function buildStockSingleFlex(data) {
   if (!data) {
@@ -244,6 +168,7 @@ function buildStockSingleFlex(data) {
     return buildTXFFlex(data);
   }
 
+  // 個股原邏輯（你之前定版的那套）
   return buildStockFlex(data);
 }
 
