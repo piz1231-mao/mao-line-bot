@@ -1,24 +1,35 @@
+// services/stock.text.js
+
 function buildStockText(data) {
-  if (!data) {
-    return "⚠️ 查無資料，請確認股票代碼是否正確";
+  if (!data) return "⚠️ 查無此股票，請確認代號是否正確。";
+
+  // 計算漲跌
+  const diff = data.price - data.yPrice;
+  const diffPct = data.yPrice ? ((diff / data.yPrice) * 100).toFixed(2) : 0;
+
+  // 設定 Emoji 與正負號
+  let emoji = "➖"; // 平盤
+  let sign = "";
+  
+  if (diff > 0) {
+    emoji = "🔴"; // 漲
+    sign = "+";
+  } else if (diff < 0) {
+    emoji = "🟢"; // 跌
+    sign = ""; // 負數自帶負號
   }
 
-  const { stockId, mode, price, open, high, low, volume, time } = data;
-  const diff = (price - open).toFixed(2);
-  const pct = ((diff / open) * 100).toFixed(2);
-  const arrow = diff >= 0 ? "📈" : "📉";
-  const sign = diff >= 0 ? "+" : "";
-
-  return `
-📊 股票快看｜${stockId}
+  return `📊 股票快報【${data.id} ${data.name}】
 ━━━━━━━━━━━
-🕒 狀態：${mode}
-💰 價格：${price}
-${arrow} 漲跌：${sign}${diff} (${pct}%)
-📦 成交量：${volume}
-📉 區間：${low} – ${high}
-⏱ 更新：${time}
-`.trim();
+💰 現價：${data.price}
+${emoji} 漲跌：${sign}${diff.toFixed(2)} (${sign}${diffPct}%)
+━━━━━━━━━━━
+🌅 開盤：${data.open}
+🏔️ 最高：${data.high}
+🌊 最低：${data.low}
+📉 昨收：${data.yPrice}
+📦 成交：${data.vol} 張
+🕒 時間：${data.time}`;
 }
 
 module.exports = { buildStockText };
