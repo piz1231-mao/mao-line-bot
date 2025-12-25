@@ -1,16 +1,11 @@
 // ======================================================
-// 🛒 Stock List Flex Formatter（購物車｜定版）
-// ------------------------------------------------------
-// 顯示：
-// - 代號 + 名稱（加大）
-// - 💎 價位｜漲跌｜漲跌幅（同一行、對齊）
+// 🛒 Stock List Flex Formatter（購物車｜最終定版）
 // ======================================================
 
-// ===== 券商風色碼 =====
 function colorByChange(change) {
   if (change > 0) return "#D32F2F"; // 紅
-  if (change < 0) return "#008A3B"; // 深券商綠
-  return "#666666";                // 平盤灰
+  if (change < 0) return "#008A3B"; // 券商深綠
+  return "#666666";
 }
 
 function sign(change) {
@@ -25,19 +20,13 @@ function fmt(n, digits = 2) {
 }
 
 // ======================================================
-// 單一商品 Row
+// 單筆 Row
 // ======================================================
 function buildRow(data) {
-  const {
-    id,
-    name,
-    price,
-    yPrice
-  } = data;
+  const { id, name, price, yPrice } = data;
 
   const change =
     price !== null && yPrice !== null ? price - yPrice : 0;
-
   const pct =
     yPrice ? (change / yPrice) * 100 : 0;
 
@@ -48,17 +37,17 @@ function buildRow(data) {
     layout: "vertical",
     spacing: "xs",
     contents: [
-      // ===== 代號＋名稱（加大一點）=====
+      // ===== 代號＋名稱（保持你現在 OK 的大小）=====
       {
         type: "text",
         text: `${id}  ${name}`,
-        size: "md",          // ✅ 比之前大一點
+        size: "md",
         weight: "bold",
         color: "#222222",
         wrap: true
       },
 
-      // ===== 價位主行（對齊版）=====
+      // ===== 價位主行 =====
       {
         type: "box",
         layout: "baseline",
@@ -70,10 +59,12 @@ function buildRow(data) {
             flex: 0
           },
 
-          // 💎 與價位間距（安全 filler）
+          // ✅ 關鍵修正：用「空白」撐距（最穩）
           {
-            type: "filler",
-            flex: 0.3
+            type: "text",
+            text: "  ",   // ← 只多一點點距離
+            size: "sm",
+            flex: 0
           },
 
           {
@@ -86,8 +77,7 @@ function buildRow(data) {
           },
 
           {
-            type: "filler",
-            flex: 1
+            type: "filler"
           },
 
           {
@@ -128,16 +118,14 @@ function buildStockListFlex(list) {
         layout: "vertical",
         spacing: "md",
         contents: [
-          // ===== 標題（加大一點）=====
           {
             type: "text",
             text: "🛒 我的購物車",
-            size: "lg",       // ✅ 比剛剛再大一點
+            size: "lg",
             weight: "bold"
           },
           { type: "separator" },
 
-          // ===== 清單 =====
           ...list.map(buildRow)
         ]
       }
