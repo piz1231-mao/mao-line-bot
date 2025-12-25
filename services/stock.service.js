@@ -1,28 +1,41 @@
 // services/stock.service.js
-// 全自動搜尋版：自動判斷上市(tse)、上櫃(otc)、指數(t00)
+// 超級全能版：支援 上市、上櫃、期貨 + 中文暱稱自動轉換
 
 const axios = require("axios");
 
 async function getStockQuote(stockId) {
   const t = new Date().getTime();
+
+  // 1. 【翻譯蒟蒻】中文暱稱轉換區
+  // 讓你不用背代號，打中文也能通
+  let targetId = stockId.toUpperCase(); // 強制轉大寫
   
-  // 這裡定義我們要「輪流嘗試」的清單
-  // tse_xxx.tw = 上市股票、大盤指數 (t00)
-  // otc_xxx.tw = 上櫃股票
+  if (targetId === "台指" || targetId === "台指期" || targetId === "台指近" || targetId === "台指近全") {
+    targetId = "TXF1";
+  }
+  else if (targetId === "大盤" || targetId === "加權指數") {
+    targetId = "t00";
+  }
+
+  // 2. 定義要搜尋的三個資料庫 (輪流敲門)
+  // tse = 上市 & 大盤
+  // otc = 上櫃
+  // fut = 期貨 (如 TXF1)
   const targets = [
-    `tse_${stockId}.tw`, 
-    `otc_${stockId}.tw`
+    `tse_${targetId}.tw`, 
+    `otc_${targetId}.tw`,
+    `fut_${targetId}.tw`
   ];
 
-  // 使用迴圈，一個一個試
+  // 3. 開始搜尋
   for (const target of targets) {
+    // 這裡用了證交所的公開 API
     const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${target}&json=1&delay=0&_=${t}`;
     
     try {
       const res = await axios.get(url);
       const data = res.data;
 
-      // 如果 msgArray 裡面有東西，代表找到了！
       if (data.msgArray && data.msgArray.length > 0) {
         const info = data.msgArray[0];
         const safeNum = (v) => (isNaN(Number(v)) ? 0 : Number(v));
@@ -30,7 +43,7 @@ async function getStockQuote(stockId) {
         return {
           id: info.c,           // 代號
           name: info.n,         // 名稱
-          price: safeNum(info.z), // 現價 (當盤成交價)
+          price: safeNum(info.z), // 現價
           yPrice: safeNum(info.y),// 昨收
           high: safeNum(info.h),  // 最高
           low: safeNum(info.l),   // 最低
@@ -40,12 +53,10 @@ async function getStockQuote(stockId) {
         };
       }
     } catch (e) {
-      // 找不到就安靜地繼續試下一個，不用報錯
-      continue;
+      continue; // 沒找到就換下一個
     }
   }
 
-  // 如果跑完所有可能性都沒找到
   return null;
 }
 
