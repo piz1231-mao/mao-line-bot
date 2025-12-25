@@ -1,16 +1,16 @@
 // ======================================================
-// 📊 Stock Single Flex（定版 v1.0）
+// 📊 Stock / TXF Single Flex（定版 v1.0）
 // ======================================================
 
-function colorByChange(c) {
-  if (c > 0) return "#D32F2F";
-  if (c < 0) return "#0B8F3A";
+function colorByChange(change) {
+  if (change > 0) return "#D32F2F";
+  if (change < 0) return "#0B8F3A";
   return "#666666";
 }
 
-function sign(c) {
-  if (c > 0) return "▲";
-  if (c < 0) return "▼";
+function sign(change) {
+  if (change > 0) return "▲";
+  if (change < 0) return "▼";
   return "—";
 }
 
@@ -19,11 +19,10 @@ function fmt(n, d = 2) {
   return Number(n).toFixed(d);
 }
 
-// ======================================================
-// 💎 價位列（共用）
-// ======================================================
+// ------------------ 價位主行 ------------------
 function buildPriceRow(data, isTXF = false) {
-  const color = colorByChange(data.change);
+  const { price, change, percent } = data;
+  const color = colorByChange(change);
 
   return {
     type: "box",
@@ -32,7 +31,7 @@ function buildPriceRow(data, isTXF = false) {
       { type: "text", text: "💎", size: "sm" },
       {
         type: "text",
-        text: fmt(data.price, isTXF ? 0 : 2),
+        text: fmt(price, isTXF ? 0 : 2),
         size: "lg",
         weight: "bold",
         color,
@@ -41,7 +40,7 @@ function buildPriceRow(data, isTXF = false) {
       { type: "filler" },
       {
         type: "text",
-        text: `${sign(data.change)} ${fmt(Math.abs(data.change), isTXF ? 0 : 2)}`,
+        text: `${sign(change)} ${fmt(Math.abs(change), isTXF ? 0 : 2)}`,
         size: "md",
         weight: "bold",
         color,
@@ -49,7 +48,7 @@ function buildPriceRow(data, isTXF = false) {
       },
       {
         type: "text",
-        text: `(${fmt(Math.abs(data.percent), 2)}%)`,
+        text: `(${fmt(Math.abs(percent), 2)}%)`,
         size: "md",
         weight: "bold",
         color,
@@ -59,52 +58,24 @@ function buildPriceRow(data, isTXF = false) {
   };
 }
 
+// ------------------ Key / Value ------------------
 function buildKV(label, value) {
   return {
     type: "box",
     layout: "baseline",
     contents: [
-      { type: "text", text: label, size: "md", color: "#888888", flex: 2 },
-      { type: "text", text: String(value), size: "md", color: "#222222", flex: 4 }
+      { type: "text", text: label, size: "md", color: "#888", flex: 2 },
+      { type: "text", text: String(value ?? "—"), size: "md", color: "#222", flex: 4 }
     ]
   };
 }
 
-// ======================================================
-// 📈 台指期
-// ======================================================
-function buildTXFFlex(data) {
-  return {
-    type: "flex",
-    altText: "📊 台指期 TXF",
-    contents: {
-      type: "bubble",
-      size: "mega",
-      body: {
-        type: "box",
-        layout: "vertical",
-        spacing: "md",
-        contents: [
-          { type: "text", text: "📊 期貨快報【台指期 TXF】", size: "lg", weight: "bold" },
-          { type: "separator" },
-          buildPriceRow(data, true),
-          { type: "separator" },
-          buildKV("📌 開盤", fmt(data.open, 0)),
-          buildKV("🔺 最高", fmt(data.high, 0)),
-          buildKV("🔻 最低", fmt(data.low, 0)),
-          { type: "separator" },
-          buildKV("📦 總量", data.vol),
-          buildKV("⏰ 時間", data.time)
-        ]
-      }
-    }
-  };
-}
+// ------------------ 主入口 ------------------
+function buildStockSingleFlex(data) {
+  if (!data) return { type: "text", text: "⚠️ 查無資料" };
 
-// ======================================================
-// 📊 個股 / 指數
-// ======================================================
-function buildStockFlex(data) {
+  const isTXF = data.id === "TXF";
+
   return {
     type: "flex",
     altText: `${data.id} ${data.name}`,
@@ -118,32 +89,26 @@ function buildStockFlex(data) {
         contents: [
           {
             type: "text",
-            text: `📊 股票快報【${data.id} ${data.name}】`,
+            text: `📊 ${isTXF ? "期貨快報" : "股票快報"}【${data.id} ${data.name}】`,
             size: "lg",
             weight: "bold"
           },
           { type: "separator" },
-          buildPriceRow(data, false),
+
+          buildPriceRow(data, isTXF),
+
           { type: "separator" },
-          buildKV("🌅 開盤", fmt(data.open)),
-          buildKV("🏔️ 最高", fmt(data.high)),
-          buildKV("🌊 最低", fmt(data.low)),
-          buildKV("📉 昨收", fmt(data.yPrice)),
-          buildKV("📦 成交", data.vol ? `${data.vol} 張` : "—"),
-          buildKV("🕒 時間", data.time)
-        ]
+
+          buildKV("📌 開盤", fmt(data.open, isTXF ? 0 : 2)),
+          buildKV("🔺 最高", fmt(data.high, isTXF ? 0 : 2)),
+          buildKV("🔻 最低", fmt(data.low, isTXF ? 0 : 2)),
+          !isTXF && buildKV("📉 昨收", fmt(data.yPrice)),
+          buildKV("📦 成交", data.vol),
+          buildKV("⏰ 時間", data.time)
+        ].filter(Boolean)
       }
     }
   };
-}
-
-// ======================================================
-// 🔥 唯一出口
-// ======================================================
-function buildStockSingleFlex(data) {
-  if (!data) return { type: "text", text: "⚠️ 查無資料" };
-  if (data.id === "TXF") return buildTXFFlex(data);
-  return buildStockFlex(data);
 }
 
 module.exports = { buildStockSingleFlex };
