@@ -1,5 +1,5 @@
 // ======================================================
-// 📊 Stock / Futures Single Flex Formatter（TXF 修正定版）
+// 📊 Stock / Futures Single Flex Formatter（TXF 最終修正）
 // ======================================================
 
 // ===== 色碼 =====
@@ -21,7 +21,7 @@ function fmt(n, d = 2) {
 }
 
 // ======================================================
-// 🧩 價位主行（⚠️ 關鍵修正在這）
+// 🧩 價位主行（不再自行計算）
 // ======================================================
 function buildPriceRow({ price, change, pct, isTXF }) {
   const color = colorByChange(change);
@@ -30,13 +30,8 @@ function buildPriceRow({ price, change, pct, isTXF }) {
     type: "box",
     layout: "baseline",
     contents: [
-      {
-        type: "text",
-        text: "💎",
-        size: "sm"
-      },
+      { type: "text", text: "💎", size: "sm" },
 
-      // 價位
       {
         type: "text",
         text: fmt(price, isTXF ? 0 : 2),
@@ -46,10 +41,8 @@ function buildPriceRow({ price, change, pct, isTXF }) {
         flex: 2
       },
 
-      // ⚠️ 撐距用 filler（保留）
       { type: "filler" },
 
-      // 漲跌
       {
         type: "text",
         text: `${sign(change)} ${fmt(Math.abs(change), isTXF ? 0 : 2)}`,
@@ -60,7 +53,6 @@ function buildPriceRow({ price, change, pct, isTXF }) {
         wrap: false
       },
 
-      // ⚠️ 漲跌幅：字體一致 + 不裁字
       {
         type: "text",
         text: `(${fmt(Math.abs(pct), 2)}%)`,
@@ -75,47 +67,26 @@ function buildPriceRow({ price, change, pct, isTXF }) {
 }
 
 // ======================================================
-// 🔹 Key / Value Row
+// 🔹 Key / Value
 // ======================================================
 function buildKV(label, value) {
   return {
     type: "box",
     layout: "baseline",
     contents: [
-      {
-        type: "text",
-        text: label,
-        size: "md",
-        color: "#888888",
-        flex: 2
-      },
-      {
-        type: "text",
-        text: String(value),
-        size: "md",
-        color: "#222222",
-        flex: 4
-      }
+      { type: "text", text: label, size: "md", color: "#888888", flex: 2 },
+      { type: "text", text: String(value), size: "md", color: "#222222", flex: 4 }
     ]
   };
 }
 
 // ======================================================
-// 📈 台指期 Flex（✔ 用 API 原生欄位）
+// 📈 台指期 Flex（✅ 明確指定來源）
 // ======================================================
 function buildTXFFlex(data) {
-  const {
-    price,
-    open,
-    high,
-    low,
-    vol,
-    time
-  } = data;
-
-  // ✅ 明確指定來源（不再 fallback）
-  const change = Number(data["11"]); // 64
-  const pct = Number(data["56"]);    // 0.22
+  const price  = Number(data.price);
+  const change = Number(data["11"]); // ← API 原始 +64
+  const pct    = Number(data["56"]); // ← API 原始 0.22
 
   return {
     type: "flex",
@@ -145,11 +116,11 @@ function buildTXFFlex(data) {
 
           { type: "separator" },
 
-          buildKV("📌 開盤", fmt(open, 0)),
-          buildKV("🔺 最高", fmt(high, 0)),
-          buildKV("🔻 最低", fmt(low, 0)),
-          buildKV("📦 總量", vol || "—"),
-          buildKV("⏰ 時間", time || "—")
+          buildKV("📌 開盤", fmt(data.open, 0)),
+          buildKV("🔺 最高", fmt(data.high, 0)),
+          buildKV("🔻 最低", fmt(data.low, 0)),
+          buildKV("📦 總量", data.vol || "—"),
+          buildKV("⏰ 時間", data.time || "—")
         ]
       }
     }
@@ -168,8 +139,7 @@ function buildStockSingleFlex(data) {
     return buildTXFFlex(data);
   }
 
-  // 個股原邏輯（你之前定版的那套）
-  return buildStockFlex(data);
+  return buildStockFlex(data); // ← 個股用你原本那套
 }
 
 module.exports = { buildStockSingleFlex };
