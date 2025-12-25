@@ -3,9 +3,12 @@
 function buildStockText(data) {
   if (!data) return "⚠️ 查無此股票，請確認代號是否正確。";
 
-  // 計算漲跌
+  // 計算漲跌 (防止除以 0 錯誤)
   const diff = data.price - data.yPrice;
-  const diffPct = data.yPrice ? ((diff / data.yPrice) * 100).toFixed(2) : 0;
+  let diffPct = 0;
+  if (data.yPrice > 0) {
+    diffPct = ((diff / data.yPrice) * 100).toFixed(2);
+  }
 
   // 設定 Emoji 與正負號
   let emoji = "➖"; // 平盤
