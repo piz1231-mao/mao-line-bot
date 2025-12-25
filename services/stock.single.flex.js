@@ -1,5 +1,5 @@
 // ======================================================
-// 📊 Stock / TXF Single Flex（定版 v1.0）
+// 📊 Stock / TXF Single Flex（功能完整穩定版）
 // ======================================================
 
 function colorByChange(change) {
@@ -19,9 +19,37 @@ function fmt(n, d = 2) {
   return Number(n).toFixed(d);
 }
 
-// ------------------ 價位主行 ------------------
+// ======================================================
+// 🔧 統一取得漲跌 / 漲幅（關鍵）
+// ======================================================
+function normalizeChange(data) {
+  // 直接有的（台指期）
+  if (typeof data.change === "number") {
+    return {
+      change: data.change,
+      percent: typeof data.percent === "number" ? data.percent : 0
+    };
+  }
+
+  // 個股 fallback（用昨收）
+  if (
+    typeof data.price === "number" &&
+    typeof data.yPrice === "number"
+  ) {
+    const change = data.price - data.yPrice;
+    const percent = data.yPrice ? (change / data.yPrice) * 100 : 0;
+    return { change, percent };
+  }
+
+  return { change: 0, percent: 0 };
+}
+
+// ======================================================
+// 💎 價位主行
+// ======================================================
 function buildPriceRow(data, isTXF = false) {
-  const { price, change, percent } = data;
+  const { price } = data;
+  const { change, percent } = normalizeChange(data);
   const color = colorByChange(change);
 
   return {
@@ -58,23 +86,29 @@ function buildPriceRow(data, isTXF = false) {
   };
 }
 
-// ------------------ Key / Value ------------------
+// ======================================================
+// 🔹 KV Row
+// ======================================================
 function buildKV(label, value) {
   return {
     type: "box",
     layout: "baseline",
     contents: [
-      { type: "text", text: label, size: "md", color: "#888", flex: 2 },
-      { type: "text", text: String(value ?? "—"), size: "md", color: "#222", flex: 4 }
+      { type: "text", text: label, size: "md", color: "#888888", flex: 2 },
+      { type: "text", text: String(value ?? "—"), size: "md", color: "#222222", flex: 4 }
     ]
   };
 }
 
-// ------------------ 主入口 ------------------
+// ======================================================
+// 🔥 主入口（唯一）
+// ======================================================
 function buildStockSingleFlex(data) {
-  if (!data) return { type: "text", text: "⚠️ 查無資料" };
+  if (!data) {
+    return { type: "text", text: "⚠️ 查無資料" };
+  }
 
-  const isTXF = data.id === "TXF";
+  const isTXF = data.id === "TXF" || data.name?.includes("台指期");
 
   return {
     type: "flex",
