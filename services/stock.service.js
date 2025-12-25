@@ -1,10 +1,10 @@
 // ======================================================
-// 📊 Stock Service v1.8.0（官方定版）
+// 📊 Stock Service v1.9.0（正式定版）
 // ------------------------------------------------------
 // ✔ 個股（上市 / 上櫃）：TWSE 官方 MIS API
 // ✔ 櫃買指數 / 加權指數：TWSE 官方 MIS API
-// ✔ 台指期（TXF）：期交所 TAIFEX 官方資料
-// ❌ 不使用 Yahoo / 鉅亨 / 爬蟲
+// ✔ 台指期（TXF）：鉅亨網 JSON API（TFE:TXF:FUTURE）
+// ❌ 不使用 Yahoo、不用爬蟲
 // ======================================================
 
 const axios = require("axios");
@@ -84,41 +84,23 @@ async function getTWSELikeQuote(stockId, market) {
 }
 
 // ======================================================
-// 3️⃣ 台指期（TAIFEX 官方）
-// ------------------------------------------------------
-// 使用期交所「每日交易行情」JSON
-// 夜盤若無資料 → 回 null（前端顯示休市）
+// 3️⃣ 台指期（鉅亨網 JSON API）✅
 // ======================================================
 async function getTaiwanFutures() {
   try {
-    const url = "https://www.taifex.com.tw/cht/3/futDailyMarketReport";
-    const payload = new URLSearchParams({
-      queryType: "2",
-      marketCode: "0",
-      commodity_id: "TXF", // 台指期
-      queryDate: "",
-      MarketCode: "0"
-    });
+    const url =
+      "https://ws.api.cnyes.com/ws/api/v1/quote/quotes/TFE:TXF:FUTURE";
 
-    const { data } = await axios.post(url, payload.toString(), {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded"
-      }
-    });
+    const { data } = await axios.get(url);
+    const info = data?.data?.[0];
+    if (!info) return null;
 
-    const rows = data?.data;
-    if (!rows || !rows.length) return null;
-
-    // 取近月（第一筆）
-    const r = rows[0];
-
-    const price = num(r[8]);   // 成交價
-    const yPrice = num(r[11]); // 昨收
-    const open = num(r[5]);
-    const high = num(r[6]);
-    const low = num(r[7]);
-
-    if (!price) return null;
+    // 鉅亨欄位對照（你剛剛貼的 JSON）
+    const price = num(info["6"]);   // 現價
+    const open  = num(info["12"]);  // 開盤
+    const high  = num(info["75"]);  // 最高
+    const low   = num(info["76"]);  // 最低
+    const yPrice = num(info["13"]); // 昨收
 
     return {
       type: "index",
@@ -129,17 +111,21 @@ async function getTaiwanFutures() {
       open,
       high,
       low,
-      time: r[1],
-      url: "https://www.taifex.com.tw/"
+      time: new Date(info["200007"] * 1000).toLocaleTimeString("zh-TW", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Taipei"
+      }),
+      url: "https://invest.cnyes.com/futures/TFE/TXF"
     };
   } catch (err) {
-    console.error("❌ TAIFEX Error", err.message);
+    console.error("❌ TXF (Anue) Error:", err.message);
     return null;
   }
 }
 
 // ======================================================
-// 🔥 單一入口（index.js 只會呼叫這個）
+// 🔥 單一入口（index.js 只呼叫這個）
 // ======================================================
 async function getStockQuote(input) {
   const key = String(input).trim();
