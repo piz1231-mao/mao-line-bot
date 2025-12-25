@@ -1,101 +1,58 @@
 // services/stock.service.js
+// 使用台灣證券交易所 (TWSE) 基本市況報導網站 API
+// 優點：免 Token、免算日期、假日也能查到最後收盤價
+
 const axios = require("axios");
 
-const FINMIND_API = "https://api.finmindtrade.com/api/v4/data";
-const TOKEN = process.env.FINMIND_API_TOKEN;
-
-// ===============================
-// 判斷是否為台股交易時間（簡化）
-// ===============================
-function isMarketOpen() {
-  const now = new Date();
-  const day = now.getDay(); // 0=Sun, 6=Sat
-  if (day === 0 || day === 6) return false;
-
-  const h = now.getHours();
-  const m = now.getMinutes();
-  const minutes = h * 60 + m;
-
-  // 台股 09:00–13:30
-  return minutes >= 540 && minutes <= 810;
-}
-
-function today() {
-  return new Date().toISOString().slice(0, 10);
-}
-
-// ===============================
-// 共用呼叫 FinMind
-// ===============================
-async function fetchFinMind(dataset, stockId) {
-  const res = await axios.get(FINMIND_API, {
-    params: {
-      dataset,
-      data_id: stockId,
-      start_date: today(),
-      token: TOKEN
-    }
-  });
-  return res.data?.data || [];
-}
-
-// ===============================
-// 單一股票查詢（Phase 1 穩定版）
-// ===============================
 async function getStockQuote(stockId) {
+  // 1. 產生 timestamp 防止快取
+  const t = new Date().getTime();
+  
+  // 2. 優先嘗試「上市 (tse)」
+  // api 格式: tse_{代號}.tw
+  let url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${stockId}.tw&json=1&delay=0&_=${t}`;
+  
   try {
-    const intraday = isMarketOpen();
+    let res = await axios.get(url);
+    let data = res.data;
 
-    // ① 盤中先試分鐘線
-    if (intraday) {
-      const minuteRows = await fetchFinMind(
-        "TaiwanStockPriceMinute",
-        stockId
-      );
-
-      if (minuteRows.length > 0) {
-        const last = minuteRows.at(-1);
-        return formatResult(stockId, "盤中", last, true);
-      }
-      // ⚠️ 關鍵：盤中分鐘線可能為空 → 不 return
+    // 3. 如果上市沒資料，改查「上櫃 (otc)」
+    // api 格式: otc_{代號}.tw
+    if (!data.msgArray || data.msgArray.length === 0) {
+      url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_${stockId}.tw&json=1&delay=0&_=${t}`;
+      res = await axios.get(url);
+      data = res.data;
     }
 
-    // ② fallback 用日線（一定有）
-    const dailyRows = await fetchFinMind(
-      "TaiwanStockPrice",
-      stockId
-    );
-
-    if (dailyRows.length > 0) {
-      const last = dailyRows.at(-1);
-      return formatResult(stockId, "收盤", last, false);
+    // 4. 真的都沒資料，拋出錯誤
+    if (!data.msgArray || data.msgArray.length === 0) {
+      // 這裡回傳 null，讓主程式知道沒抓到
+      return null;
     }
 
-    // ③ 真的查不到
-    return null;
+    // 5. 整理資料
+    const info = data.msgArray[0];
+    
+    // 注意：證交所 API 回傳的欄位都是字串，有時是 "-"
+    const safeNum = (v) => (isNaN(Number(v)) ? 0 : Number(v));
+
+    return {
+      id: info.c,           // 代號
+      name: info.n,         // 名稱
+      price: safeNum(info.z), // 現價 (當盤成交價)
+      yPrice: safeNum(info.y),// 昨收
+      high: safeNum(info.h),  // 最高
+      low: safeNum(info.l),   // 最低
+      open: safeNum(info.o),  // 開盤
+      vol: safeNum(info.v),   // 當盤成交量 (張)
+      totalVol: safeNum(info.v), // 累積成交量 (通常 API v 欄位在盤中是累積)
+      time: info.t          // 時間
+    };
 
   } catch (err) {
-    console.error("❌ FinMind Stock Error:", err.response?.data || err.message);
+    console.error("❌ Stock API Error:", err.message);
     return null;
   }
-}
-
-// ===============================
-// 統一格式
-// ===============================
-function formatResult(stockId, mode, row, isMinute) {
-  return {
-    stockId,
-    mode,
-    price: Number(row.close),
-    open: Number(row.open),
-    high: Number(row.max),
-    low: Number(row.min),
-    volume: Number(row.Trading_Volume),
-    time: isMinute
-      ? `${row.date} ${row.minute}`
-      : row.date
-  };
 }
 
 module.exports = { getStockQuote };
