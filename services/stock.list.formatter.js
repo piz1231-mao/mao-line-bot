@@ -1,46 +1,108 @@
 // ======================================================
-// 📋 Stock List Formatter（購物車專用）
+// 📋 Stock List Flex Formatter（購物車定版）
 // ------------------------------------------------------
-// 規則：
-// - 只顯示 現價 / 漲跌 / 漲跌幅
-// - 不顯示開高低、成交量、時間
-// - 一檔固定 2 行，防止 LINE 爆版
+// 規格：
+// - 一檔兩行（名稱 / 價格＋漲跌）
+// - 價格與漲跌同一行
+// - 上漲紅 / 下跌綠 / 平盤灰
+// - 適用：個股 / 指數 / 台指期
 // ======================================================
 
-function formatListItem(item) {
-  if (!item || item.price == null || item.yPrice == null) {
-    return null;
-  }
-
-  const diff = item.price - item.yPrice;
-  const pct = item.yPrice !== 0
-    ? (diff / item.yPrice * 100)
-    : 0;
-
-  const arrow = diff > 0 ? "▲" : diff < 0 ? "▼" : "─";
-  const sign = diff > 0 ? "+" : "";
-
-  const title = item.type === "index"
-    ? item.name
-    : `${item.id}  ${item.name}`;
-
-  return `${title}
-💰 ${item.price}  ${arrow}${sign}${diff.toFixed(1)}  (${sign}${pct.toFixed(2)}%)`;
+function colorByChange(change) {
+  if (change > 0) return "#D32F2F"; // 紅
+  if (change < 0) return "#2E7D32"; // 綠
+  return "#666666";                // 灰
 }
 
-function buildStockListText(list) {
-  const lines = list
-    .map(formatListItem)
-    .filter(Boolean);
-
-  if (!lines.length) {
-    return "📋 我的購物車\n━━━━━━━━━━━\n\n（目前沒有可顯示的項目）";
-  }
-
-  return `📋 我的購物車
-━━━━━━━━━━━
-
-${lines.join("\n\n")}`;
+function sign(n) {
+  if (n > 0) return "▲";
+  if (n < 0) return "▼";
+  return "";
 }
 
-module.exports = { buildStockListText };
+function fmt(n, digits = 2) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  return Number(n).toFixed(digits);
+}
+
+function buildStockRow(data) {
+  const price = data.price;
+  const y = data.yPrice;
+
+  const change =
+    price !== null && y !== null
+      ? price - y
+      : null;
+
+  const pct =
+    change !== null && y
+      ? (change / y) * 100
+      : null;
+
+  const color = colorByChange(change || 0);
+
+  const title =
+    data.id && data.name
+      ? `${data.id}  ${data.name}`
+      : data.name || data.id;
+
+  return {
+    type: "box",
+    layout: "vertical",
+    spacing: "xs",
+    contents: [
+      // ===== 名稱行 =====
+      {
+        type: "text",
+        text: title,
+        weight: "bold",
+        size: "sm",
+        color: "#222222"
+      },
+
+      // ===== 價格＋漲跌（同一行）=====
+      {
+        type: "text",
+        size: "sm",
+        wrap: true,
+        text:
+          `💰 ${fmt(price, 2)}   ` +
+          `${sign(change)} ${fmt(change, 2)}  (${fmt(pct, 2)}%)`,
+        color
+      }
+    ]
+  };
+}
+
+function buildStockListFlex(list) {
+  return {
+    type: "flex",
+    altText: "🛒 我的購物車",
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          // ===== 標題 =====
+          {
+            type: "text",
+            text: "🛒 我的購物車",
+            weight: "bold",
+            size: "lg"
+          },
+          {
+            type: "separator"
+          },
+
+          // ===== 清單 =====
+          ...list.map(buildStockRow)
+        ]
+      }
+    }
+  };
+}
+
+module.exports = { buildStockListFlex };
