@@ -1,30 +1,20 @@
 // ======================================================
 // 📊 Stock Service（最終定版）
 // ------------------------------------------------------
-// 功能說明：
-// - 單一入口 getStockQuote(symbol)
-// - 自動判斷：
-//   1️⃣ 台指期 / 指數
-//   2️⃣ 上市股票（TWSE）
-//   3️⃣ 上櫃股票（OTC）
-// - 使用者無須知道市場別
+// 支援：
+// - 上市股票（TWSE）
+// - 上櫃股票（OTC）
+// - 台指期（TXF）
+// - 櫃買指數（^TWO）
+// - 加權指數（^TWII）
 //
-// 設計原則：
-// - Router 不動
-// - 指令不變
-// - 所有市場判斷只在這個檔案內
+// 使用者無須知道市場別或代號
 // ======================================================
 
 const axios = require("axios");
 
-// ======================================================
-// 工具
-// ======================================================
 const isStockId = (v) => /^\d{4}$/.test(v);
-const isIndex = (v) =>
-  ["台指", "台指期", "txf", "TXF"].includes(v);
 
-// 安全轉數字
 const num = (v) => {
   if (v === undefined || v === null) return null;
   const n = Number(String(v).replace(/,/g, ""));
@@ -32,12 +22,11 @@ const num = (v) => {
 };
 
 // ======================================================
-// 1️⃣ 台指期（期貨）
+// 指數 / 期貨（Yahoo Chart API）
 // ======================================================
-async function getTXFQuote() {
+async function getIndexQuote(yahooSymbol, displayName) {
   try {
-    // Yahoo 台指期（TXF）
-    const url = "https://query1.finance.yahoo.com/v8/finance/chart/WTX%26";
+    const url = `https://query1.finance.yahoo.com/v8/finance/chart/${yahooSymbol}`;
     const { data } = await axios.get(url);
 
     const result = data?.chart?.result?.[0];
@@ -47,8 +36,8 @@ async function getTXFQuote() {
 
     return {
       type: "index",
-      id: "TXF",
-      name: "台指期",
+      id: yahooSymbol,
+      name: displayName,
       price: meta.regularMarketPrice,
       yPrice: meta.previousClose,
       high: meta.regularMarketDayHigh,
@@ -58,13 +47,13 @@ async function getTXFQuote() {
         .toLocaleTimeString("zh-TW", { hour: "2-digit", minute: "2-digit" })
     };
   } catch (err) {
-    console.error("❌ TXF fetch error:", err.message);
+    console.error("❌ Index fetch error:", err.message);
     return null;
   }
 }
 
 // ======================================================
-// 2️⃣ 上市 / 上櫃（TWSE / OTC 共用）
+// 上市 / 上櫃股票（TWSE API）
 // ======================================================
 async function getTWSELikeQuote(stockId, market) {
   try {
@@ -88,29 +77,35 @@ async function getTWSELikeQuote(stockId, market) {
       vol: num(info.v),
       time: info.t
     };
-  } catch (err) {
+  } catch {
     return null;
   }
 }
 
 // ======================================================
-// 🔥 單一入口（給 index.js 用）
+// 🔥 單一入口（index.js 只會呼叫這個）
 // ======================================================
-async function getStockQuote(symbol) {
-  const key = symbol.trim();
+async function getStockQuote(input) {
+  const key = input.trim();
 
-  // ===== 1️⃣ 台指期 =====
-  if (isIndex(key)) {
-    return await getTXFQuote();
+  // ===== 指數 / 期貨關鍵字翻譯 =====
+  if (["台指期", "台指", "TXF"].includes(key)) {
+    return await getIndexQuote("WTX%26", "台指期");
   }
 
-  // ===== 2️⃣ 四碼股票（先上市 → 再上櫃）=====
+  if (["櫃買", "OTC", "櫃買指數"].includes(key)) {
+    return await getIndexQuote("^TWO", "櫃買指數");
+  }
+
+  if (["大盤", "加權"].includes(key)) {
+    return await getIndexQuote("^TWII", "加權指數");
+  }
+
+  // ===== 個股（四碼，不分上市上櫃）=====
   if (isStockId(key)) {
-    // 先查上市
     let data = await getTWSELikeQuote(key, "tse");
     if (data) return data;
 
-    // 再查上櫃
     data = await getTWSELikeQuote(key, "otc");
     if (data) return data;
 
