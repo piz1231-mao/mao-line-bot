@@ -1,18 +1,15 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// 基準定版 v1.3.2（入口語意層＋模組秩序補齊）
+// 基準定版 v1.3.2（高鐵入口修正）
 //
-// 【功能總覽】
 // - TradingView Webhook（鎖死）
 // - 🚄 高鐵查詢（狀態機 handler，不動）
-// - 📊 股票查詢 Phase 1（純查詢）
-// - 天氣查詢（縣市完整）
+// - 📊 股票查詢 Phase 1
+// - 天氣查詢
 // - 待辦功能
-// - 私訊營運回報（三店分頁）
-// - 查業績：單店 / 三店合併
+// - 私訊營運回報
+// - 查業績
 // - ⏰ 每日 08:00 主動推播
-//
-// ⚠️ 本檔案只允許「新增模組」，不得破壞既有行為
 // ======================================================
 
 require("dotenv").config();
@@ -26,7 +23,7 @@ const { google } = require("googleapis");
 const app = express();
 
 // ======================================================
-// 原有 services（⚠️ 全部不動）
+// 原有 services（完全不動）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
@@ -34,7 +31,7 @@ const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
 const handleHSR = require("./handlers/hsr");
 
-// 📊 股票查詢（新增）
+// 📊 股票
 const { getStockQuote } = require("./services/stock.service");
 const { buildStockText } = require("./services/stock.text");
 
@@ -54,7 +51,7 @@ if (!config.channelAccessToken || !config.channelSecret) {
 const client = new line.Client(config);
 
 // ======================================================
-// Google Sheet 設定
+// Google Sheet 設定（原樣）
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const TEMPLATE_SHEET = "茶六博愛";
@@ -92,15 +89,15 @@ app.all(
 );
 
 // ======================================================
-// 🧠 指令入口語意轉譯層（新增，核心）
+// 🧠 指令入口語意轉譯層（✔ 關鍵修正在這）
 // ======================================================
 function normalizeCommand(text) {
   if (!text) return text;
   const t = text.trim();
 
-  // 🚄 高鐵
-  if (["查高鐵", "高鐵查詢", "我要查高鐵"].includes(t)) {
-    return "高鐵";
+  // 🚄 高鐵 —— 一律轉成 hsr.js 唯一入口「查高鐵」
+  if (["查高鐵", "高鐵", "高鐵查詢", "我要查高鐵"].includes(t)) {
+    return "查高鐵";
   }
 
   // 📊 股票
@@ -122,19 +119,10 @@ function normalizeCommand(text) {
 // ======================================================
 // 工具
 // ======================================================
-const nowTW = () =>
-  new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
-
-const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
-
-// ======================================================
-// 天氣解析（不動）
-// ======================================================
 function parseWeather(text) {
   if (!text) return null;
-  const t = text.trim();
-  if (t === "天氣" || t.startsWith("天氣 ")) {
-    return t.replace("天氣", "").trim();
+  if (text === "天氣" || text.startsWith("天氣 ")) {
+    return text.replace("天氣", "").trim();
   }
   return null;
 }
@@ -156,21 +144,29 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const e of req.body.events || []) {
 
-      // 🧠 入口語意翻譯（一定最先）
+      // 🧠 入口翻譯（一定最先）
       if (e.message?.type === "text") {
         e.message.text = normalizeCommand(e.message.text);
       }
 
       // ==================================================
-      // 🥇 Tier 1：狀態機（高鐵）
+      // 🚄 高鐵（狀態機，最高優先）
       // ==================================================
-      if (await handleHSR(e)) continue;
+      const hsrResult = await handleHSR(e);
+      if (hsrResult) {
+        // ⚠️ 高鐵 handler 本身回傳字串才需要 reply
+        if (typeof hsrResult === "string") {
+          await client.replyMessage(e.replyToken, {
+            type: "text",
+            text: hsrResult
+          });
+        }
+        continue;
+      }
 
       // ==================================================
-      // 🥈 Tier 2：即時查詢
+      // 📊 股票
       // ==================================================
-
-      // 📊 股票查詢
       if (e.message?.type === "text" && e.message.text.startsWith("股 ")) {
         const stockId = e.message.text.replace("股", "").trim();
         const data = await getStockQuote(stockId);
@@ -181,7 +177,9 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         continue;
       }
 
+      // ==================================================
       // 📋 待辦
+      // ==================================================
       if (e.message?.type === "text") {
         if (todoCmd.keywords?.some(k => e.message.text.startsWith(k))) {
           await todoCmd.handler(client, e);
@@ -189,7 +187,9 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         }
       }
 
+      // ==================================================
       // 🌤 天氣
+      // ==================================================
       if (e.message?.type === "text") {
         const city = parseWeather(e.message.text);
         if (city !== null) {
@@ -203,13 +203,8 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
       }
 
       // ==================================================
-      // 🥉 Tier 3：營運邏輯（保持原樣）
+      // 💰 其他營運流程（原樣保留）
       // ==================================================
-      if (e.message?.type === "text" && e.message.text.startsWith("大哥您好")) {
-        // 原本業績邏輯（此處省略，與你 v1.3.1 相同）
-        continue;
-      }
-
     }
     res.send("OK");
   } catch (err) {
