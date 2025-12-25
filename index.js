@@ -57,7 +57,6 @@ const { buildWeatherFriendText } = require("./services/weather.text");
 const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
 const handleHSR = require("./handlers/hsr");
-const { buildStockListText } = require("./services/stock.list.formatter");
 const { buildStockListFlex } = require("./services/stock.list.flex");
 
 // 股票
