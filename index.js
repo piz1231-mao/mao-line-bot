@@ -10,6 +10,7 @@
 // - 摘要寫入 Q 欄（emoji 版）
 // - 查業績：單店 / 三店合併
 // - ⏰ 每日 08:00 主動推播（/api/daily-summary）
+// - 📊 股票查詢 Phase 1（新增｜純查詢）
 // ======================================================
 
 require("dotenv").config();
@@ -30,6 +31,12 @@ const { buildWeatherFriendText } = require("./services/weather.text");
 const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
 const handleHSR = require("./handlers/hsr");
+
+// ======================================================
+// 股票查詢 Phase 1（只新增）
+// ======================================================
+const { getStockQuote } = require("./services/stock.service");
+const { buildStockText } = require("./services/stock.text");
 
 // ======================================================
 // LINE 設定
@@ -111,28 +118,23 @@ const CITY_MAP = {
 // ✅ 解析業績（唯一修正區：人事句號 / 容錯）
 // ======================================================
 function parseSales(text) {
-
-  // 🔧 關鍵修正：先把「人類輸入」正規化
   const t = text
-    .replace(/：/g, ":")     // 全形冒號
-    .replace(/％/g, "%")     // 全形 %
-    .replace(/。/g, " ")     // ⭐ 中文句號 → 空白（關鍵）
-    .replace(/\(\./g, "(")   // 防 (.12.3
-    .replace(/（\./g, "(");  // 防 全形(.12.3
+    .replace(/：/g, ":")
+    .replace(/％/g, "%")
+    .replace(/。/g, " ")
+    .replace(/\(\./g, "(")
+    .replace(/（\./g, "(");
 
   const d = t.match(/(\d{1,2})[\/\-](\d{1,2})/);
 
-  // 抽取「外場 / 內場」金額與 %
   const extract = (keyword) => {
     const reg = new RegExp(
       `(?:${keyword}|${keyword}薪資)\\s*:\\s*([\\d,]+)[^\\d%]*([\\d.]+)%`
     );
     const m = t.match(reg);
     if (!m) return ["", 0];
-
     let pct = m[2];
     if (pct.startsWith(".")) pct = pct.slice(1);
-
     return [num(m[1]), Number(pct) || 0];
   };
 
@@ -228,13 +230,34 @@ async function writeShop(shop, text, userId) {
 }
 
 // ======================================================
-// LINE Webhook（其餘流程完全不動）
+// LINE Webhook（主流程）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const e of req.body.events || []) {
 
       if (await handleHSR(e)) continue;
+
+      // ======================================================
+      // 📊 股票查詢 Phase 1（新增，不影響其他）
+      // ======================================================
+      if (e.message?.type === "text" && e.message.text.startsWith("股 ")) {
+        const stockId = e.message.text.replace("股", "").trim();
+        try {
+          const data = await getStockQuote(stockId);
+          await client.replyMessage(e.replyToken, {
+            type:"text",
+            text: buildStockText(data)
+          });
+        } catch (err) {
+          console.error("❌ Stock Query Error:", err);
+          await client.replyMessage(e.replyToken, {
+            type:"text",
+            text:"⚠️ 股票查詢失敗，請稍後再試"
+          });
+        }
+        continue;
+      }
 
       if (e.message?.type === "text" && e.message.text.startsWith("大哥您好")) {
         const shop =
@@ -245,7 +268,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         try {
           await ensureSheet(shop);
           await writeShop(shop, e.message.text, e.source.userId);
-        } catch (err) {
+        } catch {
           await client.replyMessage(e.replyToken, {
             type:"text",
             text:"⚠️ 業績回報失敗，請確認格式後再傳"
