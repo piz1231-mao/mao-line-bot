@@ -251,19 +251,24 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 
       // ===== Tier 1：即時指令 =====
 
-      // 股票 / 台指期
-      if (text.startsWith("股 ") || text.startsWith("查股票 ") || text === "台指期") {
-        const id =
-          text === "台指期"
-            ? "台指期"
-            : text.replace("查股票", "").replace("股", "").trim();
-        const data = await getStockQuote(id);
-        await client.replyMessage(e.replyToken, {
-          type:"text",
-          text: buildStockText(data)
-        });
-        continue;
-      }
+      // 股票 / 指數 / 期貨（市場自動判斷）
+if (
+  text.startsWith("股 ") ||
+  text.startsWith("查股票 ") ||
+  ["台指期","台指","櫃買","OTC","大盤"].includes(text)
+) {
+  const id =
+    ["台指期","台指","櫃買","OTC","大盤"].includes(text)
+      ? text
+      : text.replace("查股票", "").replace("股", "").trim();
+
+  const data = await getStockQuote(id);
+  await client.replyMessage(e.replyToken, {
+    type: "text",
+    text: buildStockText(data)
+  });
+  continue;
+}
 
       // 天氣
       const city = parseWeather(text);
