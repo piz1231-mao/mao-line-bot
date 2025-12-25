@@ -59,7 +59,7 @@ const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
 const handleHSR = require("./handlers/hsr");
 const { buildStockListFlex } = require("./services/stock.list.flex");
-const { buildStockSingleFlexMessage } = require("./services/stock.single.flex");
+const { buildStockSingleFlex } = require("./services/stock.single.flex");
 
 // 股票
 const { getStockQuote } = require("./services/stock.service");
@@ -275,7 +275,7 @@ if (
       : text.replace("查股票", "").replace("股", "").trim();
 
   const data = await getStockQuote(id);
-const flex = buildStockSingleFlexMessage(data);
+const flex = buildStockSingleFlex(data);
 await client.replyMessage(e.replyToken, flex);
   continue;
 }
