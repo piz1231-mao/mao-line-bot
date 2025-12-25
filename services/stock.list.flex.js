@@ -1,21 +1,16 @@
 // ======================================================
-// 📋 Stock List Flex（購物車定版 v1.0）
+// 🛒 Stock List Flex（購物車定版 v1.1）
 // ------------------------------------------------------
-// 用途：
-// - 查購物車 / 查清單
-// - 精簡顯示：名稱 + 價位 + 漲跌 + 漲跌幅
-//
-// 規格：
-// - baseline + filler（與單一個股完全一致）
-// - 固定 flex 欄位，視覺對齊
-// - 不使用空 box（避免 400）
+// 結構：
+// - 每檔股票兩行
+//   1️⃣ 代號＋名稱
+//   2️⃣ 價位＋漲跌＋漲跌幅（baseline 對齊）
 // ======================================================
 
-// ===== 色碼（與 single 完全一致）=====
 function colorByChange(change) {
   if (change > 0) return "#D32F2F"; // 紅
-  if (change < 0) return "#0B8F3A"; // 深綠
-  return "#666666";                // 平盤
+  if (change < 0) return "#0B8F3A"; // 綠
+  return "#666666";
 }
 
 function sign(change) {
@@ -30,12 +25,13 @@ function fmt(n, digits = 2) {
 }
 
 // ======================================================
-// 🧩 單一購物車列（核心）
+// 單一股票區塊（兩行）
 // ======================================================
-function buildListRow({ name, price, yPrice, isTXF }) {
+function buildItem(stock) {
+  const { id, name, price, yPrice } = stock;
+
   const change =
     price !== null && yPrice !== null ? price - yPrice : 0;
-
   const pct =
     yPrice ? (change / yPrice) * 100 : 0;
 
@@ -43,51 +39,63 @@ function buildListRow({ name, price, yPrice, isTXF }) {
 
   return {
     type: "box",
-    layout: "baseline",
-    spacing: "sm",
+    layout: "vertical",
+    spacing: "xs",
     contents: [
+      // ===== 第一行：代號＋名稱 =====
       {
         type: "text",
-        text: "💎",
+        text: `${id}  ${name}`,
         size: "sm",
-        flex: 0
-      },
-      {
-        type: "text",
-        text: fmt(price, isTXF ? 0 : 2),
-        size: "md",
         weight: "bold",
-        color,
-        flex: 3
+        color: "#111111"
       },
 
-      // ✅ 關鍵：filler 撐距（安全）
+      // ===== 第二行：價格列（對齊）=====
       {
-        type: "filler",
-        flex: 1
-      },
-
-      {
-        type: "text",
-        text: `${sign(change)} ${fmt(Math.abs(change), isTXF ? 0 : 2)}`,
-        size: "md",
-        weight: "bold",
-        color,
-        flex: 2
-      },
-      {
-        type: "text",
-        text: `(${fmt(Math.abs(pct), 2)}%)`,
-        size: "md",
-        color,
-        flex: 2
+        type: "box",
+        layout: "baseline",
+        contents: [
+          {
+            type: "text",
+            text: "💎",
+            size: "sm",
+            flex: 0
+          },
+          {
+            type: "text",
+            text: fmt(price, id === "TXF" ? 0 : 2),
+            size: "md",
+            weight: "bold",
+            color,
+            flex: 3
+          },
+          {
+            type: "filler"
+          },
+          {
+            type: "text",
+            text: `${sign(change)} ${fmt(Math.abs(change), id === "TXF" ? 0 : 2)}`,
+            size: "sm",
+            weight: "bold",
+            color,
+            flex: 2
+          },
+          {
+            type: "text",
+            text: `(${fmt(Math.abs(pct), 2)}%)`,
+            size: "sm",
+            color,
+            flex: 2
+          }
+        ]
       }
     ]
   };
 }
 
 // ======================================================
-// 📋 購物車 Flex 主體
+// 主 Flex
 // ======================================================
 function buildStockListFlex(list = []) {
   if (!list.length) {
@@ -97,18 +105,13 @@ function buildStockListFlex(list = []) {
     };
   }
 
-  const rows = [];
-
-  for (const s of list) {
-    rows.push(
-      buildListRow({
-        name: s.name,
-        price: s.price,
-        yPrice: s.yPrice,
-        isTXF: s.id === "TXF" || s.name?.includes("台指")
-      })
-    );
-  }
+  const items = [];
+  list.forEach((s, i) => {
+    items.push(buildItem(s));
+    if (i !== list.length - 1) {
+      items.push({ type: "separator" });
+    }
+  });
 
   return {
     type: "flex",
@@ -128,7 +131,7 @@ function buildStockListFlex(list = []) {
             weight: "bold"
           },
           { type: "separator" },
-          ...rows
+          ...items
         ]
       }
     }
