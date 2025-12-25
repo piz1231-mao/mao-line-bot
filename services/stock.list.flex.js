@@ -1,11 +1,11 @@
 // ======================================================
-// 🛒 Stock List Flex Formatter（購物車｜字體放大定版）
+// 🛒 Stock List Flex Formatter（購物車定版｜對齊穩定）
 // ======================================================
 
 function colorByChange(change) {
   if (change > 0) return "#D32F2F"; // 紅
-  if (change < 0) return "#008A3B"; // 深綠（更明顯）
-  return "#666666";
+  if (change < 0) return "#008A3B"; // 深綠
+  return "#666666";                // 平盤
 }
 
 function sign(change) {
@@ -14,22 +14,17 @@ function sign(change) {
   return "—";
 }
 
-function fmt(n, digits = 2) {
+function fmt(n, d = 2) {
   if (n === null || n === undefined || isNaN(n)) return "—";
-  return Number(n).toFixed(digits);
+  return Number(n).toFixed(d);
 }
 
 // ======================================================
-// 單筆 Row
+// 🔹 單一商品列
 // ======================================================
-function buildRow(data) {
-  const { id, name, price, yPrice } = data;
-
-  const change =
-    price !== null && yPrice !== null ? price - yPrice : 0;
-  const pct =
-    yPrice ? (change / yPrice) * 100 : 0;
-
+function buildRow(item) {
+  const change = item.price - item.yPrice;
+  const pct = item.yPrice ? (change / item.yPrice) * 100 : 0;
   const color = colorByChange(change);
 
   return {
@@ -37,65 +32,76 @@ function buildRow(data) {
     layout: "vertical",
     spacing: "xs",
     contents: [
-      // ===== 代號＋名稱（放大一點點）=====
+      // ===== 代號＋名稱（回到上一版大小）=====
       {
         type: "text",
-        text: `${id}  ${name}`,
-        size: "lg",              // ⬅ 原 md → lg
+        text: `${item.id}  ${item.name}`,
+        size: "md",        // ⬅️ 比 lg 小一點
         weight: "bold",
         color: "#222222",
         wrap: true
       },
 
-      // ===== 價位主行 =====
+      // ===== 價位＋漲跌（定點對齊）=====
       {
         type: "box",
         layout: "baseline",
         contents: [
+          // 💎
           {
             type: "text",
             text: "💎",
-            size: "md",           // ⬅ 原 sm → md
+            size: "sm",
             flex: 0
           },
 
-          // 跟鑽石拉一點距離（安全作法）
+          // 💎 與價位間距（很小，只拉一點）
           {
-            type: "text",
-            text: "  ",
-            size: "md",
-            flex: 0
+            type: "filler",
+            flex: 0.3
           },
 
+          // 價位（回上一版大小）
           {
             type: "text",
-            text: fmt(price, id === "TXF" ? 0 : 2),
-            size: "lg",           // ⬅ 原 md → lg
+            text: fmt(item.price, item.id === "TXF" ? 0 : 2),
+            size: "md",      // ⬅️ 價位縮回來
             weight: "bold",
             color,
             flex: 3
           },
 
+          // 🔒 固定對齊關鍵：撐到同一條基準線
           {
-            type: "filler"
+            type: "filler",
+            flex: 1
           },
 
+          // 漲跌（放大一點點、左靠）
           {
             type: "text",
-            text: `${sign(change)} ${fmt(Math.abs(change), id === "TXF" ? 0 : 2)}`,
-            size: "md",           // ⬅ 原 sm → md
+            text: `${sign(change)} ${fmt(Math.abs(change), 2)}`,
+            size: "md",      // ⬅️ 比價位醒目
             weight: "bold",
             color,
             flex: 2,
-            align: "end"
+            align: "start"
           },
+
+          // 漲跌 與 漲跌幅「固定留空」
+          {
+            type: "filler",
+            flex: 0.2
+          },
+
+          // 漲跌幅
           {
             type: "text",
             text: `(${fmt(Math.abs(pct), 2)}%)`,
-            size: "md",           // ⬅ 原 sm → md
+            size: "sm",
             color,
             flex: 2,
-            align: "end"
+            align: "start"
           }
         ]
       }
@@ -104,7 +110,7 @@ function buildRow(data) {
 }
 
 // ======================================================
-// 🛒 購物車 Flex
+// 🛒 清單主體
 // ======================================================
 function buildStockListFlex(list) {
   return {
@@ -118,10 +124,11 @@ function buildStockListFlex(list) {
         layout: "vertical",
         spacing: "md",
         contents: [
+          // ===== 標題（不變）=====
           {
             type: "text",
             text: "🛒 我的購物車",
-            size: "xl",          // ⬅ 原 lg → xl
+            size: "lg",
             weight: "bold"
           },
           { type: "separator" },
@@ -133,6 +140,4 @@ function buildStockListFlex(list) {
   };
 }
 
-module.exports = {
-  buildStockListFlex
-};
+module.exports = { buildStockListFlex };
