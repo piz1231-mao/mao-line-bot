@@ -1,14 +1,8 @@
 // ======================================================
-// 📊 Stock Single Flex Formatter（完整版）
+// 📊 Stock / Futures Single Flex Formatter（定版）
 // ------------------------------------------------------
-// 適用：
-// - 查個股
-// - 查指數
-// - 查台指期
-//
-// 目標：
-// - 保留原本文字版的「全部資訊」
-// - 用 Flex 重新排版，不洗版
+// - 個股：完整資訊卡
+// - 台指期（TXF）：專屬期貨格式
 // ======================================================
 
 function colorByChange(change) {
@@ -28,7 +22,7 @@ function fmt(n, digits = 2) {
   return Number(n).toFixed(digits);
 }
 
-function row(label, value) {
+function row(label, value, size = "md") {
   return {
     type: "box",
     layout: "baseline",
@@ -36,14 +30,14 @@ function row(label, value) {
       {
         type: "text",
         text: label,
-        size: "sm",
+        size,
         color: "#888888",
         flex: 2
       },
       {
         type: "text",
         text: value,
-        size: "sm",
+        size,
         color: "#222222",
         flex: 4,
         wrap: true
@@ -52,26 +46,80 @@ function row(label, value) {
   };
 }
 
-function buildStockSingleFlex(data) {
+// ======================================================
+// 🟦 台指期專屬卡
+// ======================================================
+function buildTXFFlex(data) {
   const price = data.price;
   const y = data.yPrice;
 
-  const change =
-    price !== null && y !== null
-      ? price - y
-      : null;
-
-  const pct =
-    change !== null && y
-      ? (change / y) * 100
-      : null;
-
+  const change = price !== null && y !== null ? price - y : null;
+  const pct = change !== null && y ? (change / y) * 100 : null;
   const color = colorByChange(change || 0);
 
-  const title =
-    data.id && data.name
-      ? `${data.id}  ${data.name}`
-      : data.name || data.id || "—";
+  return {
+    type: "flex",
+    altText: "📊 台指期 TXF",
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          {
+            type: "text",
+            text: "📊 期貨快報【台指期 TXF】",
+            weight: "bold",
+            size: "lg"
+          },
+
+          { type: "separator" },
+
+          {
+            type: "text",
+            text: `💎 ${fmt(price, 0)}`,
+            size: "xl",
+            weight: "bold",
+            color
+          },
+          {
+            type: "text",
+            text: `${sign(change)} ${fmt(change, 0)}（${fmt(pct, 2)}%）`,
+            size: "lg",
+            weight: "bold",
+            color
+          },
+
+          { type: "separator" },
+
+          row("📌 開盤", fmt(data.open, 0), "md"),
+          row("🔺 最高", fmt(data.high, 0), "md"),
+          row("🔻 最低", fmt(data.low, 0), "md"),
+
+          { type: "separator" },
+
+          row("📦 總量", data.vol !== null ? `${data.vol}` : "—", "md"),
+          row("⏰ 時間", data.time || "—", "md")
+        ]
+      }
+    }
+  };
+}
+
+// ======================================================
+// 🟥 個股完整卡（原本邏輯，僅微調字體）
+// ======================================================
+function buildStockFlex(data) {
+  const price = data.price;
+  const y = data.yPrice;
+
+  const change = price !== null && y !== null ? price - y : null;
+  const pct = change !== null && y ? (change / y) * 100 : null;
+  const color = colorByChange(change || 0);
+
+  const title = `${data.id}  ${data.name}`;
 
   return {
     type: "flex",
@@ -84,18 +132,15 @@ function buildStockSingleFlex(data) {
         layout: "vertical",
         spacing: "md",
         contents: [
-          // ===== 標題 =====
           {
             type: "text",
             text: title,
             weight: "bold",
-            size: "lg",
-            wrap: true
+            size: "lg"
           },
 
           { type: "separator" },
 
-          // ===== 現價 =====
           {
             type: "text",
             text: `💎 ${fmt(price, 2)}`,
@@ -103,32 +148,41 @@ function buildStockSingleFlex(data) {
             weight: "bold",
             color
           },
-
-          // ===== 漲跌 =====
           {
             type: "text",
-            text: `${sign(change)} ${fmt(change, 2)}  (${fmt(pct, 2)}%)`,
-            size: "md",
+            text: `${sign(change)} ${fmt(change, 2)}（${fmt(pct, 2)}%）`,
+            size: "lg",
             weight: "bold",
             color
           },
 
           { type: "separator" },
 
-          // ===== 其他資訊 =====
-          row("🌅 開盤", fmt(data.open, 2)),
-          row("🏔️ 最高", fmt(data.high, 2)),
-          row("🌊 最低", fmt(data.low, 2)),
-          row("📉 昨收", fmt(data.yPrice, 2)),
-          row(
-            "📦 成交",
-            data.vol !== null ? `${data.vol} 張` : "—"
-          ),
-          row("🕒 時間", data.time || "—")
+          row("🌅 開盤", fmt(data.open, 2), "md"),
+          row("🏔️ 最高", fmt(data.high, 2), "md"),
+          row("🌊 最低", fmt(data.low, 2), "md"),
+          row("📉 昨收", fmt(data.yPrice, 2), "md"),
+          row("📦 成交", data.vol !== null ? `${data.vol} 張` : "—", "md"),
+          row("🕒 時間", data.time || "—", "md")
         ]
       }
     }
   };
+}
+
+// ======================================================
+// 🔥 單一出口
+// ======================================================
+function buildStockSingleFlex(data) {
+  if (!data) return null;
+
+  // 台指期
+  if (data.id === "TXF" || data.name === "台指期") {
+    return buildTXFFlex(data);
+  }
+
+  // 其餘視為股票
+  return buildStockFlex(data);
 }
 
 module.exports = { buildStockSingleFlex };
