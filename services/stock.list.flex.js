@@ -1,107 +1,115 @@
-
 // ======================================================
-// 🛒 Stock List Flex Formatter（購物車定版 v1.0）
+// 📋 Stock List Flex（購物車定版 v1.0）
 // ------------------------------------------------------
-// 使用時機：
-// - 查購物車
-// - 查清單
-// - 查股票 購物車
+// 用途：
+// - 查購物車 / 查清單
+// - 精簡顯示：名稱 + 價位 + 漲跌 + 漲跌幅
 //
-// 顯示規格（已定版）：
-// - 一檔兩行
-//   1️⃣ 代號 + 名稱（稍大字、粗體）
-//   2️⃣ 💎 價錢 + 漲跌 + 漲跌幅（同一行、同顏色）
-//
-// 顏色規則：
-// - 上漲：紅色（接近券商紅）
-// - 下跌：深綠色（更綠）
-// - 平盤：灰色
+// 規格：
+// - baseline + filler（與單一個股完全一致）
+// - 固定 flex 欄位，視覺對齊
+// - 不使用空 box（避免 400）
 // ======================================================
 
-// ------------------------------------------------------
-// 顏色判斷
-// ------------------------------------------------------
+// ===== 色碼（與 single 完全一致）=====
 function colorByChange(change) {
-  if (change > 0) return "#D32F2F"; // 券商紅
-  if (change < 0) return "#1B5E20"; // 深綠（更綠）
-  return "#666666";                // 灰
+  if (change > 0) return "#D32F2F"; // 紅
+  if (change < 0) return "#0B8F3A"; // 深綠
+  return "#666666";                // 平盤
 }
 
-// ------------------------------------------------------
-// 漲跌符號
-// ------------------------------------------------------
-function sign(n) {
-  if (n > 0) return "▲";
-  if (n < 0) return "▼";
-  return "";
+function sign(change) {
+  if (change > 0) return "▲";
+  if (change < 0) return "▼";
+  return "—";
 }
 
-// ------------------------------------------------------
-// 數字格式
-// ------------------------------------------------------
 function fmt(n, digits = 2) {
   if (n === null || n === undefined || isNaN(n)) return "—";
   return Number(n).toFixed(digits);
 }
 
-// ------------------------------------------------------
-// 單一股票列
-// ------------------------------------------------------
-function buildStockRow(data) {
-  const price = data.price;
-  const y = data.yPrice;
-
+// ======================================================
+// 🧩 單一購物車列（核心）
+// ======================================================
+function buildListRow({ name, price, yPrice, isTXF }) {
   const change =
-    price !== null && y !== null
-      ? price - y
-      : null;
+    price !== null && yPrice !== null ? price - yPrice : 0;
 
   const pct =
-    change !== null && y
-      ? (change / y) * 100
-      : null;
+    yPrice ? (change / yPrice) * 100 : 0;
 
-  const color = colorByChange(change || 0);
-
-  const title =
-    data.id && data.name
-      ? `${data.id}  ${data.name}`
-      : data.name || data.id || "—";
+  const color = colorByChange(change);
 
   return {
     type: "box",
-    layout: "vertical",
-    spacing: "xs",
+    layout: "baseline",
+    spacing: "sm",
     contents: [
-      // ===== 名稱行 =====
       {
         type: "text",
-        text: title,
+        text: "💎",
+        size: "sm",
+        flex: 0
+      },
+      {
+        type: "text",
+        text: fmt(price, isTXF ? 0 : 2),
+        size: "md",
         weight: "bold",
-        size: "md",          // 比原本再大一點
-        color: "#222222",
-        wrap: true
+        color,
+        flex: 3
       },
 
-      // ===== 價錢 + 漲跌（同一行、同顏色）=====
+      // ✅ 關鍵：filler 撐距（安全）
+      {
+        type: "filler",
+        flex: 1
+      },
+
       {
         type: "text",
-        size: "md",          // 價錢行放大
+        text: `${sign(change)} ${fmt(Math.abs(change), isTXF ? 0 : 2)}`,
+        size: "md",
         weight: "bold",
-        wrap: true,
-        text:
-          `💎 ${fmt(price, 2)}   ` +
-          `${sign(change)} ${fmt(change, 2)}  (${fmt(pct, 2)}%)`,
-        color
+        color,
+        flex: 2
+      },
+      {
+        type: "text",
+        text: `(${fmt(Math.abs(pct), 2)}%)`,
+        size: "md",
+        color,
+        flex: 2
       }
     ]
   };
 }
 
-// ------------------------------------------------------
-// 主輸出
-// ------------------------------------------------------
-function buildStockListFlex(list) {
+// ======================================================
+// 📋 購物車 Flex 主體
+// ======================================================
+function buildStockListFlex(list = []) {
+  if (!list.length) {
+    return {
+      type: "text",
+      text: "📋 我的購物車\n━━━━━━━━━━━\n\n（清單是空的）"
+    };
+  }
+
+  const rows = [];
+
+  for (const s of list) {
+    rows.push(
+      buildListRow({
+        name: s.name,
+        price: s.price,
+        yPrice: s.yPrice,
+        isTXF: s.id === "TXF" || s.name?.includes("台指")
+      })
+    );
+  }
+
   return {
     type: "flex",
     altText: "🛒 我的購物車",
@@ -111,25 +119,22 @@ function buildStockListFlex(list) {
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "lg",
+        spacing: "md",
         contents: [
-          // ===== 標題 =====
           {
             type: "text",
             text: "🛒 我的購物車",
-            weight: "bold",
-            size: "lg"
+            size: "lg",
+            weight: "bold"
           },
-          {
-            type: "separator"
-          },
-
-          // ===== 清單 =====
-          ...list.map(buildStockRow)
+          { type: "separator" },
+          ...rows
         ]
       }
     }
   };
 }
 
-module.exports = { buildStockListFlex };
+module.exports = {
+  buildStockListFlex
+};
