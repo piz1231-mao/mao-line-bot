@@ -1,10 +1,10 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// 基準定版 v1.3（修復待辦事項）
+// 基準定版 v1.3.1（僅修復人事解析問題，不動其他功能）
 //
 // - TradingView Webhook（鎖死）
 // - 天氣查詢（縣市完整）
-// - 待辦功能（✅ 已修復）
+// - 待辦功能（已修復）
 // - 🚄 高鐵查詢
 // - 私訊營運回報（三店分頁）
 // - 摘要寫入 Q 欄（emoji 版）
@@ -23,12 +23,12 @@ const { google } = require("googleapis");
 const app = express();
 
 // ======================================================
-// 原有 services
+// 原有 services（完全不動）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
 const tvAlert = require("./services/tvAlert");
-const todoCmd = require("./commands/chat/todo"); // ✅ 這裡有引入，下面要記得用
+const todoCmd = require("./commands/chat/todo");
 const handleHSR = require("./handlers/hsr");
 
 // ======================================================
@@ -56,7 +56,7 @@ const auth = new GoogleAuth({
 });
 
 // ======================================================
-// TradingView Webhook
+// TradingView Webhook（鎖死）
 // ======================================================
 app.all(
   "/tv-alert",
@@ -82,10 +82,11 @@ app.all(
 // ======================================================
 const nowTW = () =>
   new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+
 const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
 
 // ======================================================
-// 天氣解析
+// 天氣解析（不動）
 // ======================================================
 function parseWeather(text) {
   if (!text) return null;
@@ -107,11 +108,36 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 解析業績
+// ✅ 解析業績（唯一修正區：人事句號 / 容錯）
 // ======================================================
 function parseSales(text) {
-  const t = text.replace(/：/g, ":").replace(/。/g, ".").replace(/％/g, "%");
-  const d = t.match(/(\d{1,2})\/(\d{1,2})/);
+
+  // 🔧 關鍵修正：先把「人類輸入」正規化
+  const t = text
+    .replace(/：/g, ":")     // 全形冒號
+    .replace(/％/g, "%")     // 全形 %
+    .replace(/。/g, " ")     // ⭐ 中文句號 → 空白（關鍵）
+    .replace(/\(\./g, "(")   // 防 (.12.3
+    .replace(/（\./g, "(");  // 防 全形(.12.3
+
+  const d = t.match(/(\d{1,2})[\/\-](\d{1,2})/);
+
+  // 抽取「外場 / 內場」金額與 %
+  const extract = (keyword) => {
+    const reg = new RegExp(
+      `(?:${keyword}|${keyword}薪資)\\s*:\\s*([\\d,]+)[^\\d%]*([\\d.]+)%`
+    );
+    const m = t.match(reg);
+    if (!m) return ["", 0];
+
+    let pct = m[2];
+    if (pct.startsWith(".")) pct = pct.slice(1);
+
+    return [num(m[1]), Number(pct) || 0];
+  };
+
+  const fp = extract("外場");
+  const bp = extract("內場");
 
   return {
     date: d
@@ -119,14 +145,14 @@ function parseSales(text) {
       : "",
     revenue: num(t.match(/(?:業績|總業績)\s*:\s*([\d,]+)/)?.[1]),
     unit: t.match(/客單價\s*:\s*([\d.]+)/)?.[1] || "",
-    qty: num(t.match(/(?:套餐份數|總鍋數)\s*:\s*([\d,]+)/)?.[1]),
-    fp: t.match(/外場薪資\s*:\s*([\d,]+).*?([\d.]+)%/)?.slice(1) || [],
-    bp: t.match(/內場薪資\s*:\s*([\d,]+).*?([\d.]+)%/)?.slice(1) || []
+    qty: num(t.match(/(?:套餐份數|套餐數|總鍋數)\s*:\s*([\d,]+)/)?.[1]),
+    fp,
+    bp
   };
 }
 
 // ======================================================
-// Sheet 操作
+// Sheet 操作（不動）
 // ======================================================
 async function ensureSheet(shop) {
   if (shop === TEMPLATE_SHEET) return;
@@ -170,10 +196,10 @@ async function writeShop(shop, text, userId) {
         nowTW(), userId, userId, text,
         shop, p.date, p.revenue, "業績",
         p.qty, p.unit,
-        num(p.fp[0]), Number(p.fp[1]||0),
-        num(p.bp[0]), Number(p.bp[1]||0),
-        num(p.fp[0])+num(p.bp[0]),
-        Number(p.fp[1]||0)+Number(p.bp[1]||0)
+        p.fp[0], p.fp[1],
+        p.bp[0], p.bp[1],
+        p.fp[0] + p.bp[0],
+        Number((p.fp[1] + p.bp[1]).toFixed(2))
       ]]
     }
   });
@@ -191,7 +217,7 @@ async function writeShop(shop, text, userId) {
 👥 人事
 外場：${p.fp[0]}（${p.fp[1]}%）
 內場：${p.bp[0]}（${p.bp[1]}%）
-總計：${num(p.fp[0])+num(p.bp[0])}（${Number(p.fp[1]||0)+Number(p.bp[1]||0)}%）`;
+總計：${p.fp[0] + p.bp[0]}（${Number((p.fp[1] + p.bp[1]).toFixed(2))}%）`;
 
   await sheets.spreadsheets.values.update({
     spreadsheetId:SPREADSHEET_ID,
@@ -202,16 +228,14 @@ async function writeShop(shop, text, userId) {
 }
 
 // ======================================================
-// LINE Webhook（🔥 已修復）
+// LINE Webhook（其餘流程完全不動）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const e of req.body.events || []) {
 
-      // 1. 高鐵優先
       if (await handleHSR(e)) continue;
 
-      // 2. 營運回報（私訊）
       if (e.message?.type === "text" && e.message.text.startsWith("大哥您好")) {
         const shop =
           e.message.text.includes("湯棧") ? "湯棧中山" :
@@ -230,7 +254,6 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         continue;
       }
 
-      // 3. 查業績
       if (e.message?.type === "text" && e.message.text.startsWith("查業績")) {
         const arg = e.message.text.split(" ")[1];
         const c = await auth.getClient();
@@ -254,7 +277,6 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         continue;
       }
 
-      // 4. 待辦事項（🔥 補回這裡）
       if (e.message?.type === "text") {
         if (todoCmd.keywords?.some(k => e.message.text.startsWith(k))) {
           await todoCmd.handler(client, e);
@@ -262,7 +284,6 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         }
       }
 
-      // 5. 天氣查詢
       if (e.message?.type === "text") {
         const city = parseWeather(e.message.text);
         if (city !== null) {
@@ -301,12 +322,11 @@ app.post("/api/daily-summary", async (req, res) => {
 
     if (!out.length) return res.send("no data");
 
-    // ⚠️ 請確認 env 裡有 BOSS_USER_ID
     if (process.env.BOSS_USER_ID) {
-        await client.pushMessage(process.env.BOSS_USER_ID, {
-            type:"text",
-            text: out.join("\n\n━━━━━━━━━━━\n\n")
-        });
+      await client.pushMessage(process.env.BOSS_USER_ID, {
+        type:"text",
+        text: out.join("\n\n━━━━━━━━━━━\n\n")
+      });
     }
 
     res.send("ok");
