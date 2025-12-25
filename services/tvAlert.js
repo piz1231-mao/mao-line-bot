@@ -1,6 +1,7 @@
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
 const fs = require("fs");
+const { buildTVFlex } = require("./tvAlert.flex");
 
 // ======================================================
 // Google Sheet 設定（TV 通知名單）
@@ -87,18 +88,34 @@ module.exports = async function tvAlert(client, alertContent, payload = {}) {
     else tf = tfRaw;
   }
 
-  const msg = {
+  let msg;
+
+try {
+  msg = buildTVFlex({
+    product: "台指期",
+    direction,
+    timeframe: tfDisplay,
+    price: priceText,
+    stopLoss: slPriceText
+  });
+} catch (e) {
+  console.warn("⚠️ Flex 失敗，退回文字版", e.message);
+}
+
+  if (!msg) {
+  msg = {
     type: "text",
     text:
       `📢 毛怪秘書出明牌\n` +
       `━━━━━━━━━━━\n` +
       `📦 商品：台指期\n` +
       `📈 方向：${direction}\n` +
-      `🕒 週期：${tf}\n` +
+      `🕒 週期：${tfDisplay}\n` +
       `📊 條件：分數通過\n` +
-      `💰 進場價：${price}\n` +
-      `🛡️ 停損價：${sl}`
+      `💰 進場價：${priceText}\n` +
+      `🛡️ 停損價：${slPriceText}`
   };
+}
 
   for (const id of ids) {
     try {
