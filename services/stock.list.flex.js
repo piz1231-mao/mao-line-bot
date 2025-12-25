@@ -55,7 +55,7 @@ function buildRow(item) {
             flex: 0
           },
 
-          // 價位（固定寬）
+          // 價位
           {
             type: "text",
             text: fmt(item.price, item.id === "TXF" ? 0 : 2),
@@ -65,7 +65,7 @@ function buildRow(item) {
             flex: 3
           },
 
-          // 漲跌（固定定位點）
+          // 漲跌
           {
             type: "text",
             text: `${sign(change)} ${fmt(Math.abs(change), 2)}`,
@@ -75,11 +75,12 @@ function buildRow(item) {
             flex: 2
           },
 
-          // 漲跌幅（與漲跌有間距）
+          // ✅ 漲跌幅（字體調整，其他不變）
           {
             type: "text",
             text: `(${fmt(Math.abs(pct), 2)}%)`,
-            size: "sm",
+            size: "md",        // ← 原本 sm
+            weight: "bold",    // ← 新增
             color,
             flex: 2
           }
