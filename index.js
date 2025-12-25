@@ -277,7 +277,6 @@ if (
   const data = await getStockQuote(id);
   const flex = buildStockSingleFlex(data);
 await client.replyMessage(e.replyToken, flex);
-});
   continue;
 }
       
