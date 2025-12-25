@@ -1,15 +1,21 @@
 // ======================================================
-// 📊 Stock / Futures Single Flex Formatter（安全定版）
+// 📊 Stock / Futures Single Flex Formatter（定版）
 // ------------------------------------------------------
-// - 適用：個股 / 指數 / 台指期
-// - 價位＋漲跌＋漲跌幅：同一行（baseline）
-// - 避免單一 text 過寬造成 LINE 400
+// 用途：
+// - 查個股（上市 / 上櫃）
+// - 台指期 TXF
+//
+// 規格：
+// - 價位＋漲跌＋漲跌幅 同一行
+// - baseline + spacer box 撐距（避免擠爆）
+// - 台指期價位完整顯示
 // ======================================================
 
+// ===== 色碼（券商風）=====
 function colorByChange(change) {
-  if (change > 0) return "#D32F2F";   // 紅（券商紅）
-  if (change < 0) return "#00A65A";   // 綠（更深）
-  return "#666666";
+  if (change > 0) return "#D32F2F"; // 紅
+  if (change < 0) return "#0B8F3A"; // 深綠
+  return "#666666";                // 平盤灰
 }
 
 function sign(change) {
@@ -18,12 +24,23 @@ function sign(change) {
   return "";
 }
 
-function fmt(n, d = 2) {
+function fmt(n, digits = 2) {
   if (n === null || n === undefined || isNaN(n)) return "—";
-  return Number(n).toFixed(d);
+  return Number(n).toFixed(digits);
 }
 
-function buildPriceRow(price, change, pct, color) {
+// ======================================================
+// 🧩 價位主行（共用）
+// ======================================================
+function buildPriceRow({ price, yPrice, isTXF }) {
+  const change =
+    price !== null && yPrice !== null ? price - yPrice : 0;
+
+  const pct =
+    yPrice ? (change / yPrice) * 100 : 0;
+
+  const color = colorByChange(change);
+
   return {
     type: "box",
     layout: "baseline",
@@ -32,51 +49,64 @@ function buildPriceRow(price, change, pct, color) {
       {
         type: "text",
         text: "💎",
-        size: "lg",
+        size: "sm",
         flex: 0
       },
       {
         type: "text",
-        text: fmt(price),
-        size: "xl",
+        text: fmt(price, isTXF ? 0 : 2),
+        size: "lg",
         weight: "bold",
         color,
-        flex: 3
+        flex: isTXF ? 3 : 2
       },
+
+      // ===== 關鍵：間距 spacer（避免太黏）=====
+      {
+        type: "box",
+        layout: "vertical",
+        flex: 1,
+        contents: []
+      },
+
       {
         type: "text",
-        text: `${sign(change)} ${fmt(change)}`,
+        text: `${sign(change)} ${fmt(Math.abs(change), isTXF ? 0 : 2)}`,
         size: "md",
         weight: "bold",
         color,
-        flex: 3
+        flex: 2
       },
       {
         type: "text",
-        text: `(${fmt(pct)}%)`,
+        text: `(${fmt(Math.abs(pct), 2)}%)`,
         size: "md",
         color,
-        flex: 3
+        flex: 2
       }
     ]
   };
 }
 
+// ======================================================
+// 📊 個股 Flex
+// ======================================================
 function buildStockSingleFlex(data) {
-  const price = data.price;
-  const y = data.yPrice;
-
-  const change =
-    price !== null && y !== null ? price - y : 0;
-
-  const pct =
-    y ? (change / y) * 100 : 0;
-
-  const color = colorByChange(change);
+  const {
+    id,
+    name,
+    price,
+    yPrice,
+    open,
+    high,
+    low,
+    vol,
+    time
+  } = data;
 
   return {
     type: "flex",
-    altText: `${data.id || ""} ${data.name || ""}`.trim(),
+    altText: `${id} ${name}`,
     contents: {
       type: "bubble",
       size: "mega",
@@ -85,37 +115,96 @@ function buildStockSingleFlex(data) {
         layout: "vertical",
         spacing: "md",
         contents: [
-          // ===== 標題 =====
           {
             type: "text",
-            text: `${data.id || ""}  ${data.name || ""}`.trim(),
+            text: `📊 股票快報【${id} ${name}】`,
             size: "lg",
             weight: "bold"
           },
-
           { type: "separator" },
 
-          // ===== 價位主列（安全 baseline）=====
-          buildPriceRow(price, change, pct, color),
+          // ===== 價位主行 =====
+          buildPriceRow({
+            price,
+            yPrice,
+            isTXF: false
+          }),
 
           { type: "separator" },
 
           // ===== 明細 =====
-          buildInfoRow("🌅 開盤", data.open),
-          buildInfoRow("🏔️ 最高", data.high),
-          buildInfoRow("🌊 最低", data.low),
-          buildInfoRow("📉 昨收", data.yPrice),
-          buildInfoRow("📦 成交", data.vol ? `${data.vol} 張` : null),
-          buildInfoRow("🕒 時間", data.time)
-        ].filter(Boolean)
+          buildKV("🌅 開盤", fmt(open)),
+          buildKV("🏔️ 最高", fmt(high)),
+          buildKV("🌊 最低", fmt(low)),
+          buildKV("📉 昨收", fmt(yPrice)),
+          buildKV("📦 成交", vol ? `${vol} 張` : "—"),
+          buildKV("🕒 時間", time || "—")
+        ]
       }
     }
   };
 }
 
-function buildInfoRow(label, value) {
-  if (value === null || value === undefined) return null;
+// ======================================================
+// 📈 台指期 Flex（專屬格式）
+// ======================================================
+function buildTXFFlex(data) {
+  const {
+    price,
+    yPrice,
+    open,
+    high,
+    low,
+    vol,
+    time
+  } = data;
 
+  return {
+    type: "flex",
+    altText: "📊 台指期 TXF",
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          {
+            type: "text",
+            text: "📊 期貨快報【台指期 TXF】",
+            size: "lg",
+            weight: "bold"
+          },
+          { type: "separator" },
+
+          // ===== 價位主行 =====
+          buildPriceRow({
+            price,
+            yPrice,
+            isTXF: true
+          }),
+
+          { type: "separator" },
+
+          buildKV("📌 開盤", fmt(open, 0)),
+          buildKV("🔺 最高", fmt(high, 0)),
+          buildKV("🔻 最低", fmt(low, 0)),
+
+          { type: "separator" },
+
+          buildKV("📦 總量", vol || "—"),
+          buildKV("⏰ 時間", time || "—")
+        ]
+      }
+    }
+  };
+}
+
+// ======================================================
+// 🔹 Key / Value Row
+// ======================================================
+function buildKV(label, value) {
   return {
     type: "box",
     layout: "baseline",
@@ -129,7 +218,7 @@ function buildInfoRow(label, value) {
       },
       {
         type: "text",
-        text: String(value),
+        text: value,
         size: "md",
         color: "#222222",
         flex: 4
@@ -138,4 +227,24 @@ function buildInfoRow(label, value) {
   };
 }
 
-module.exports = { buildStockSingleFlex };
+// ======================================================
+// 🔥 單一出口（index.js 用）
+// ======================================================
+function buildStockSingleFlexMessage(data) {
+  if (!data) {
+    return {
+      type: "text",
+      text: "⚠️ 查無資料"
+    };
+  }
+
+  if (data.id === "TXF" || data.name?.includes("台指期")) {
+    return buildTXFFlex(data);
+  }
+
+  return buildStockSingleFlex(data);
+}
+
+module.exports = {
+  buildStockSingleFlexMessage
+};
