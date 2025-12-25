@@ -1,10 +1,12 @@
 // ======================================================
-// 📊 Stock / Futures Single Flex Formatter（最終定版 v1.1）
+// 📊 Stock / Futures Single Flex Formatter（最終定版）
 // ------------------------------------------------------
 // ✔ 個股 / 台指期 共用
-// ✔ 台指期：優先使用 API 提供的 change / pct
-// ✔ 價位 / 漲跌 / 漲跌幅 同一行、同字體
-// ✔ 僅使用 filler（避免 LINE 400）
+// ✔ 價位＋漲跌＋漲跌幅 同一行
+// ✔ 三個數值字體大小一致
+// ✔ 台指期使用 API 原生欄位（11, 56）
+// ✔ 顏色與方向完全正確
+// ✔ 僅使用 filler（避免 400）
 // ======================================================
 
 // ===== 色碼（券商風）=====
@@ -26,25 +28,24 @@ function fmt(n, digits = 2) {
 }
 
 // ======================================================
-// 🧩 價位主行（共用，關鍵修正在這）
+// 🧩 價位主行（共用）
 // ======================================================
 function buildPriceRow({ price, yPrice, change, pct, isTXF }) {
-  // ✅ 台指期：優先吃 API 的 change / pct
-  const finalChange =
-    typeof change === "number"
+  const safeChange =
+    change !== undefined && change !== null
       ? change
       : price !== null && yPrice !== null
-        ? price - yPrice
-        : 0;
+      ? price - yPrice
+      : 0;
 
-  const finalPct =
-    typeof pct === "number"
+  const safePct =
+    pct !== undefined && pct !== null
       ? pct
       : yPrice
-        ? (finalChange / yPrice) * 100
-        : 0;
+      ? (safeChange / yPrice) * 100
+      : 0;
 
-  const color = colorByChange(finalChange);
+  const color = colorByChange(safeChange);
 
   return {
     type: "box",
@@ -64,21 +65,21 @@ function buildPriceRow({ price, yPrice, change, pct, isTXF }) {
         flex: 2
       },
 
-      // ⚠️ 只能用 filler，不能用空 box
+      // ⚠️ 只能用 filler
       { type: "filler" },
 
       {
         type: "text",
-        text: `${sign(finalChange)} ${fmt(Math.abs(finalChange), isTXF ? 0 : 2)}`,
-        size: "md",
+        text: `${sign(safeChange)} ${fmt(Math.abs(safeChange), isTXF ? 0 : 2)}`,
+        size: "lg",
         weight: "bold",
         color,
         flex: 2
       },
       {
         type: "text",
-        text: `(${fmt(Math.abs(finalPct), 2)}%)`,
-        size: "md",
+        text: `(${fmt(Math.abs(safePct), 2)}%)`,
+        size: "lg",
         weight: "bold",
         color,
         flex: 2
@@ -118,10 +119,17 @@ function buildKV(label, value) {
 // ======================================================
 function buildStockFlex(data) {
   const {
-    id, name,
-    price, yPrice,
-    open, high, low,
-    vol, time
+    id,
+    name,
+    price,
+    yPrice,
+    open,
+    high,
+    low,
+    vol,
+    time,
+    change,
+    pct
   } = data;
 
   return {
@@ -146,6 +154,8 @@ function buildStockFlex(data) {
           buildPriceRow({
             price,
             yPrice,
+            change,
+            pct,
             isTXF: false
           }),
 
@@ -164,14 +174,21 @@ function buildStockFlex(data) {
 }
 
 // ======================================================
-// 📈 台指期 Flex（關鍵：傳入 API change / pct）
+// 📈 台指期 Flex（重點修正）
 // ======================================================
 function buildTXFFlex(data) {
   const {
-    price, yPrice,
-    open, high, low,
-    vol, time
+    price,
+    open,
+    high,
+    low,
+    vol,
+    time
   } = data;
+
+  // ✅ 台指期專用欄位（你貼的 API）
+  const change = data.change ?? data["11"]; // 64
+  const pct = data.pct ?? data["56"];       // 0.22
 
   return {
     type: "flex",
@@ -194,9 +211,8 @@ function buildTXFFlex(data) {
 
           buildPriceRow({
             price,
-            yPrice,
-            change: data.change, // ✅ API: 64
-            pct: data.pct,       // ✅ API: 0.22
+            change,
+            pct,
             isTXF: true
           }),
 
@@ -231,6 +247,4 @@ function buildStockSingleFlex(data) {
   return buildStockFlex(data);
 }
 
-module.exports = {
-  buildStockSingleFlex
-};
+module.exports = { buildStockSingleFlex };
