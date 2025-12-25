@@ -1,22 +1,27 @@
 // ======================================================
 // 📊 Stock Service（最終定版）
 // ------------------------------------------------------
-// 支援：
-// - 上市股票（TWSE 官方 MIS）
-// - 上櫃股票（OTC 官方 MIS）
-// - 加權指數（TWII｜官方 MIS）
-// - 櫃買指數（OTC Index｜官方 MIS）
-// - 台指期（TXF｜Yahoo Chart API 主力連續月）
+// 資料來源策略（⚠️ 已定錨，不可任意更動）
 //
-// index.js 僅需呼叫 getStockQuote()
-// 使用者不需知道市場別或代號
+// 1️⃣ 個股（上市 / 上櫃）
+//    → 證交所官方 API（mis.twse.com.tw）
+//
+// 2️⃣ 指數
+//    - 加權指數 → 證交所官方 API
+//    - 櫃買指數 → 證交所官方 API
+//
+// 3️⃣ 台指期（TXF，含夜盤）
+//    → 鉅亨網（Anue）JSON API
+//    ※ Yahoo 已封鎖雲端 IP，正式棄用
+//
+// index.js 僅呼叫 getStockQuote，不需修改
 // ======================================================
 
 const axios = require("axios");
 
-// ======================================================
+// ------------------------------------------------------
 // 工具
-// ======================================================
+// ------------------------------------------------------
 const isStockId = (v) => /^\d{4}$/.test(v);
 
 const num = (v) => {
@@ -26,7 +31,7 @@ const num = (v) => {
 };
 
 // ======================================================
-// 1️⃣ 官方 MIS：加權指數 / 櫃買指數（最穩）
+// 1️⃣ 官方指數（加權 / 櫃買）
 // ======================================================
 async function getOfficialIndex(type) {
   try {
@@ -47,74 +52,24 @@ async function getOfficialIndex(type) {
 
     return {
       type: "index",
-      market: type,
-      id: code,
+      id: type,
       name,
-      price: num(info.z),
-      yPrice: num(info.y),
+      price: num(info.z),   // 現價
+      yPrice: num(info.y),  // 昨收
       open: num(info.o),
       high: num(info.h),
       low: num(info.l),
-      vol: null,
       time: info.t,
       url: "https://mis.twse.com.tw/"
     };
   } catch (err) {
-    console.error("❌ Official Index Error:", err.message);
+    console.error(`❌ Official Index Error (${type})`, err.message);
     return null;
   }
 }
 
 // ======================================================
-// 2️⃣ 台指期 TXF（Yahoo Chart API｜主力連續月）
-// ======================================================
-async function getTaiwanFutures() {
-  try {
-    // 主力連續月（唯一正確）
-    const symbol = "TXF=F";
-    const url =
-      `https://query1.finance.yahoo.com/v8/finance/chart/${symbol}` +
-      `?interval=1m&range=1d`;
-
-    const { data } = await axios.get(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-          "(KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
-      }
-    });
-
-    const result = data?.chart?.result?.[0];
-    if (!result) return null;
-
-    const meta = result.meta;
-
-    return {
-      type: "index",
-      market: "FUTURES",
-      id: "TXF",
-      name: "台指期",
-      price: meta.regularMarketPrice,
-      yPrice: meta.previousClose,
-      open: meta.regularMarketOpen,
-      high: meta.regularMarketDayHigh,
-      low: meta.regularMarketDayLow,
-      vol: null,
-      time: new Date(meta.regularMarketTime * 1000)
-        .toLocaleTimeString("zh-TW", {
-          hour: "2-digit",
-          minute: "2-digit"
-        }),
-      url: "https://finance.yahoo.com/quote/TXF=F"
-    };
-  } catch (err) {
-    console.error("❌ TXF Chart API Error:", err.message);
-    return null;
-  }
-}
-
-// ======================================================
-// 3️⃣ 官方 MIS：上市 / 上櫃個股
+// 2️⃣ 官方個股（上市 / 上櫃）
 // ======================================================
 async function getTWSELikeQuote(stockId, market) {
   try {
@@ -147,32 +102,73 @@ async function getTWSELikeQuote(stockId, market) {
 }
 
 // ======================================================
-// 🔥 對外唯一入口（index.js 只呼叫這個）
+// 3️⃣ 台指期（TXF）— 鉅亨網 API（支援夜盤）
+// ======================================================
+async function getTaiwanFutures() {
+  // 鉅亨網：台指期近月（連續）
+  // 日盤 / 夜盤 都會即時更新
+  const url = "https://ws.api.cnyes.com/ws/api/v1/quote/quotes/TWS:TXF";
+
+  try {
+    const { data } = await axios.get(url);
+    const info = data?.data?.[0];
+    if (!info) return null;
+
+    const price = num(info.c);    // 現價
+    const change = num(info.ch);  // 漲跌
+    const yPrice = price !== null && change !== null
+      ? price - change
+      : null;
+
+    return {
+      type: "index",
+      id: "TXF",
+      name: "台指期",
+      price,
+      yPrice,
+      open: num(info.o),
+      high: num(info.h),
+      low: num(info.l),
+      time: new Date(info.t * 1000).toLocaleTimeString("zh-TW", {
+        hour: "2-digit",
+        minute: "2-digit",
+        timeZone: "Asia/Taipei"
+      }),
+      url: "https://invest.cnyes.com/futures/TWS/TXF"
+    };
+  } catch (err) {
+    console.error("❌ Anue TXF Error", err.message);
+    return null;
+  }
+}
+
+// ======================================================
+// 🔥 單一對外入口（index.js 只呼叫這裡）
 // ======================================================
 async function getStockQuote(input) {
-  const key = input.trim();
+  const key = String(input).trim();
 
-  // ---- 台指期 ----
+  // 台指期（含夜盤）
   if (["台指期", "台指", "TXF"].includes(key)) {
     return await getTaiwanFutures();
   }
 
-  // ---- 櫃買指數 ----
+  // 櫃買指數
   if (["櫃買", "OTC", "櫃買指數"].includes(key)) {
     return await getOfficialIndex("OTC");
   }
 
-  // ---- 加權指數 ----
+  // 加權指數
   if (["大盤", "加權", "加權指數"].includes(key)) {
     return await getOfficialIndex("TWII");
   }
 
-  // ---- 個股（四碼，自動判斷上市 / 上櫃）----
+  // 個股（上市 → 上櫃）
   if (isStockId(key)) {
-    let data = await getTWSELikeQuote(key, "tse"); // 上市
+    let data = await getTWSELikeQuote(key, "tse");
     if (data && data.price !== null) return data;
 
-    data = await getTWSELikeQuote(key, "otc"); // 上櫃
+    data = await getTWSELikeQuote(key, "otc");
     if (data && data.price !== null) return data;
 
     return null;
