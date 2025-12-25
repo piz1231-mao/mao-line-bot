@@ -1,37 +1,32 @@
 // ======================================================
-// 🛒 Stock List Flex Formatter（購物車定版 v1.0）
+// 🛒 Stock Flex Formatter（最終定版・封存）
 // ------------------------------------------------------
-// 使用時機：
-// - 查購物車
-// - 查清單
-// - 查股票 購物車
+// 使用情境：
+// - 查購物車 / 查清單
+// - 查單一股票（個股 / 指數 / 台指期）
 //
-// 顯示規格（已定版）：
-// - 一檔兩行
-//   1️⃣ 代號 + 名稱（稍大字、粗體）
-//   2️⃣ 💎 價錢 + 漲跌 + 漲跌幅（同一行、同顏色）
-//
-// 顏色規則：
-// - 上漲：紅色（接近券商紅）
-// - 下跌：深綠色（更綠）
-// - 平盤：灰色
+// 設計原則：
+// - 價位＋漲跌＋漲跌幅：同一行、同顏色
+// - 不使用 baseline（避免 LINE 400）
+// - 上漲紅 / 下跌綠 / 平盤灰
+// - 視覺接近券商 App
 // ======================================================
 
 // ------------------------------------------------------
-// 顏色判斷
+// 顏色策略（偏券商風格）
 // ------------------------------------------------------
 function colorByChange(change) {
-  if (change > 0) return "#D32F2F"; // 券商紅
-  if (change < 0) return "#1B5E20"; // 深綠（更綠）
+  if (change > 0) return "#C62828"; // 深紅（比之前更像券商）
+  if (change < 0) return "#1B5E20"; // 深綠
   return "#666666";                // 灰
 }
 
 // ------------------------------------------------------
-// 漲跌符號
+// 箭頭符號
 // ------------------------------------------------------
-function sign(n) {
-  if (n > 0) return "▲";
-  if (n < 0) return "▼";
+function arrow(change) {
+  if (change > 0) return "▲";
+  if (change < 0) return "▼";
   return "";
 }
 
@@ -44,23 +39,23 @@ function fmt(n, digits = 2) {
 }
 
 // ------------------------------------------------------
-// 單一股票列
+// 單一商品（股票 / 指數 / 台指期）
 // ------------------------------------------------------
-function buildStockRow(data) {
+function buildRow(data) {
   const price = data.price;
   const y = data.yPrice;
 
   const change =
     price !== null && y !== null
       ? price - y
-      : null;
+      : 0;
 
   const pct =
-    change !== null && y
+    y
       ? (change / y) * 100
-      : null;
+      : 0;
 
-  const color = colorByChange(change || 0);
+  const color = colorByChange(change);
 
   const title =
     data.id && data.name
@@ -72,59 +67,59 @@ function buildStockRow(data) {
     layout: "vertical",
     spacing: "xs",
     contents: [
-      // ===== 名稱行 =====
+      // ===== 名稱 =====
       {
         type: "text",
         text: title,
+        size: "md",
         weight: "bold",
-        size: "md",          // 比原本再大一點
         color: "#222222",
         wrap: true
       },
 
-      // ===== 價錢 + 漲跌（同一行、同顏色）=====
+      // ===== 價位＋漲跌（同一行）=====
       {
         type: "text",
-        size: "md",          // 價錢行放大
-        weight: "bold",
-        wrap: true,
         text:
           `💎 ${fmt(price, 2)}   ` +
-          `${sign(change)} ${fmt(change, 2)}  (${fmt(pct, 2)}%)`,
-        color
+          `${arrow(change)} ${fmt(change, 2)} (${fmt(pct, 2)}%)`,
+        size: "xl",
+        weight: "bold",
+        color: color,
+        wrap: true
       }
     ]
   };
 }
 
 // ------------------------------------------------------
-// 主輸出
+// Flex 主體
 // ------------------------------------------------------
-function buildStockListFlex(list) {
+function buildStockListFlex(list, title = "🛒 我的購物車") {
   return {
     type: "flex",
-    altText: "🛒 我的購物車",
+    altText: title,
     contents: {
       type: "bubble",
       size: "mega",
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "lg",
+        spacing: "md",
         contents: [
           // ===== 標題 =====
           {
             type: "text",
-            text: "🛒 我的購物車",
-            weight: "bold",
-            size: "lg"
+            text: title,
+            size: "lg",
+            weight: "bold"
           },
           {
             type: "separator"
           },
 
           // ===== 清單 =====
-          ...list.map(buildStockRow)
+          ...list.map(buildRow)
         ]
       }
     }
