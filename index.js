@@ -48,6 +48,7 @@ const { buildWeatherFriendText } = require("./services/weather.text");
 const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
 const handleHSR = require("./handlers/hsr");
+const { buildStockListText } = require("./services/stock.list.formatter");
 
 // 股票
 const { getStockQuote } = require("./services/stock.service");
@@ -267,6 +268,57 @@ if (
     type: "text",
     text: buildStockText(data)
   });
+  continue;
+}
+      
+      // ===== 📋 購物車 / 清單 =====
+if (
+  text === "查購物車" ||
+  text === "查清單" ||
+  text === "查股票 購物車"
+) {
+  try {
+    const c = await auth.getClient();
+    const sheets = google.sheets({ version: "v4", auth: c });
+
+    // 讀取「購物車」分頁 A 欄
+    const r = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "購物車!A:A"
+    });
+
+    const symbols = (r.data.values || [])
+      .map(v => v[0])
+      .filter(Boolean);
+
+    if (!symbols.length) {
+      await client.replyMessage(e.replyToken, {
+        type: "text",
+        text: "📋 我的清單\n━━━━━━━━━━━\n\n（清單是空的）"
+      });
+      continue;
+    }
+
+    // 逐一查價（走你已定版的 stock.service）
+    const results = [];
+    for (const s of symbols) {
+      const data = await getStockQuote(s);
+      if (data) results.push(data);
+    }
+
+    const msg = buildStockListText(results);
+
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: msg
+    });
+  } catch (err) {
+    console.error("❌ 查購物車失敗:", err);
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "⚠️ 查購物車失敗"
+    });
+  }
   continue;
 }
 
