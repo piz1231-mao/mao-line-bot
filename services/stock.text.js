@@ -1,38 +1,46 @@
-// services/stock.text.js
+// ======================================================
+// 📊 Stock Text Builder
+// ======================================================
 
-function buildStockText(data) {
-  if (!data) return "⚠️ 查無此股票，請確認代號是否正確。";
+function buildStockText(d) {
+  if (!d) return "⚠️ 查無此股票，請確認代號是否正確。";
 
-  // 計算漲跌 (防止除以 0 錯誤)
-  const diff = data.price - data.yPrice;
-  let diffPct = 0;
-  if (data.yPrice > 0) {
-    diffPct = ((diff / data.yPrice) * 100).toFixed(2);
+  // ===== 台指期專屬格式 =====
+  if (d.type === "future" && d.id === "TXF") {
+    const sign = d.change > 0 ? "+" : d.change < 0 ? "-" : "";
+    return (
+`📊 期貨快報【台指期 TXF】
+
+💰 現價：${d.price}
+📈 漲跌：${sign}${Math.abs(d.change)}（${d.percent}%）
+
+📌 開盤：${d.open}
+🔺 最高：${d.high}
+🔻 最低：${d.low}
+
+📦 總量：${d.vol}
+⏰ 時間：${d.time}`
+    );
   }
 
-  // 設定 Emoji 與正負號
-  let emoji = "➖"; // 平盤
-  let sign = "";
-  
-  if (diff > 0) {
-    emoji = "🔴"; // 漲
-    sign = "+";
-  } else if (diff < 0) {
-    emoji = "🟢"; // 跌
-    sign = ""; // 負數自帶負號
-  }
+  // ===== 一般股票 / 指數 =====
+  const diff = d.price - d.yPrice;
+  const pct = d.yPrice ? ((diff / d.yPrice) * 100).toFixed(2) : "0.00";
+  const sign = diff > 0 ? "+" : diff < 0 ? "-" : "";
 
-  return `📊 股票快報【${data.id} ${data.name}】
-━━━━━━━━━━━
-💰 現價：${data.price}
-${emoji} 漲跌：${sign}${diff.toFixed(2)} (${sign}${diffPct}%)
-━━━━━━━━━━━
-🌅 開盤：${data.open}
-🏔️ 最高：${data.high}
-🌊 最低：${data.low}
-📉 昨收：${data.yPrice}
-📦 成交：${data.vol} 張
-🕒 時間：${data.time}`;
+  return (
+`📊 股票快報【${d.name || d.id}】
+
+💰 現價：${d.price}
+📈 漲跌：${sign}${Math.abs(diff)}（${pct}%）
+
+📌 開盤：${d.open}
+🔺 最高：${d.high}
+🔻 最低：${d.low}
+
+📦 成交：${d.vol || "-"}
+⏰ 時間：${d.time || ""}`
+  );
 }
 
 module.exports = { buildStockText };
