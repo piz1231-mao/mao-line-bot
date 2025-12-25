@@ -20,55 +20,82 @@ function isMarketOpen() {
   return minutes >= 540 && minutes <= 810;
 }
 
-// ===============================
-// 取得今日日期（YYYY-MM-DD）
-// ===============================
-function getToday() {
+function today() {
   return new Date().toISOString().slice(0, 10);
 }
 
 // ===============================
-// 抓單一股票報價（Phase 1）
+// 共用呼叫 FinMind
+// ===============================
+async function fetchFinMind(dataset, stockId) {
+  const res = await axios.get(FINMIND_API, {
+    params: {
+      dataset,
+      data_id: stockId,
+      start_date: today(),
+      token: TOKEN
+    }
+  });
+  return res.data?.data || [];
+}
+
+// ===============================
+// 單一股票查詢（Phase 1 穩定版）
 // ===============================
 async function getStockQuote(stockId) {
-  const intraday = isMarketOpen();
-  const dataset = intraday
-    ? "TaiwanStockPriceMinute"
-    : "TaiwanStockPrice";
-
-  const params = {
-    dataset,
-    data_id: stockId,
-    start_date: getToday(),   // ✅ 關鍵修正：盤中也要
-    token: TOKEN
-  };
-
   try {
-    const res = await axios.get(FINMIND_API, { params });
-    const rows = res.data?.data;
+    const intraday = isMarketOpen();
 
-    if (!Array.isArray(rows) || rows.length === 0) {
-      return null;
+    // ① 盤中先試分鐘線
+    if (intraday) {
+      const minuteRows = await fetchFinMind(
+        "TaiwanStockPriceMinute",
+        stockId
+      );
+
+      if (minuteRows.length > 0) {
+        const last = minuteRows.at(-1);
+        return formatResult(stockId, "盤中", last, true);
+      }
+      // ⚠️ 關鍵：盤中分鐘線可能為空 → 不 return
     }
 
-    const last = rows[rows.length - 1];
+    // ② fallback 用日線（一定有）
+    const dailyRows = await fetchFinMind(
+      "TaiwanStockPrice",
+      stockId
+    );
 
-    return {
-      stockId,
-      mode: intraday ? "盤中" : "收盤",
-      price: Number(last.close),
-      open: Number(last.open),
-      high: Number(last.max),
-      low: Number(last.min),
-      volume: Number(last.Trading_Volume),
-      time: intraday
-        ? `${last.date} ${last.minute}`
-        : last.date
-    };
+    if (dailyRows.length > 0) {
+      const last = dailyRows.at(-1);
+      return formatResult(stockId, "收盤", last, false);
+    }
+
+    // ③ 真的查不到
+    return null;
+
   } catch (err) {
-    console.error("❌ FinMind Stock API Error:", err.response?.data || err.message);
+    console.error("❌ FinMind Stock Error:", err.response?.data || err.message);
     return null;
   }
+}
+
+// ===============================
+// 統一格式
+// ===============================
+function formatResult(stockId, mode, row, isMinute) {
+  return {
+    stockId,
+    mode,
+    price: Number(row.close),
+    open: Number(row.open),
+    high: Number(row.max),
+    low: Number(row.min),
+    volume: Number(row.Trading_Volume),
+    time: isMinute
+      ? `${row.date} ${row.minute}`
+      : row.date
+  };
 }
 
 module.exports = { getStockQuote };
