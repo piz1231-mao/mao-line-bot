@@ -1,17 +1,11 @@
 // ======================================================
-// 🛒 Stock List Flex Formatter（購物車定版）
-// ------------------------------------------------------
-// 顯示：
-// - 代號 + 名稱
-// - 💎 價位（與鑽石有極小間距）
-// - 漲跌 / 漲跌幅（固定定位，不再調）
+// 🛒 Stock List Flex Formatter（購物車穩定定版）
 // ======================================================
 
-// ===== 色碼（券商風）=====
 function colorByChange(change) {
-  if (change > 0) return "#D32F2F";   // 紅
-  if (change < 0) return "#008A3B";   // 明顯綠
-  return "#666666";                  // 平盤灰
+  if (change > 0) return "#D32F2F";
+  if (change < 0) return "#008A3B";
+  return "#666666";
 }
 
 function sign(change) {
@@ -26,7 +20,7 @@ function fmt(n, digits = 2) {
 }
 
 // ======================================================
-// 單一項目（一檔股票）
+// 單一項目
 // ======================================================
 function buildItem(item) {
   const price = item.price;
@@ -50,7 +44,7 @@ function buildItem(item) {
     layout: "vertical",
     spacing: "xs",
     contents: [
-      // ===== 代號 + 名稱 =====
+      // ===== 代號＋名稱 =====
       {
         type: "text",
         text: title,
@@ -65,7 +59,7 @@ function buildItem(item) {
         type: "box",
         layout: "baseline",
         contents: [
-          // 💎
+          // 💎（不動）
           {
             type: "text",
             text: "💎",
@@ -73,7 +67,7 @@ function buildItem(item) {
             flex: 0
           },
 
-          // 🔹 極小間距（半個字感）
+          // 💎 與價位的小間距（不動）
           {
             type: "text",
             text: " ",
@@ -81,7 +75,7 @@ function buildItem(item) {
             flex: 0
           },
 
-          // 價位
+          // 價位（不動）
           {
             type: "text",
             text: fmt(price, item.id === "TXF" ? 0 : 2),
@@ -91,31 +85,39 @@ function buildItem(item) {
             flex: 3
           },
 
-          // 固定定位間距（不要再動）
+          // 🔹 關鍵：固定空白 spacer（拉大中間距）
           {
-            type: "filler",
-            flex: 1
+            type: "text",
+            text: "     ", // ← 五個空白，穩定、不會炸
+            size: "md",
+            flex: 0
           },
 
-          // 漲跌
+          // ===== 漲跌（往前、字體加粗）=====
           {
             type: "text",
             text: `${sign(change)} ${fmt(Math.abs(change), item.id === "TXF" ? 0 : 2)}`,
-            size: "md",
+            size: "md",          // ← 跟價位同級
             weight: "bold",
             color,
-            flex: 2,
-            align: "start"
+            flex: 0
           },
 
-          // 漲跌幅（與漲跌有固定間距）
+          // 🔹 漲跌與幅度之間固定間距
+          {
+            type: "text",
+            text: "   ",
+            size: "sm",
+            flex: 0
+          },
+
+          // ===== 漲跌幅（位置不動）=====
           {
             type: "text",
             text: `(${fmt(Math.abs(pct), 2)}%)`,
-            size: "sm",
+            size: "md",
             color,
-            flex: 2,
-            align: "start"
+            flex: 0
           }
         ]
       }
@@ -138,7 +140,6 @@ function buildStockListFlex(list) {
         layout: "vertical",
         spacing: "md",
         contents: [
-          // ===== 標題 =====
           {
             type: "text",
             text: "🛒 我的購物車",
@@ -146,8 +147,6 @@ function buildStockListFlex(list) {
             weight: "bold"
           },
           { type: "separator" },
-
-          // ===== 清單 =====
           ...list.map(buildItem)
         ]
       }
