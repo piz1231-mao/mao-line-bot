@@ -1,5 +1,5 @@
 // ======================================================
-// 📊 Stock / Futures Single Flex Formatter（TXF 修正定版）
+// 📊 Stock / Futures Single Flex Formatter（最終定版）
 // ======================================================
 
 // ===== 色碼 =====
@@ -21,7 +21,7 @@ function fmt(n, d = 2) {
 }
 
 // ======================================================
-// 🧩 價位主行（⚠️ 不做任何計算）
+// 🧩 價位主行（共用，不做計算）
 // ======================================================
 function buildPriceRow({ price, change, pct, isTXF }) {
   const color = colorByChange(change);
@@ -30,11 +30,8 @@ function buildPriceRow({ price, change, pct, isTXF }) {
     type: "box",
     layout: "baseline",
     contents: [
-      {
-        type: "text",
-        text: "💎",
-        size: "sm"
-      },
+      { type: "text", text: "💎", size: "sm" },
+
       {
         type: "text",
         text: fmt(price, isTXF ? 0 : 2),
@@ -67,33 +64,79 @@ function buildPriceRow({ price, change, pct, isTXF }) {
 }
 
 // ======================================================
-// 🔹 Key / Value
+// 🔹 Key / Value Row
 // ======================================================
 function buildKV(label, value) {
   return {
     type: "box",
     layout: "baseline",
     contents: [
-      {
-        type: "text",
-        text: label,
-        size: "md",
-        color: "#888888",
-        flex: 2
-      },
-      {
-        type: "text",
-        text: String(value),
-        size: "md",
-        color: "#222222",
-        flex: 4
-      }
+      { type: "text", text: label, size: "md", color: "#888888", flex: 2 },
+      { type: "text", text: String(value), size: "md", color: "#222222", flex: 4 }
     ]
   };
 }
 
 // ======================================================
-// 📈 台指期 TXF（只貼 API 給的值）
+// 📊 個股 Flex（上市 / 上櫃）
+// ======================================================
+function buildStockFlex(data) {
+  const {
+    id,
+    name,
+    price,
+    change,
+    pct,
+    open,
+    high,
+    low,
+    yPrice,
+    vol,
+    time
+  } = data;
+
+  return {
+    type: "flex",
+    altText: `${id} ${name}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          {
+            type: "text",
+            text: `📊 股票快報【${id} ${name}】`,
+            size: "lg",
+            weight: "bold"
+          },
+          { type: "separator" },
+
+          buildPriceRow({
+            price,
+            change,
+            pct,
+            isTXF: false
+          }),
+
+          { type: "separator" },
+
+          buildKV("🌅 開盤", fmt(open)),
+          buildKV("🏔️ 最高", fmt(high)),
+          buildKV("🌊 最低", fmt(low)),
+          buildKV("📉 昨收", fmt(yPrice)),
+          buildKV("📦 成交", vol ? `${vol} 張` : "—"),
+          buildKV("🕒 時間", time || "—")
+        ]
+      }
+    }
+  };
+}
+
+// ======================================================
+// 📈 台指期 TXF（直接用 API 欄位）
 // ======================================================
 function buildTXFFlex(data) {
   const {
@@ -150,7 +193,7 @@ function buildTXFFlex(data) {
 }
 
 // ======================================================
-// 🔥 唯一出口
+// 🔥 唯一出口（index.js 用）
 // ======================================================
 function buildStockSingleFlex(data) {
   if (!data) {
@@ -161,7 +204,6 @@ function buildStockSingleFlex(data) {
     return buildTXFFlex(data);
   }
 
-  // 個股你原本那套是 OK 的
   return buildStockFlex(data);
 }
 
