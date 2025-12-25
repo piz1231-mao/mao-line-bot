@@ -58,6 +58,7 @@ const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
 const handleHSR = require("./handlers/hsr");
 const { buildStockListText } = require("./services/stock.list.formatter");
+const { buildStockListFlex } = require("./services/stock.list.flex");
 
 // 股票
 const { getStockQuote } = require("./services/stock.service");
@@ -315,12 +316,9 @@ if (
       if (data) results.push(data);
     }
 
-    const msg = buildStockListText(results);
+    const flex = buildStockListFlex(results);
 
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: msg
-    });
+await client.replyMessage(e.replyToken, flex);
   } catch (err) {
     console.error("❌ 查購物車失敗:", err);
     await client.replyMessage(e.replyToken, {
