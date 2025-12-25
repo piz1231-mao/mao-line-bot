@@ -1,6 +1,7 @@
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
 const fs = require("fs");
+const { buildTVFlex } = require("./tv.flex");
 
 // ======================================================
 // Google Sheet 設定（TV 通知名單）
@@ -159,15 +160,24 @@ module.exports = async function tvAlert(client, alertContent, payload = {}) {
   // 發送 LINE（逐一推播，不互相影響）
 // ----------------------------------------------------
   for (const id of ids) {
-    try {
-      await client.pushMessage(id, msg);
-      console.log("✅ TV 訊號已推播：", id);
-    } catch (err) {
-      console.error(
-        "❌ LINE 推播失敗：",
-        id,
-        err?.originalError?.message || err.message || err
-      );
-    }
+  try {
+    // 🟢 優先送 Flex 名牌
+    await client.pushMessage(
+      id,
+      buildTVFlex({
+        symbol: "台指期",
+        direction,
+        timeframe: tfDisplay,
+        entry: priceText,
+        stop: slPriceText
+      })
+    );
+    console.log("✅ TV Flex 已推播：", id);
+
+  } catch (err) {
+    // 🔴 Flex 失敗 → 回退原本文字（保命）
+    console.warn("⚠️ Flex 失敗，改送文字", id);
+
+    await client.pushMessage(id, msg);
   }
-};
+}
