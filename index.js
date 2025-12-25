@@ -59,7 +59,7 @@ const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
 const handleHSR = require("./handlers/hsr");
 const { buildStockListFlex } = require("./services/stock.list.flex");
-const { buildStockSingleFlex } = require("./services/stock.single.flex");
+const { buildStockSingleFlexMessage } = require("./services/stock.single.flex");
 
 // 股票
 const { getStockQuote } = require("./services/stock.service");
