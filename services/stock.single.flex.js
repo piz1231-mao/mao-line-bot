@@ -5,10 +5,10 @@
 // - 查個股（上市 / 上櫃）
 // - 台指期 TXF
 //
-// 規格（已驗證）
+// 規格：
 // - 價位＋漲跌＋漲跌幅 同一行
-// - baseline + spacer box 撐距（不黏、不爆）
-// - 所有 text 一律為 string（避免 LINE 400）
+// - baseline + spacer box 撐距（LINE 合法）
+// - 台指期價位完整顯示
 // ======================================================
 
 // ===== 色碼（券商風）=====
@@ -30,26 +30,21 @@ function fmt(n, digits = 2) {
 }
 
 // ======================================================
-// 💎 價位主行（共用）
+// 🧩 價位主行（共用）
+// ⚠️ 注意：baseline box 不可使用 spacing（已排雷）
 // ======================================================
 function buildPriceRow({ price, yPrice, isTXF }) {
-  const p = Number(price);
-  const y = Number(yPrice);
-
   const change =
-    !isNaN(p) && !isNaN(y) ? p - y : 0;
+    price !== null && yPrice !== null ? price - yPrice : 0;
 
   const pct =
-    !isNaN(p) && !isNaN(y) && y !== 0
-      ? (change / y) * 100
-      : 0;
+    yPrice ? (change / yPrice) * 100 : 0;
 
   const color = colorByChange(change);
 
   return {
     type: "box",
     layout: "baseline",
-    spacing: "sm",
     contents: [
       {
         type: "text",
@@ -59,14 +54,14 @@ function buildPriceRow({ price, yPrice, isTXF }) {
       },
       {
         type: "text",
-        text: fmt(p, isTXF ? 0 : 2),
+        text: fmt(price, isTXF ? 0 : 2),
         size: "lg",
         weight: "bold",
         color,
         flex: isTXF ? 3 : 2
       },
 
-      // ===== spacer：撐開價格與漲跌 =====
+      // ===== 撐距（LINE 合法作法）=====
       {
         type: "box",
         layout: "vertical",
@@ -88,35 +83,6 @@ function buildPriceRow({ price, yPrice, isTXF }) {
         size: "md",
         color,
         flex: 2
-      }
-    ]
-  };
-}
-
-// ======================================================
-// 🔹 Key / Value Row（⚠️ value 一定轉字串）
-// ======================================================
-function buildKV(label, value) {
-  return {
-    type: "box",
-    layout: "baseline",
-    contents: [
-      {
-        type: "text",
-        text: label,
-        size: "md",
-        color: "#888888",
-        flex: 2
-      },
-      {
-        type: "text",
-        text:
-          value === null || value === undefined
-            ? "—"
-            : String(value),
-        size: "md",
-        color: "#222222",
-        flex: 4
       }
     ]
   };
@@ -178,7 +144,7 @@ function buildStockSingleFlex(data) {
 }
 
 // ======================================================
-// 📈 台指期 TXF Flex（專屬）
+// 📈 台指期 Flex（專屬格式）
 // ======================================================
 function buildTXFFlex(data) {
   const {
@@ -229,6 +195,32 @@ function buildTXFFlex(data) {
         ]
       }
     }
+  };
+}
+
+// ======================================================
+// 🔹 Key / Value Row
+// ======================================================
+function buildKV(label, value) {
+  return {
+    type: "box",
+    layout: "baseline",
+    contents: [
+      {
+        type: "text",
+        text: label,
+        size: "md",
+        color: "#888888",
+        flex: 2
+      },
+      {
+        type: "text",
+        text: String(value),
+        size: "md",
+        color: "#222222",
+        flex: 4
+      }
+    ]
   };
 }
 
