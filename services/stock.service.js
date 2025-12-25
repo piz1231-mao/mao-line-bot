@@ -13,7 +13,7 @@ const num = (v) => {
 const isStockId = (v) => /^\d{4}$/.test(v);
 
 // ======================================================
-// 📌 TWSE / OTC 共用
+// 📌 TWSE / OTC 共用 
 // ======================================================
 async function getTWSE(url, id, name) {
   const { data } = await axios.get(url);
