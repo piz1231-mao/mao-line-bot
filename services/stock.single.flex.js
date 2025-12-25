@@ -1,11 +1,13 @@
 // ======================================================
-// 📊 Stock / TXF Single Flex（功能完整穩定版）
+// 📊 Stock / TXF Single Flex（定版最終版）
+// - 股票 / 指數 / 台指期 共用
+// - emoji 與欄位完全依照「之前定版畫面」
 // ======================================================
 
 function colorByChange(change) {
-  if (change > 0) return "#D32F2F";
-  if (change < 0) return "#0B8F3A";
-  return "#666666";
+  if (change > 0) return "#D32F2F"; // 紅
+  if (change < 0) return "#0B8F3A"; // 綠
+  return "#666666";                // 平盤
 }
 
 function sign(change) {
@@ -20,36 +22,9 @@ function fmt(n, d = 2) {
 }
 
 // ======================================================
-// 🔧 統一取得漲跌 / 漲幅（關鍵）
+// 💎 價位主行（股票 / 期貨共用）
 // ======================================================
-function normalizeChange(data) {
-  // 直接有的（台指期）
-  if (typeof data.change === "number") {
-    return {
-      change: data.change,
-      percent: typeof data.percent === "number" ? data.percent : 0
-    };
-  }
-
-  // 個股 fallback（用昨收）
-  if (
-    typeof data.price === "number" &&
-    typeof data.yPrice === "number"
-  ) {
-    const change = data.price - data.yPrice;
-    const percent = data.yPrice ? (change / data.yPrice) * 100 : 0;
-    return { change, percent };
-  }
-
-  return { change: 0, percent: 0 };
-}
-
-// ======================================================
-// 💎 價位主行
-// ======================================================
-function buildPriceRow(data, isTXF = false) {
-  const { price } = data;
-  const { change, percent } = normalizeChange(data);
+function buildPriceRow({ price, change, percent, isTXF }) {
   const color = colorByChange(change);
 
   return {
@@ -87,7 +62,7 @@ function buildPriceRow(data, isTXF = false) {
 }
 
 // ======================================================
-// 🔹 KV Row
+// 🔹 Key / Value Row（依原本定版 emoji）
 // ======================================================
 function buildKV(label, value) {
   return {
@@ -101,15 +76,9 @@ function buildKV(label, value) {
 }
 
 // ======================================================
-// 🔥 主入口（唯一）
+// 📈 股票 / 指數（完全照 3105 穩懋定版）
 // ======================================================
-function buildStockSingleFlex(data) {
-  if (!data) {
-    return { type: "text", text: "⚠️ 查無資料" };
-  }
-
-  const isTXF = data.id === "TXF" || data.name?.includes("台指期");
-
+function buildStockFlex(data) {
   return {
     type: "flex",
     altText: `${data.id} ${data.name}`,
@@ -123,26 +92,79 @@ function buildStockSingleFlex(data) {
         contents: [
           {
             type: "text",
-            text: `📊 ${isTXF ? "期貨快報" : "股票快報"}【${data.id} ${data.name}】`,
+            text: `📊 股票快報【${data.id} ${data.name}】`,
             size: "lg",
             weight: "bold"
           },
           { type: "separator" },
 
-          buildPriceRow(data, isTXF),
+          buildPriceRow({ ...data, isTXF: false }),
 
           { type: "separator" },
 
-          buildKV("📌 開盤", fmt(data.open, isTXF ? 0 : 2)),
-          buildKV("🔺 最高", fmt(data.high, isTXF ? 0 : 2)),
-          buildKV("🔻 最低", fmt(data.low, isTXF ? 0 : 2)),
-          !isTXF && buildKV("📉 昨收", fmt(data.yPrice)),
-          buildKV("📦 成交", data.vol),
-          buildKV("⏰ 時間", data.time)
-        ].filter(Boolean)
+          // ⬇️ 這一段 emoji、順序「完全不改」
+          buildKV("🔥 開盤", fmt(data.open)),
+          buildKV("🏔️ 最高", fmt(data.high)),
+          buildKV("🌊 最低", fmt(data.low)),
+          buildKV("📉 昨收", fmt(data.yPrice)),
+          buildKV("📦 成交", data.vol ? `${data.vol} 張` : "—"),
+          buildKV("⏰ 時間", data.time || "—")
+        ]
       }
     }
   };
+}
+
+// ======================================================
+// 📊 台指期 TXF（期貨專屬語意）
+// ======================================================
+function buildTXFFlex(data) {
+  return {
+    type: "flex",
+    altText: "📊 台指期 TXF",
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          {
+            type: "text",
+            text: "📊 期貨快報【台指期 TXF】",
+            size: "lg",
+            weight: "bold"
+          },
+          { type: "separator" },
+
+          buildPriceRow({ ...data, isTXF: true }),
+
+          { type: "separator" },
+
+          // ⬇️ 期貨用自己的 emoji（不混股票）
+          buildKV("📌 開盤", fmt(data.open, 0)),
+          buildKV("🔺 最高", fmt(data.high, 0)),
+          buildKV("🔻 最低", fmt(data.low, 0)),
+          buildKV("📦 總量", data.vol),
+          buildKV("⏰ 時間", data.time)
+        ]
+      }
+    }
+  };
+}
+
+// ======================================================
+// 🔥 唯一出口（index.js 用）
+// ======================================================
+function buildStockSingleFlex(data) {
+  if (!data) return { type: "text", text: "⚠️ 查無資料" };
+
+  if (data.id === "TXF" || data.name?.includes("台指期")) {
+    return buildTXFFlex(data);
+  }
+
+  return buildStockFlex(data);
 }
 
 module.exports = { buildStockSingleFlex };
