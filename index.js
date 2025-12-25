@@ -1,34 +1,34 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// Router 重構穩定版 v1.4.2（正式可用定版）
+// Router 重構穩定版 v1.4.0（正式定版）
 //
 // 【架構定位】
 // ------------------------------------------------------
 // - index.js 為「唯一 Router / 裁判」
-// - 所有指令只在這裡判斷一次
-// - 模組不得互相搶事件
+// - 所有指令先在此判斷，不允許模組互相搶事件
+// - 狀態型功能（如高鐵）僅在被指派時啟動
 //
 // 【功能總覽】
 // ------------------------------------------------------
-// Tier 1｜即時指令（無狀態，高優先）
-// - 🧾 營運回報：大哥您好～（寫入 Google Sheet）
+// 即時指令（無狀態，高優先）
 // - 📊 股票查詢：股 2330 / 查股票 3189 / 台指期
 // - 🌤 天氣查詢：天氣 台中 / 查天氣 雲林
 // - 📋 待辦事項：待辦：XXX
 // - 📈 查業績：查業績 / 查業績 茶六博愛
 //
-// Tier 2｜狀態型流程（明確起手）
+// 狀態型流程（明確起手）
 // - 🚄 高鐵查詢：查高鐵 → 北上/南下 → 起訖站 → 時間
 //
 // 系統功能
 // - TradingView Webhook（鎖死）
-// - 每日 08:00 推播（/api/daily-summary）
+// - Google Sheet 業績寫入（成功不回訊息）
+// - ⏰ 每日 08:00 主動摘要推播（保留）
 //
 // 【重要規範】
 // ------------------------------------------------------
-// ⚠️ 新功能只加在 index.js（Router）
-// ⚠️ 狀態機模組（HSR）不可判斷其他指令
-// ⚠️ 非高鐵指令不得先丟給 HSR
+// ⚠️ 新增功能一律只動 index.js + 新模組
+// ⚠️ 不得在狀態機模組內判斷其他指令
+// ⚠️ 高鐵模組已完全解耦，不可再搶事件
 // ======================================================
 
 require("dotenv").config();
@@ -41,7 +41,7 @@ const { google } = require("googleapis");
 const app = express();
 
 // ======================================================
-// Services（既有，不動）
+// Services（模組只做事，不判斷流程）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
@@ -60,12 +60,6 @@ const config = {
   channelAccessToken: process.env.LINE_CHANNEL_ACCESS_TOKEN,
   channelSecret: process.env.LINE_CHANNEL_SECRET
 };
-
-if (!config.channelAccessToken || !config.channelSecret) {
-  console.error("❌ LINE Channel 設定缺失");
-  process.exit(1);
-}
-
 const client = new line.Client(config);
 
 // ======================================================
@@ -78,7 +72,6 @@ const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山"];
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
-
 const auth = new GoogleAuth({
   credentials,
   scopes: ["https://www.googleapis.com/auth/spreadsheets"]
@@ -114,7 +107,6 @@ const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
 // 天氣解析
 // ======================================================
 function parseWeather(text) {
-  if (!text) return null;
   const t = text.trim();
   if (t === "天氣" || t.startsWith("天氣 ")) return t.replace("天氣", "").trim();
   if (t.startsWith("查天氣 ")) return t.replace("查天氣", "").trim();
@@ -132,27 +124,22 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 業績解析（原邏輯保留）
+// 業績解析
 // ======================================================
 function parseSales(text) {
   const t = text
     .replace(/：/g, ":")
     .replace(/％/g, "%")
-    .replace(/。/g, " ")
-    .replace(/\(\./g, "(")
-    .replace(/（\./g, "(");
+    .replace(/。/g, " ");
 
   const d = t.match(/(\d{1,2})[\/\-](\d{1,2})/);
 
-  const extract = (keyword) => {
-    const reg = new RegExp(
-      `(?:${keyword}|${keyword}薪資)\\s*:\\s*([\\d,]+)[^\\d%]*([\\d.]+)%`
+  const extract = (key) => {
+    const m = t.match(
+      new RegExp(`${key}薪資\\s*:\\s*([\\d,]+)[^\\d%]*([\\d.]+)%`)
     );
-    const m = t.match(reg);
     if (!m) return ["", 0];
-    let pct = m[2];
-    if (pct.startsWith(".")) pct = pct.slice(1);
-    return [num(m[1]), Number(pct) || 0];
+    return [num(m[1]), Number(m[2]) || 0];
   };
 
   const fp = extract("外場");
@@ -162,11 +149,10 @@ function parseSales(text) {
     date: d
       ? `${new Date().getFullYear()}-${d[1].padStart(2,"0")}-${d[2].padStart(2,"0")}`
       : "",
-    revenue: num(t.match(/(?:業績|總業績)\s*:\s*([\d,]+)/)?.[1]),
-    unit: t.match(/客單價\s*:\s*([\d.]+)/)?.[1] || "",
-    qty: num(t.match(/(?:套餐份數|套餐數|總鍋數)\s*:\s*([\d,]+)/)?.[1]),
-    fp,
-    bp
+    revenue: num(t.match(/(?:業績|總業績)\\s*:\\s*([\\d,]+)/)?.[1]),
+    unit: t.match(/客單價\\s*:\\s*([\\d.]+)/)?.[1] || "",
+    qty: num(t.match(/(?:套餐份數|套餐數|總鍋數)\\s*:\\s*([\\d,]+)/)?.[1]),
+    fp, bp
   };
 }
 
@@ -175,11 +161,9 @@ function parseSales(text) {
 // ======================================================
 async function ensureSheet(shop) {
   if (shop === TEMPLATE_SHEET) return;
-
   const c = await auth.getClient();
   const sheets = google.sheets({ version:"v4", auth:c });
   const meta = await sheets.spreadsheets.get({ spreadsheetId:SPREADSHEET_ID });
-
   if (meta.data.sheets.some(s => s.properties.title === shop)) return;
 
   await sheets.spreadsheets.batchUpdate({
@@ -228,7 +212,6 @@ async function writeShop(shop, text, userId) {
 `【${shop}｜${p.date.slice(5)}】
 
 💰 業績：${p.revenue}
-
 📦 數量：${p.qty}
 🧾 客單價：${p.unit}
 
@@ -246,83 +229,39 @@ async function writeShop(shop, text, userId) {
 }
 
 // ======================================================
-// LINE Webhook（Router）
+// LINE Webhook（唯一入口）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const e of req.body.events || []) {
       if (e.message?.type !== "text") continue;
-
       const text = e.message.text.trim();
 
-      // ==================================================
-      // Tier 1｜營運回報（最高優先）
-      // ==================================================
-      if (text.startsWith("大哥您好")) {
-        const shop =
-          text.includes("湯棧") ? "湯棧中山" :
-          text.includes("三山") ? "三山博愛" :
-          "茶六博愛";
+      // ===== Tier 1：即時指令 =====
 
-        try {
-          await ensureSheet(shop);
-          await writeShop(shop, text, e.source.userId);
-          await client.replyMessage(e.replyToken, {
-            type:"text",
-            text:"✅ 已記錄營運回報"
-          });
-        } catch (err) {
-          console.error("❌ 營運回報失敗:", err);
-          await client.replyMessage(e.replyToken, {
-            type:"text",
-            text:"⚠️ 營運回報失敗，請通知阿毛"
-          });
-        }
-        continue;
-      }
-
-      // ==================================================
-      // Tier 1｜股票
-      // ==================================================
-      if (text.startsWith("股 ") || text.startsWith("查股票 ")) {
-        const id = text.replace("查股票", "").replace("股", "").trim();
+      if (text.startsWith("股 ") || text.startsWith("查股票 ") || text === "台指期") {
+        const id = text === "台指期" ? "台指期" : text.replace("查股票", "").replace("股", "").trim();
         const data = await getStockQuote(id);
-        await client.replyMessage(e.replyToken, {
-          type:"text",
-          text: buildStockText(data)
-        });
+        await client.replyMessage(e.replyToken, { type:"text", text: buildStockText(data) });
         continue;
       }
 
-      // ==================================================
-      // Tier 1｜天氣
-      // ==================================================
       const city = parseWeather(text);
       if (city !== null) {
         const r = await get36hrWeather(CITY_MAP[city] || "高雄市");
-        await client.replyMessage(e.replyToken, {
-          type:"text",
-          text: buildWeatherFriendText(r)
-        });
+        await client.replyMessage(e.replyToken, { type:"text", text: buildWeatherFriendText(r) });
         continue;
       }
 
-      // ==================================================
-      // Tier 1｜待辦
-      // ==================================================
       if (todoCmd.keywords?.some(k => text.startsWith(k))) {
         await todoCmd.handler(client, e);
         continue;
       }
 
-      // ==================================================
-      // Tier 1｜查業績
-      // ==================================================
       if (text.startsWith("查業績")) {
         const arg = text.split(" ")[1];
         const c = await auth.getClient();
         const sheets = google.sheets({ version:"v4", auth:c });
-
         let out = [];
         for (const s of SHOP_LIST) {
           if (arg && s !== arg) continue;
@@ -333,7 +272,6 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
           const list = r.data.values?.map(v=>v[0]).filter(Boolean) || [];
           if (list.length) out.push(list.at(-1));
         }
-
         await client.replyMessage(e.replyToken, {
           type:"text",
           text: out.length ? out.join("\n\n━━━━━━━━━━━\n\n") : "目前沒有資料"
@@ -341,27 +279,32 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         continue;
       }
 
-      // ==================================================
-      // Tier 2｜高鐵起手
-      // ==================================================
-      if (text === "查高鐵") {
-        const hsrResult = await handleHSR(e);
-        if (typeof hsrResult === "string") {
-          await client.replyMessage(e.replyToken, { type:"text", text: hsrResult });
+      // ===== 業績回報（只寫不回）=====
+      if (text.startsWith("大哥您好")) {
+        const shop =
+          text.includes("湯棧") ? "湯棧中山" :
+          text.includes("三山") ? "三山博愛" :
+          "茶六博愛";
+        try {
+          await ensureSheet(shop);
+          await writeShop(shop, text, e.source.userId);
+        } catch (err) {
+          console.error("❌ 業績回報失敗:", err);
+          await client.replyMessage(e.replyToken, {
+            type:"text",
+            text:"⚠️ 業績回報失敗，請通知阿毛"
+          });
         }
         continue;
       }
 
-      // ==================================================
-      // Tier 3｜高鐵流程中
-      // ==================================================
+      // ===== Tier 2 / 3：高鐵 =====
       const hsrResult = await handleHSR(e);
       if (typeof hsrResult === "string") {
         await client.replyMessage(e.replyToken, { type:"text", text: hsrResult });
         continue;
       }
     }
-
     res.send("OK");
   } catch (err) {
     console.error("❌ LINE Webhook Error:", err);
@@ -370,10 +313,32 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 });
 
 // ======================================================
-// 每日 08:00 推播（保留）
+// 每日 08:00 摘要推播（保留）
 // ======================================================
 app.post("/api/daily-summary", async (req, res) => {
-  res.send("ok");
+  try {
+    const c = await auth.getClient();
+    const sheets = google.sheets({ version:"v4", auth:c });
+    let out = [];
+    for (const s of SHOP_LIST) {
+      const r = await sheets.spreadsheets.values.get({
+        spreadsheetId:SPREADSHEET_ID,
+        range:`${s}!Q:Q`
+      });
+      const list = r.data.values?.map(v=>v[0]).filter(Boolean) || [];
+      if (list.length) out.push(list.at(-1));
+    }
+    if (process.env.BOSS_USER_ID && out.length) {
+      await client.pushMessage(process.env.BOSS_USER_ID, {
+        type:"text",
+        text: out.join("\n\n━━━━━━━━━━━\n\n")
+      });
+    }
+    res.send("ok");
+  } catch (err) {
+    console.error("❌ daily-summary error:", err);
+    res.status(500).send("error");
+  }
 });
 
 // ======================================================
