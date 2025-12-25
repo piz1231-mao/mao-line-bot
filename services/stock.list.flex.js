@@ -1,80 +1,100 @@
 // ======================================================
-// 📦 購物車 Flex Formatter（上色版）
+// 🛒 Stock List Flex Formatter（購物車定版）
 // ------------------------------------------------------
-// 只用於「查購物車 / 查清單」
-// 顯示：名稱 / 現價 / 漲跌 / 漲跌幅
+// 規格：
+// - 一檔兩行（名稱 / 價格＋漲跌）
+// - 價格＋漲跌同一行、同一顏色
+// - 上漲紅 / 下跌綠 / 平盤灰
+// - 適用：個股 / 指數 / 台指期
 // ======================================================
 
 function colorByChange(change) {
   if (change > 0) return "#D32F2F"; // 紅
-  if (change < 0) return "#388E3C"; // 綠
+  if (change < 0) return "#2E7D32"; // 綠
   return "#666666";                // 灰
 }
 
-function sign(v) {
-  if (v > 0) return "+";
-  return "";
+function arrow(change) {
+  if (change > 0) return "▲";
+  if (change < 0) return "▼";
+  return "－";
 }
 
-function formatItem(item) {
-  const change = item.price - item.yPrice;
-  const percent = item.yPrice
-    ? ((change / item.yPrice) * 100).toFixed(2)
-    : "0.00";
+function fmt(n, digits = 2) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  return Number(n).toFixed(digits);
+}
+
+function buildStockRow(data) {
+  const price = data.price;
+  const y = data.yPrice;
+
+  const change =
+    price !== null && y !== null
+      ? price - y
+      : 0;
+
+  const pct =
+    y ? (change / y) * 100 : 0;
 
   const color = colorByChange(change);
+
+  const title =
+    data.id && data.name
+      ? `${data.id}  ${data.name}`
+      : data.name || data.id;
 
   return {
     type: "box",
     layout: "vertical",
     spacing: "xs",
     contents: [
+      // ===== 名稱行 =====
       {
         type: "text",
-        text: `${item.id}  ${item.name}`,
+        text: title,
         size: "sm",
         weight: "bold",
-        wrap: true
+        color: "#222222"
       },
+
+      // ===== 價格＋漲跌（同一行、同一顏色）=====
       {
         type: "text",
-        text: `💰 ${item.price}`,
-        size: "md",
-        weight: "bold"
-      },
-      {
-        type: "text",
-        text: `${sign(change)}${change.toFixed(2)}  (${sign(percent)}${percent}%)`,
         size: "sm",
-        color
+        wrap: true,
+        color,
+        text:
+          `💰 ${fmt(price, 2)}   ` +
+          `${arrow(change)} ${fmt(change, 2)}  (${fmt(pct, 2)}%)`
       }
     ]
   };
 }
 
-function buildStockListFlex(items) {
+function buildStockListFlex(list) {
   return {
     type: "flex",
-    altText: "📋 我的購物車",
+    altText: "🛒 我的購物車",
     contents: {
       type: "bubble",
-      header: {
-        type: "box",
-        layout: "vertical",
-        contents: [
-          {
-            type: "text",
-            text: "📋 我的購物車",
-            weight: "bold",
-            size: "lg"
-          }
-        ]
-      },
+      size: "mega",
       body: {
         type: "box",
         layout: "vertical",
         spacing: "md",
-        contents: items.map(formatItem)
+        contents: [
+          {
+            type: "text",
+            text: "🛒 我的購物車",
+            weight: "bold",
+            size: "lg"
+          },
+          {
+            type: "separator"
+          },
+          ...list.map(buildStockRow)
+        ]
       }
     }
   };
