@@ -1,10 +1,10 @@
 // ======================================================
-// 🛒 Stock List Flex Formatter（購物車定版｜對齊穩定）
+// 🛒 Stock List Flex Formatter（穩定對齊最終版）
 // ======================================================
 
 function colorByChange(change) {
   if (change > 0) return "#D32F2F"; // 紅
-  if (change < 0) return "#008A3B"; // 深綠
+  if (change < 0) return "#008A3B"; // 綠
   return "#666666";                // 平盤
 }
 
@@ -20,7 +20,7 @@ function fmt(n, d = 2) {
 }
 
 // ======================================================
-// 🔹 單一商品列
+// 🔹 單一項目
 // ======================================================
 function buildRow(item) {
   const change = item.price - item.yPrice;
@@ -32,17 +32,17 @@ function buildRow(item) {
     layout: "vertical",
     spacing: "xs",
     contents: [
-      // ===== 代號＋名稱（回到上一版大小）=====
+      // 代號＋名稱
       {
         type: "text",
         text: `${item.id}  ${item.name}`,
-        size: "md",        // ⬅️ 比 lg 小一點
+        size: "md",
         weight: "bold",
         color: "#222222",
         wrap: true
       },
 
-      // ===== 價位＋漲跌（定點對齊）=====
+      // 價位列（固定欄位對齊）
       {
         type: "box",
         layout: "baseline",
@@ -55,53 +55,33 @@ function buildRow(item) {
             flex: 0
           },
 
-          // 💎 與價位間距（很小，只拉一點）
-          {
-            type: "filler",
-            flex: 0.3
-          },
-
-          // 價位（回上一版大小）
+          // 價位（固定寬）
           {
             type: "text",
             text: fmt(item.price, item.id === "TXF" ? 0 : 2),
-            size: "md",      // ⬅️ 價位縮回來
+            size: "md",
             weight: "bold",
             color,
             flex: 3
           },
 
-          // 🔒 固定對齊關鍵：撐到同一條基準線
-          {
-            type: "filler",
-            flex: 1
-          },
-
-          // 漲跌（放大一點點、左靠）
+          // 漲跌（固定定位點）
           {
             type: "text",
             text: `${sign(change)} ${fmt(Math.abs(change), 2)}`,
-            size: "md",      // ⬅️ 比價位醒目
+            size: "md",
             weight: "bold",
             color,
-            flex: 2,
-            align: "start"
+            flex: 2
           },
 
-          // 漲跌 與 漲跌幅「固定留空」
-          {
-            type: "filler",
-            flex: 0.2
-          },
-
-          // 漲跌幅
+          // 漲跌幅（與漲跌有間距）
           {
             type: "text",
             text: `(${fmt(Math.abs(pct), 2)}%)`,
             size: "sm",
             color,
-            flex: 2,
-            align: "start"
+            flex: 2
           }
         ]
       }
@@ -124,7 +104,6 @@ function buildStockListFlex(list) {
         layout: "vertical",
         spacing: "md",
         contents: [
-          // ===== 標題（不變）=====
           {
             type: "text",
             text: "🛒 我的購物車",
