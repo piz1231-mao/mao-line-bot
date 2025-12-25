@@ -303,7 +303,7 @@ if (
     if (!symbols.length) {
       await client.replyMessage(e.replyToken, {
         type: "text",
-        text: "📋 我的清單\n━━━━━━━━━━━\n\n（清單是空的）"
+        text: "📋 我的購物車\n━━━━━━━━━━━\n\n（清單是空的）"
       });
       continue;
     }
