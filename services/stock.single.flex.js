@@ -1,21 +1,12 @@
 // ======================================================
 // 📊 Stock / Futures Single Flex Formatter（定版 v1.0）
-// ------------------------------------------------------
-// 用途：
-// - 查個股（上市 / 上櫃）
-// - 台指期 TXF
-//
-// 規格：
-// - 價位＋漲跌＋漲跌幅 同一行
-// - 使用 filler 撐距（避免 400）
-// - 台指期價位不小數
 // ======================================================
 
 // ===== 色碼（券商風）=====
 function colorByChange(change) {
-  if (change > 0) return "#D32F2F"; // 紅
-  if (change < 0) return "#0B8F3A"; // 深綠
-  return "#666666";                // 平盤
+  if (change > 0) return "#D32F2F";
+  if (change < 0) return "#0B8F3A";
+  return "#666666";
 }
 
 function sign(change) {
@@ -59,7 +50,6 @@ function buildPriceRow({ price, yPrice, isTXF }) {
         flex: 2
       },
 
-      // ⚠️ 關鍵：只能用 filler，不能用空 box
       { type: "filler" },
 
       {
@@ -74,6 +64,7 @@ function buildPriceRow({ price, yPrice, isTXF }) {
         type: "text",
         text: `(${fmt(Math.abs(pct), 2)}%)`,
         size: "md",
+        weight: "bold", // ✅ 唯一新增
         color,
         flex: 2
       }
