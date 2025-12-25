@@ -1,6 +1,6 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// Router 重構穩定版 v1.4.5（摘要修正定版）
+// Router 重構穩定版 v1.4.0（正式定版）
 //
 // 【架構定位】
 // ------------------------------------------------------
@@ -11,7 +11,7 @@
 // 【功能總覽】
 // ------------------------------------------------------
 // 即時指令（無狀態，高優先）
-// - 📊 股票查詢：股 2330 / 查股票 3189
+// - 📊 股票查詢：股 2330 / 查股票 3189 / 台指期
 // - 🌤 天氣查詢：天氣 台中 / 查天氣 雲林
 // - 📋 待辦事項：待辦：XXX
 // - 📈 查業績：查業績 / 查業績 茶六博愛
@@ -40,7 +40,7 @@ const { google } = require("googleapis");
 const app = express();
 
 // ======================================================
-// Services
+// Services（全部保留）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
@@ -99,15 +99,17 @@ app.all("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
 const nowTW = () =>
   new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
 
-const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
+const num = v => (v ? Number(String(v).replace(/,/g, "")) : 0);
 
 // ======================================================
 // 天氣解析
 // ======================================================
 function parseWeather(text) {
   const t = text.trim();
-  if (t === "天氣" || t.startsWith("天氣 ")) return t.replace("天氣", "").trim();
-  if (t.startsWith("查天氣 ")) return t.replace("查天氣", "").trim();
+  if (t === "天氣" || t.startsWith("天氣 "))
+    return t.replace("天氣", "").trim();
+  if (t.startsWith("查天氣 "))
+    return t.replace("查天氣", "").trim();
   return null;
 }
 
@@ -122,26 +124,13 @@ const CITY_MAP = {
 };
 
 // ======================================================
-// 業績解析（不變）
+// 解析業績（回到你「原本正確的版本 + 補 qtyLabel」）
 // ======================================================
 function parseSales(text) {
-  const t = text
-    .replace(/：/g, ":")
-    .replace(/％/g, "%")
-    .replace(/。/g, " ");
+  const t = text.replace(/：/g, ":").replace(/。/g, ".").replace(/％/g, "%");
+  const d = t.match(/(\d{1,2})\/(\d{1,2})/);
 
-  const d = t.match(/(\d{1,2})[\/\-](\d{1,2})/);
-
-  const extract = (key) => {
-    const m = t.match(
-      new RegExp(`${key}薪資\\s*:\\s*([\\d,]+)[^\\d%]*([\\d.]+)%`)
-    );
-    if (!m) return ["", 0];
-    return [num(m[1]), Number(m[2]) || 0];
-  };
-
-  const fp = extract("外場");
-  const bp = extract("內場");
+  const qtyMatch = t.match(/(套餐份數|總鍋數)\s*:\s*([\d,]+)/);
 
   return {
     date: d
@@ -149,10 +138,10 @@ function parseSales(text) {
       : "",
     revenue: num(t.match(/(?:業績|總業績)\s*:\s*([\d,]+)/)?.[1]),
     unit: t.match(/客單價\s*:\s*([\d.]+)/)?.[1] || "",
-    qty: num(
-      t.match(/(?:套餐份數|套餐數|總鍋數)\s*:\s*([\d,]+)/)?.[1]
-    ),
-    fp, bp
+    qtyLabel: qtyMatch?.[1] || "",
+    qty: num(qtyMatch?.[2]),
+    fp: t.match(/外場薪資\s*:\s*([\d,]+).*?([\d.]+)%/)?.slice(1) || [],
+    bp: t.match(/內場薪資\s*:\s*([\d,]+).*?([\d.]+)%/)?.slice(1) || []
   };
 }
 
@@ -161,9 +150,11 @@ function parseSales(text) {
 // ======================================================
 async function ensureSheet(shop) {
   if (shop === TEMPLATE_SHEET) return;
+
   const c = await auth.getClient();
   const sheets = google.sheets({ version:"v4", auth:c });
   const meta = await sheets.spreadsheets.get({ spreadsheetId:SPREADSHEET_ID });
+
   if (meta.data.sheets.some(s => s.properties.title === shop)) return;
 
   await sheets.spreadsheets.batchUpdate({
@@ -180,7 +171,7 @@ async function ensureSheet(shop) {
     spreadsheetId:SPREADSHEET_ID,
     range:`${shop}!A1:Q1`,
     valueInputOption:"USER_ENTERED",
-    requestBody:{ values:header.data.values }
+    requestBody:{ values: header.data.values }
   });
 }
 
@@ -198,29 +189,28 @@ async function writeShop(shop, text, userId) {
         nowTW(), userId, userId, text,
         shop, p.date, p.revenue, "業績",
         p.qty, p.unit,
-        p.fp[0], p.fp[1],
-        p.bp[0], p.bp[1],
-        p.fp[0] + p.bp[0],
-        Number((p.fp[1] + p.bp[1]).toFixed(2))
+        p.fp[0] || "", p.fp[1] || "",
+        p.bp[0] || "", p.bp[1] || "",
+        num(p.fp[0]) + num(p.bp[0]),
+        Number(p.fp[1] || 0) + Number(p.bp[1] || 0)
       ]]
     }
   });
 
   const row = res.data.updates.updatedRange.match(/\d+/)[0];
 
-  // ✅ 摘要：完全恢復你原本的版本
   const summary =
 `【${shop}｜${p.date.slice(5)}】
 
 💰 業績：${p.revenue}
 
-📦 總鍋數：${p.qty}
+📦 ${p.qtyLabel}：${p.qty}
 🧾 客單價：${p.unit}
 
 👥 人事
 外場：${p.fp[0]}（${p.fp[1]}%）
 內場：${p.bp[0]}（${p.bp[1]}%）
-總計：${p.fp[0] + p.bp[0]}（${Number((p.fp[1] + p.bp[1]).toFixed(2))}%）`;
+總計：${num(p.fp[0]) + num(p.bp[0])}（${(Number(p.fp[1]||0) + Number(p.bp[1]||0)).toFixed(2)}%）`;
 
   await sheets.spreadsheets.values.update({
     spreadsheetId:SPREADSHEET_ID,
@@ -241,13 +231,17 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 
       // ===== Tier 1：即時指令 =====
 
-      if (text.startsWith("股 ") || text.startsWith("查股票 ")) {
-        const id = text.replace("查股票", "").replace("股", "").trim();
+      // 股票 / 台指期
+      if (text.startsWith("股 ") || text.startsWith("查股票 ") || text === "台指期") {
+        const id = text === "台指期"
+          ? "台指期"
+          : text.replace("查股票", "").replace("股", "").trim();
         const data = await getStockQuote(id);
         await client.replyMessage(e.replyToken, { type:"text", text: buildStockText(data) });
         continue;
       }
 
+      // 天氣
       const city = parseWeather(text);
       if (city !== null) {
         const r = await get36hrWeather(CITY_MAP[city] || "高雄市");
@@ -255,15 +249,18 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         continue;
       }
 
+      // 待辦
       if (todoCmd.keywords?.some(k => text.startsWith(k))) {
         await todoCmd.handler(client, e);
         continue;
       }
 
+      // 查業績
       if (text.startsWith("查業績")) {
         const arg = text.split(" ")[1];
         const c = await auth.getClient();
         const sheets = google.sheets({ version:"v4", auth:c });
+
         let out = [];
         for (const s of SHOP_LIST) {
           if (arg && s !== arg) continue;
@@ -271,9 +268,10 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
             spreadsheetId:SPREADSHEET_ID,
             range:`${s}!Q:Q`
           });
-          const list = r.data.values?.map(v=>v[0]).filter(Boolean) || [];
+          const list = r.data.values?.map(v => v[0]).filter(Boolean) || [];
           if (list.length) out.push(list.at(-1));
         }
+
         await client.replyMessage(e.replyToken, {
           type:"text",
           text: out.length ? out.join("\n\n━━━━━━━━━━━\n\n") : "目前沒有資料"
@@ -281,21 +279,21 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         continue;
       }
 
-      // ===== 業績回報（成功不回覆，錯誤才回）=====
+      // ===== 業績回報（成功不回覆）=====
       if (text.startsWith("大哥您好")) {
-        const shop = text.includes("湯棧")
-          ? "湯棧中山"
-          : text.includes("三山")
-          ? "三山博愛"
-          : "茶六博愛";
+        const shop =
+          text.includes("湯棧") ? "湯棧中山" :
+          text.includes("三山") ? "三山博愛" :
+          "茶六博愛";
+
         try {
           await ensureSheet(shop);
           await writeShop(shop, text, e.source.userId);
         } catch (err) {
           console.error("❌ 業績回報失敗:", err);
           await client.replyMessage(e.replyToken, {
-            type: "text",
-            text: "⚠️ 業績回報失敗，請檢查 Log"
+            type:"text",
+            text:"⚠️ 業績回報失敗，請通知系統管理員"
           });
         }
         continue;
@@ -308,6 +306,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
         continue;
       }
     }
+
     res.send("OK");
   } catch (err) {
     console.error("❌ LINE Webhook Error:", err);
@@ -315,6 +314,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
   }
 });
 
+// ======================================================
 app.post("/api/daily-summary", async (req, res) => {
   res.send("ok");
 });
