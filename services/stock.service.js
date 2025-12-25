@@ -53,12 +53,14 @@ async function getIndexQuote(yahooSymbol, displayName) {
 }
 
 // ======================================================
-// 上市 / 上櫃股票（TWSE API）
+// 上市 / 上櫃股票（TWSE 官方 API）
 // ======================================================
 async function getTWSELikeQuote(stockId, market) {
   try {
     const ts = Date.now();
-    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=${market}_${stockId}.tw&json=1&delay=0&_=${ts}`;
+    const url =
+      `https://mis.twse.com.tw/stock/api/getStockInfo.jsp` +
+      `?ex_ch=${market}_${stockId}.tw&json=1&delay=0&_=${ts}`;
 
     const { data } = await axios.get(url);
     const info = data?.msgArray?.[0];
@@ -83,25 +85,26 @@ async function getTWSELikeQuote(stockId, market) {
 }
 
 // ======================================================
-// 🔥 單一入口（index.js 只會呼叫這個）
+// 🔥 單一入口（index.js 只呼叫這個）
 // ======================================================
 async function getStockQuote(input) {
   const key = input.trim();
 
-  // ===== 指數 / 期貨關鍵字翻譯 =====
-  if (["台指期", "台指", "TXF"].includes(key)) {
+  // ===== 指數 / 期貨 =====
+  if (["台指期","台指","TXF"].includes(key)) {
+    // ⚠️ 注意：台指期不是 ^TXF
     return await getIndexQuote("WTX%26", "台指期");
   }
 
-  if (["櫃買", "OTC", "櫃買指數"].includes(key)) {
+  if (["櫃買","OTC","櫃買指數"].includes(key)) {
     return await getIndexQuote("^TWO", "櫃買指數");
   }
 
-  if (["大盤", "加權"].includes(key)) {
+  if (["大盤","加權"].includes(key)) {
     return await getIndexQuote("^TWII", "加權指數");
   }
 
-  // ===== 個股（四碼，不分上市上櫃）=====
+  // ===== 個股（自動判斷上市 / 上櫃）=====
   if (isStockId(key)) {
     let data = await getTWSELikeQuote(key, "tse");
     if (data) return data;
