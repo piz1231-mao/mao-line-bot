@@ -1,26 +1,30 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// 穩定整合版 v1.3.4（高鐵 / 股票 / 天氣 / 待辦 / 查業績 全通）
+// Router 重構定版（功能不刪、不破壞）
 // ======================================================
 
 require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
 const fs = require("fs");
+const axios = require("axios");
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
 
 const app = express();
 
 // ======================================================
-// Services / Handlers（全部既有，不刪）
+// 原有 services（完全不動）
 // ======================================================
 const { get36hrWeather } = require("./services/weather.service");
 const { buildWeatherFriendText } = require("./services/weather.text");
-const { getStockQuote } = require("./services/stock.service");
-const { buildStockText } = require("./services/stock.text");
+const tvAlert = require("./services/tvAlert");
 const todoCmd = require("./commands/chat/todo");
 const handleHSR = require("./handlers/hsr");
+
+// 股票
+const { getStockQuote } = require("./services/stock.service");
+const { buildStockText } = require("./services/stock.text");
 
 // ======================================================
 // LINE 設定
@@ -38,23 +42,61 @@ if (!config.channelAccessToken || !config.channelSecret) {
 const client = new line.Client(config);
 
 // ======================================================
-// Google Sheet 設定
+// Google Sheet 設定（原樣）
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
+const TEMPLATE_SHEET = "茶六博愛";
 const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山"];
 
 const credentials = JSON.parse(
   fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
 );
-
 const auth = new GoogleAuth({
   credentials,
   scopes: ["https://www.googleapis.com/auth/spreadsheets"]
 });
 
 // ======================================================
+// TradingView Webhook（鎖死）
+// ======================================================
+app.all("/tv-alert", express.text({ type: "*/*" }), async (req, res) => {
+  try {
+    let body = {};
+    if (typeof req.body === "string") {
+      try { body = JSON.parse(req.body); } catch {}
+    }
+    const msg = body.message || body.alert || req.body;
+    await tvAlert(client, msg, body);
+    res.send("OK");
+  } catch (err) {
+    console.error("❌ TV Webhook Error:", err);
+    res.send("OK");
+  }
+});
+
+// ======================================================
 // 工具
 // ======================================================
+const nowTW = () =>
+  new Date().toLocaleString("zh-TW", { timeZone: "Asia/Taipei" });
+
+const num = v => (v ? Number(String(v).replace(/,/g, "")) : "");
+
+// ======================================================
+// 天氣解析（不動）
+// ======================================================
+function parseWeather(text) {
+  if (!text) return null;
+  const t = text.trim();
+  if (t === "天氣" || t.startsWith("天氣 ")) {
+    return t.replace("天氣", "").trim();
+  }
+  if (t.startsWith("查天氣 ")) {
+    return t.replace("查天氣", "").trim();
+  }
+  return null;
+}
+
 const CITY_MAP = {
   台北:"臺北市",臺北:"臺北市",新北:"新北市",桃園:"桃園市",
   台中:"臺中市",臺中:"臺中市",台南:"臺南市",臺南:"臺南市",
@@ -65,33 +107,194 @@ const CITY_MAP = {
   金門:"金門縣",連江:"連江縣"
 };
 
-function parseWeather(text) {
-  if (!text) return null;
-  const t = text.trim();
-  if (t === "天氣" || t.startsWith("天氣 ")) {
-    return t.replace("天氣", "").trim();
-  }
-  return null;
+// ======================================================
+// 解析業績（你目前定版那份）
+// ======================================================
+function parseSales(text) {
+  const t = text
+    .replace(/：/g, ":")
+    .replace(/％/g, "%")
+    .replace(/。/g, " ")
+    .replace(/\(\./g, "(")
+    .replace(/（\./g, "(");
+
+  const d = t.match(/(\d{1,2})[\/\-](\d{1,2})/);
+
+  const extract = (keyword) => {
+    const reg = new RegExp(
+      `(?:${keyword}|${keyword}薪資)\\s*:\\s*([\\d,]+)[^\\d%]*([\\d.]+)%`
+    );
+    const m = t.match(reg);
+    if (!m) return ["", 0];
+    let pct = m[2];
+    if (pct.startsWith(".")) pct = pct.slice(1);
+    return [num(m[1]), Number(pct) || 0];
+  };
+
+  const fp = extract("外場");
+  const bp = extract("內場");
+
+  return {
+    date: d
+      ? `${new Date().getFullYear()}-${d[1].padStart(2,"0")}-${d[2].padStart(2,"0")}`
+      : "",
+    revenue: num(t.match(/(?:業績|總業績)\s*:\s*([\d,]+)/)?.[1]),
+    unit: t.match(/客單價\s*:\s*([\d.]+)/)?.[1] || "",
+    qty: num(t.match(/(?:套餐份數|套餐數|總鍋數)\s*:\s*([\d,]+)/)?.[1]),
+    fp,
+    bp
+  };
 }
 
 // ======================================================
-// LINE Webhook
+// Sheet 操作（不動）
+// ======================================================
+async function ensureSheet(shop) {
+  if (shop === TEMPLATE_SHEET) return;
+
+  const c = await auth.getClient();
+  const sheets = google.sheets({ version:"v4", auth:c });
+  const meta = await sheets.spreadsheets.get({ spreadsheetId:SPREADSHEET_ID });
+
+  if (meta.data.sheets.some(s => s.properties.title === shop)) return;
+
+  await sheets.spreadsheets.batchUpdate({
+    spreadsheetId:SPREADSHEET_ID,
+    requestBody:{ requests:[{ addSheet:{ properties:{ title:shop } } }] }
+  });
+
+  const header = await sheets.spreadsheets.values.get({
+    spreadsheetId:SPREADSHEET_ID,
+    range:`${TEMPLATE_SHEET}!A1:Q1`
+  });
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId:SPREADSHEET_ID,
+    range:`${shop}!A1:Q1`,
+    valueInputOption:"USER_ENTERED",
+    requestBody:{ values:header.data.values }
+  });
+}
+
+async function writeShop(shop, text, userId) {
+  const c = await auth.getClient();
+  const sheets = google.sheets({ version:"v4", auth:c });
+  const p = parseSales(text);
+
+  const res = await sheets.spreadsheets.values.append({
+    spreadsheetId:SPREADSHEET_ID,
+    range:`${shop}!A1`,
+    valueInputOption:"USER_ENTERED",
+    requestBody:{
+      values:[[
+        nowTW(), userId, userId, text,
+        shop, p.date, p.revenue, "業績",
+        p.qty, p.unit,
+        p.fp[0], p.fp[1],
+        p.bp[0], p.bp[1],
+        p.fp[0] + p.bp[0],
+        Number((p.fp[1] + p.bp[1]).toFixed(2))
+      ]]
+    }
+  });
+
+  const row = res.data.updates.updatedRange.match(/\d+/)[0];
+
+  const summary =
+`【${shop}｜${p.date.slice(5)}】
+
+💰 業績：${p.revenue}
+
+📦 數量：${p.qty}
+🧾 客單價：${p.unit}
+
+👥 人事
+外場：${p.fp[0]}（${p.fp[1]}%）
+內場：${p.bp[0]}（${p.bp[1]}%）
+總計：${p.fp[0] + p.bp[0]}（${Number((p.fp[1] + p.bp[1]).toFixed(2))}%）`;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId:SPREADSHEET_ID,
+    range:`${shop}!Q${row}`,
+    valueInputOption:"USER_ENTERED",
+    requestBody:{ values:[[summary]] }
+  });
+}
+
+// ======================================================
+// LINE Webhook（唯一 Router）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const e of req.body.events || []) {
-      if (e.type !== "message" || e.message.type !== "text") continue;
 
+      if (e.message?.type !== "text") continue;
       const text = e.message.text.trim();
 
       // ==================================================
-      // 🚄 高鐵（狀態機）
+      // 1️⃣ 即時指令（最高優先，不進狀態）
       // ==================================================
-      const hsrResult = await handleHSR(e);
-      if (hsrResult) {
+
+      // 股票
+      if (text.startsWith("股 ") || text.startsWith("查股票 ")) {
+        const id = text.replace("查股票", "").replace("股", "").trim();
+        const data = await getStockQuote(id);
+        await client.replyMessage(e.replyToken, {
+          type:"text",
+          text: buildStockText(data)
+        });
+        continue;
+      }
+
+      // 天氣
+      const city = parseWeather(text);
+      if (city !== null) {
+        const r = await get36hrWeather(CITY_MAP[city] || "高雄市");
+        await client.replyMessage(e.replyToken, {
+          type:"text",
+          text: buildWeatherFriendText(r)
+        });
+        continue;
+      }
+
+      // 待辦
+      if (todoCmd.keywords?.some(k => text.startsWith(k))) {
+        await todoCmd.handler(client, e);
+        continue;
+      }
+
+      // 查業績
+      if (text.startsWith("查業績")) {
+        const arg = text.split(" ")[1];
+        const c = await auth.getClient();
+        const sheets = google.sheets({ version:"v4", auth:c });
+
+        let out = [];
+        for (const s of SHOP_LIST) {
+          if (arg && s !== arg) continue;
+          const r = await sheets.spreadsheets.values.get({
+            spreadsheetId:SPREADSHEET_ID,
+            range:`${s}!Q:Q`
+          });
+          const list = r.data.values?.map(v=>v[0]).filter(Boolean) || [];
+          if (list.length) out.push(list.at(-1));
+        }
+
+        await client.replyMessage(e.replyToken, {
+          type:"text",
+          text: out.length ? out.join("\n\n━━━━━━━━━━━\n\n") : "目前沒有資料"
+        });
+        continue;
+      }
+
+      // ==================================================
+      // 2️⃣ 流程起手（只有這裡才啟動高鐵）
+      // ==================================================
+      if (text === "查高鐵") {
+        const hsrResult = await handleHSR(e);
         if (typeof hsrResult === "string") {
           await client.replyMessage(e.replyToken, {
-            type: "text",
+            type:"text",
             text: hsrResult
           });
         }
@@ -99,72 +302,20 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
       }
 
       // ==================================================
-      // 📊 股票查詢
+      // 3️⃣ 已在流程中（交給高鐵狀態機）
       // ==================================================
-      if (text.startsWith("股 ")) {
-        const stockId = text.replace("股", "").trim();
-        const data = await getStockQuote(stockId);
+      const hsrResult = await handleHSR(e);
+      if (typeof hsrResult === "string") {
         await client.replyMessage(e.replyToken, {
-          type: "text",
-          text: buildStockText(data)
+          type:"text",
+          text: hsrResult
         });
         continue;
       }
 
       // ==================================================
-      // 📈 查業績（✅ 補回）
+      // 4️⃣ 其他：忽略
       // ==================================================
-      if (text.startsWith("查業績")) {
-        const arg = text.split(" ")[1];
-        const c = await auth.getClient();
-        const sheets = google.sheets({ version: "v4", auth: c });
-
-        let out = [];
-
-        for (const shop of SHOP_LIST) {
-          if (arg && shop !== arg) continue;
-
-          const r = await sheets.spreadsheets.values.get({
-            spreadsheetId: SPREADSHEET_ID,
-            range: `${shop}!Q:Q`
-          });
-
-          const list = r.data.values
-            ?.map(v => v[0])
-            .filter(Boolean) || [];
-
-          if (list.length) out.push(list.at(-1));
-        }
-
-        await client.replyMessage(e.replyToken, {
-          type: "text",
-          text: out.length
-            ? out.join("\n\n━━━━━━━━━━━\n\n")
-            : "目前沒有資料"
-        });
-        continue;
-      }
-
-      // ==================================================
-      // 📋 待辦
-      // ==================================================
-      if (todoCmd.keywords?.some(k => text.startsWith(k))) {
-        await todoCmd.handler(client, e);
-        continue;
-      }
-
-      // ==================================================
-      // 🌤 天氣
-      // ==================================================
-      const city = parseWeather(text);
-      if (city !== null) {
-        const r = await get36hrWeather(CITY_MAP[city] || "高雄市");
-        await client.replyMessage(e.replyToken, {
-          type: "text",
-          text: buildWeatherFriendText(r)
-        });
-        continue;
-      }
     }
 
     res.send("OK");
