@@ -1,13 +1,11 @@
 // ======================================================
 // 📊 Stock / TXF Single Flex（定版最終版）
-// - 股票 / 指數 / 台指期 共用
-// - emoji 與欄位完全依照「之前定版畫面」
 // ======================================================
 
 function colorByChange(change) {
-  if (change > 0) return "#D32F2F"; // 紅
-  if (change < 0) return "#0B8F3A"; // 綠
-  return "#666666";                // 平盤
+  if (change > 0) return "#D32F2F";
+  if (change < 0) return "#0B8F3A";
+  return "#666666";
 }
 
 function sign(change) {
@@ -21,11 +19,18 @@ function fmt(n, d = 2) {
   return Number(n).toFixed(d);
 }
 
+// 🔑 指數 / 台指期 → 整數顯示
+function isIntegerPrice(data) {
+  return data.id === "TXF" || data.id === "TWII" || data.id === "OTC";
+}
+
 // ======================================================
-// 💎 價位主行（股票 / 期貨共用）
+// 💎 價位主行
 // ======================================================
-function buildPriceRow({ price, change, percent, isTXF }) {
+function buildPriceRow(data) {
+  const { price, change, percent } = data;
   const color = colorByChange(change);
+  const intMode = isIntegerPrice(data);
 
   return {
     type: "box",
@@ -34,7 +39,7 @@ function buildPriceRow({ price, change, percent, isTXF }) {
       { type: "text", text: "💎", size: "sm" },
       {
         type: "text",
-        text: fmt(price, isTXF ? 0 : 2),
+        text: fmt(price, intMode ? 0 : 2),
         size: "lg",
         weight: "bold",
         color,
@@ -43,7 +48,7 @@ function buildPriceRow({ price, change, percent, isTXF }) {
       { type: "filler" },
       {
         type: "text",
-        text: `${sign(change)} ${fmt(Math.abs(change), isTXF ? 0 : 2)}`,
+        text: `${sign(change)} ${fmt(Math.abs(change), intMode ? 0 : 2)}`,
         size: "md",
         weight: "bold",
         color,
@@ -62,7 +67,7 @@ function buildPriceRow({ price, change, percent, isTXF }) {
 }
 
 // ======================================================
-// 🔹 Key / Value Row（依原本定版 emoji）
+// 🔹 Key / Value
 // ======================================================
 function buildKV(label, value) {
   return {
@@ -76,7 +81,7 @@ function buildKV(label, value) {
 }
 
 // ======================================================
-// 📈 股票 / 指數（完全照 3105 穩懋定版）
+// 📈 股票 / 指數
 // ======================================================
 function buildStockFlex(data) {
   return {
@@ -98,11 +103,10 @@ function buildStockFlex(data) {
           },
           { type: "separator" },
 
-          buildPriceRow({ ...data, isTXF: false }),
+          buildPriceRow(data),
 
           { type: "separator" },
 
-          // ⬇️ 這一段 emoji、順序「完全不改」
           buildKV("🔥 開盤", fmt(data.open)),
           buildKV("🏔️ 最高", fmt(data.high)),
           buildKV("🌊 最低", fmt(data.low)),
@@ -116,7 +120,7 @@ function buildStockFlex(data) {
 }
 
 // ======================================================
-// 📊 台指期 TXF（期貨專屬語意）
+// 📊 台指期 TXF
 // ======================================================
 function buildTXFFlex(data) {
   return {
@@ -138,11 +142,10 @@ function buildTXFFlex(data) {
           },
           { type: "separator" },
 
-          buildPriceRow({ ...data, isTXF: true }),
+          buildPriceRow(data),
 
           { type: "separator" },
 
-          // ⬇️ 期貨用自己的 emoji（不混股票）
           buildKV("📌 開盤", fmt(data.open, 0)),
           buildKV("🔺 最高", fmt(data.high, 0)),
           buildKV("🔻 最低", fmt(data.low, 0)),
@@ -155,15 +158,13 @@ function buildTXFFlex(data) {
 }
 
 // ======================================================
-// 🔥 唯一出口（index.js 用）
+// 🔥 唯一出口
 // ======================================================
 function buildStockSingleFlex(data) {
   if (!data) return { type: "text", text: "⚠️ 查無資料" };
-
   if (data.id === "TXF" || data.name?.includes("台指期")) {
     return buildTXFFlex(data);
   }
-
   return buildStockFlex(data);
 }
 
