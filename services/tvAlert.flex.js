@@ -1,9 +1,9 @@
 // ======================================================
 // 📢 TradingView Alert Flex
-// 穩定版（修正 400 問題）
+// 穩定微調版（語意正確＋排版鬆）
 // ======================================================
 
-function buildTVFlex({ timeframe, direction, talk, price, stopLoss, time }) {
+function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
   const isBuy  = direction === "買進";
   const isSell = direction === "賣出";
 
@@ -17,8 +17,6 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss, time }) {
 
   const entryColor = dirColor;
   const stopColor  = "#D97706";
-
-  const timeText = time || "即時";
 
   return {
     type: "flex",
@@ -42,7 +40,7 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss, time }) {
 
           { type: "separator" },
 
-          // ===== 週期 + 方向（已拉近）=====
+          // ===== 週期 + 方向 =====
           {
             type: "box",
             layout: "baseline",
@@ -66,18 +64,18 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss, time }) {
             ]
           },
 
-          // ===== 毛怪嘴砲（往下拉，用 margin）=====
+          // ===== 毛怪嘴炮（純文字，不擠）=====
           {
             type: "box",
             layout: "vertical",
             backgroundColor: "#F3F4F6",
             cornerRadius: "lg",
             paddingAll: "md",
-            margin: "md",          // ✅ 用這個拉距離
+            margin: "md",
             contents: [
               {
                 type: "text",
-                text: `💬 ${talk}`,
+                text: talk,          // ⬅️ 沒有 emoji
                 wrap: true,
                 size: "md",
                 color: "#374151"
@@ -91,10 +89,10 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss, time }) {
           buildActionRow("💎 進場價", price, entryColor),
           buildActionRow("🛡 停損", stopLoss, stopColor),
 
-          // ===== 時間 =====
+          // ===== 狀態時間（語意正確）=====
           {
             type: "text",
-            text: `⏱ ${timeText}`,
+            text: "⏱ 即時",
             size: "xs",
             color: "#9CA3AF"
           }
