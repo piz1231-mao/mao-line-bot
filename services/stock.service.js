@@ -1,16 +1,14 @@
 // ======================================================
-// 📊 Stock Service v2.3.0（盤中最終定版）
+// 📊 Stock Service v2.5.0（盤中即時定版）
 // ------------------------------------------------------
-// 核心原則：
-// 1️⃣ API 有資料就回（不因盤中 z 為 '-' 判死刑）
-// 2️⃣ 成交價優先順序：z → p → y
-// 3️⃣ 漲跌/幅度只在「可算」時才算
-// 4️⃣ 絕不製造假 0%、假 -100%
+// 價位優先序：
+// 1️⃣ p（盤中即時撮合價）
+// 2️⃣ z（最後成交價）
+// 3️⃣ y（昨收，只顯示不計算）
 // ======================================================
 
 const axios = require("axios");
 
-// ------------------ 工具 ------------------
 const num = (v) => {
   if (v === undefined || v === null || v === "-" || v === "null") return null;
   const n = Number(String(v).replace(/,/g, ""));
@@ -20,32 +18,32 @@ const num = (v) => {
 const isStockId = (v) => /^\d{4}$/.test(v);
 
 // ======================================================
-// 📈 TWSE / OTC（個股 / 指數）
+// 📈 TWSE / OTC（股票 / 指數）
 // ======================================================
 async function getTWSEQuote(url, id, fixedName) {
   try {
     const { data } = await axios.get(url);
     const info = data?.msgArray?.[0];
-
-    // ❌ 完全沒資料才算查無
     if (!info || !info.n) return null;
 
-    const z = num(info.z); // 即時成交
-    const p = num(info.p); // 試撮合 / 最近價
+    const p = num(info.p); // 🔥 盤中即時撮合價
+    const z = num(info.z); // 最後成交
     const y = num(info.y); // 昨收
 
-    // ✅ 成交價選擇邏輯（非常關鍵）
+    // 👉 現價顯示邏輯
     const price =
-      z !== null ? z :
       p !== null ? p :
-      y !== null ? y :
-      null;
+      z !== null ? z :
+      y;
 
     let change = null;
     let percent = null;
 
-    if (price !== null && y !== null) {
-      change = price - y;
+    // 👉 漲跌只用「真的盤中價」
+    const base = p !== null ? p : z;
+
+    if (base !== null && y !== null) {
+      change = base - y;
       percent = (change / y) * 100;
     }
 
@@ -68,7 +66,7 @@ async function getTWSEQuote(url, id, fixedName) {
 }
 
 // ======================================================
-// 📊 台指期 TXF（鉅亨）
+// 📊 台指期 TXF（維持原邏輯，鉅亨是即時）
 // ======================================================
 async function getTXFQuote() {
   try {
@@ -77,17 +75,12 @@ async function getTXFQuote() {
     const info = data?.data?.[0];
     if (!info) return null;
 
-    const price = num(info["6"]);
-    const change = num(info["11"]);
-    const percent = num(info["56"]);
-
     return {
       id: "TXF",
       name: "台指期",
-      price,
-      yPrice: price !== null && change !== null ? price - change : null,
-      change,
-      percent,
+      price: num(info["6"]),
+      change: num(info["11"]),
+      percent: num(info["56"]),
       open: num(info["19"]),
       high: num(info["12"]),
       low: num(info["13"]),
@@ -110,31 +103,25 @@ async function getStockQuote(input) {
   const key = String(input).trim();
   const ts = Date.now();
 
-  // 台指期
   if (["TXF", "台指期", "台指"].includes(key)) {
     return await getTXFQuote();
   }
 
-  // 加權指數
   if (["加權", "加權指數", "大盤", "TWII"].includes(key)) {
     const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw&json=1&delay=0&_=${ts}`;
     return await getTWSEQuote(url, "TWII", "加權指數");
   }
 
-  // 櫃買指數
   if (["櫃買", "櫃買指數", "OTC"].includes(key)) {
     const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_o00.tw&json=1&delay=0&_=${ts}`;
     return await getTWSEQuote(url, "OTC", "櫃買指數");
   }
 
-  // 個股
   if (isStockId(key)) {
-    // 先查上市
     let url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${key}.tw&json=1&delay=0&_=${ts}`;
     let data = await getTWSEQuote(url, key, null);
     if (data) return data;
 
-    // 再查上櫃
     url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_${key}.tw&json=1&delay=0&_=${ts}`;
     data = await getTWSEQuote(url, key, null);
     if (data) return data;
