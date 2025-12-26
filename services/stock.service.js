@@ -1,177 +1,178 @@
 // ======================================================
-// 📊 Stock Service v2.6.0（最終定版）
-// ------------------------------------------------------
-// ✔ 盤中即時：成交價 z → 買一 b → 賣一 a → 快取 → 昨收
-// ✔ 指數代號固定：TWII / OTC 不被 API 蓋掉
-// ✔ 個股名稱嚴格檢查，避免 undefined
-// ✔ 不再出現 -100% / 0 價格假象
+// 📊 Stock / TXF Single Flex（定版最終版）
+// - 股票 / 指數 / 台指期 共用
+// - 指數 / 台指期：不顯示小數
+// - 個股：保留兩位小數
 // ======================================================
 
-const axios = require("axios");
+// ------------------ 顏色 ------------------
+function colorByChange(change) {
+  if (change > 0) return "#D32F2F"; // 紅
+  if (change < 0) return "#0B8F3A"; // 綠
+  return "#666666";                // 平盤
+}
 
-// ------------------------------------------------------
-// 🔧 工具
-// ------------------------------------------------------
-const num = (v) => {
-  if (v === undefined || v === null || v === "-" || v === "null") return null;
-  const n = Number(String(v).replace(/,/g, ""));
-  return isNaN(n) ? null : n;
-};
+// ------------------ 箭頭 ------------------
+function sign(change) {
+  if (change > 0) return "▲";
+  if (change < 0) return "▼";
+  return "—";
+}
 
-const isStockId = (v) => /^\d{4}$/.test(v);
+// ------------------ 數字格式 ------------------
+function fmt(n, digits = 2, forceInt = false) {
+  if (n === null || n === undefined || isNaN(n)) return "—";
+  return forceInt
+    ? Math.round(Number(n)).toString()
+    : Number(n).toFixed(digits);
+}
 
-// 快取最後有效價格（盤中救援）
-const lastPriceCache = {};
+// ======================================================
+// 💎 價位主行
+// ======================================================
+function buildPriceRow(data) {
+  const { price, change, percent, id } = data;
+  const color = colorByChange(change);
 
-// ------------------------------------------------------
-// 📈 TWSE / OTC（股票＋指數）
-// ------------------------------------------------------
-async function getTWSEQuote(url, id, fixedName, type) {
-  try {
-    const { data } = await axios.get(url);
-    const info = data?.msgArray?.[0];
+  // 指數 / 台指期 → 整數顯示
+  const isIndexLike = ["TWII", "OTC", "TXF"].includes(id);
 
-    // 🚫 沒資料或沒名稱 = 無效（防止空殼）
-    if (!info || !info.n) return null;
-
-    const stockId = id; // 🔥 關鍵：顯示代號一律用「我們傳進來的」
-    const y = num(info.y); // 昨收
-    let z = num(info.z);   // 成交價
-
-    // --------------------------------------------------
-    // 🧠 盤中救援邏輯
-    // --------------------------------------------------
-    if (z === null) {
-      // 買一
-      if (info.b && info.b !== "-") {
-        const bids = info.b.split("_");
-        if (bids[0]) z = num(bids[0]);
+  return {
+    type: "box",
+    layout: "baseline",
+    contents: [
+      { type: "text", text: "💎", size: "sm" },
+      {
+        type: "text",
+        text: fmt(price, 2, isIndexLike),
+        size: "lg",
+        weight: "bold",
+        color,
+        flex: 2
+      },
+      { type: "filler" },
+      {
+        type: "text",
+        text: `${sign(change)} ${fmt(Math.abs(change), 2, isIndexLike)}`,
+        size: "md",
+        weight: "bold",
+        color,
+        flex: 2
+      },
+      {
+        type: "text",
+        text: `(${fmt(Math.abs(percent), 2)}%)`,
+        size: "md",
+        weight: "bold",
+        color,
+        flex: 2
       }
-      // 賣一
-      if (z === null && info.a && info.a !== "-") {
-        const asks = info.a.split("_");
-        if (asks[0]) z = num(asks[0]);
+    ]
+  };
+}
+
+// ======================================================
+// 🔹 Key / Value Row
+// ======================================================
+function buildKV(label, value) {
+  return {
+    type: "box",
+    layout: "baseline",
+    contents: [
+      { type: "text", text: label, size: "md", color: "#888888", flex: 2 },
+      { type: "text", text: String(value ?? "—"), size: "md", color: "#222222", flex: 4 }
+    ]
+  };
+}
+
+// ======================================================
+// 📈 股票 / 指數
+// ======================================================
+function buildStockFlex(data) {
+  return {
+    type: "flex",
+    altText: `${data.id} ${data.name}`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          {
+            type: "text",
+            text: `📊 股票快報【${data.id} ${data.name}】`,
+            size: "lg",
+            weight: "bold"
+          },
+          { type: "separator" },
+
+          buildPriceRow(data),
+
+          { type: "separator" },
+
+          buildKV("🔥 開盤", fmt(data.open)),
+          buildKV("🏔️ 最高", fmt(data.high)),
+          buildKV("🌊 最低", fmt(data.low)),
+          buildKV("📉 昨收", fmt(data.yPrice)),
+          buildKV("📦 成交", data.vol ? `${data.vol} 張` : "—"),
+          buildKV("⏰ 時間", data.time || "—")
+        ]
       }
     }
+  };
+}
 
-    // --------------------------------------------------
-    // 💰 價格最終決策
-    // --------------------------------------------------
-    let price = null;
+// ======================================================
+// 📊 台指期 TXF
+// ======================================================
+function buildTXFFlex(data) {
+  return {
+    type: "flex",
+    altText: "📊 台指期 TXF",
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          {
+            type: "text",
+            text: "📊 期貨快報【台指期 TXF】",
+            size: "lg",
+            weight: "bold"
+          },
+          { type: "separator" },
 
-    if (z !== null) {
-      price = z;
-      lastPriceCache[stockId] = z;
-    } else if (lastPriceCache[stockId] !== undefined) {
-      price = lastPriceCache[stockId];
-    } else {
-      price = y; // 最後 fallback（未開盤 / 暫停）
+          buildPriceRow(data),
+
+          { type: "separator" },
+
+          buildKV("📌 開盤", fmt(data.open, 0, true)),
+          buildKV("🔺 最高", fmt(data.high, 0, true)),
+          buildKV("🔻 最低", fmt(data.low, 0, true)),
+          buildKV("📦 總量", data.vol),
+          buildKV("⏰ 時間", data.time)
+        ]
+      }
     }
-
-    // --------------------------------------------------
-    // 📊 漲跌計算（只有在合理時）
-    // --------------------------------------------------
-    let change = 0;
-    let percent = 0;
-
-    if (price !== null && y !== null) {
-      change = price - y;
-      percent = (change / y) * 100;
-    }
-
-    return {
-      type,
-      id: stockId,                 // ✅ 不再用 info.c
-      name: fixedName || info.n,   // 指數用固定名，個股用 API
-      price,
-      yPrice: y,
-      change,
-      percent,
-      open: num(info.o),
-      high: num(info.h),
-      low: num(info.l),
-      vol: num(info.v),
-      time: info.t
-    };
-  } catch (e) {
-    return null;
-  }
+  };
 }
 
-// ------------------------------------------------------
-// 📊 台指期 TXF（鉅亨網）
-// ------------------------------------------------------
-async function getTXFQuote() {
-  try {
-    const url = "https://ws.api.cnyes.com/ws/api/v1/quote/quotes/TFE:TXF:FUTURE";
-    const { data } = await axios.get(url);
-    const info = data?.data?.[0];
-    if (!info) return null;
+// ======================================================
+// 🔥 唯一出口
+// ======================================================
+function buildStockSingleFlex(data) {
+  if (!data) return { type: "text", text: "⚠️ 查無資料" };
 
-    const price = num(info["6"]);
-    const change = num(info["11"]);
-    const percent = num(info["56"]);
-
-    return {
-      type: "future",
-      id: "TXF",
-      name: "台指期",
-      price,
-      yPrice: price !== null && change !== null ? price - change : null,
-      change,
-      percent,
-      open: num(info["19"]),
-      high: num(info["12"]),
-      low: num(info["13"]),
-      vol: num(info["200013"]),
-      time: new Date(info["200007"] * 1000).toLocaleTimeString("zh-TW", {
-        hour: "2-digit",
-        minute: "2-digit"
-      })
-    };
-  } catch {
-    return null;
+  if (data.id === "TXF" || data.name?.includes("台指期")) {
+    return buildTXFFlex(data);
   }
+
+  return buildStockFlex(data);
 }
 
-// ------------------------------------------------------
-// 🚪 主入口
-// ------------------------------------------------------
-async function getStockQuote(input) {
-  const key = String(input).trim();
-  const ts = Date.now();
-
-  // 台指期
-  if (["TXF", "台指期", "台指"].includes(key)) {
-    return await getTXFQuote();
-  }
-
-  // 加權指數
-  if (["加權", "加權指數", "大盤", "TWII"].includes(key)) {
-    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw&json=1&delay=0&_=${ts}`;
-    return await getTWSEQuote(url, "TWII", "加權指數", "index");
-  }
-
-  // 櫃買指數
-  if (["櫃買", "櫃買指數", "OTC"].includes(key)) {
-    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_o00.tw&json=1&delay=0&_=${ts}`;
-    return await getTWSEQuote(url, "OTC", "櫃買指數", "index");
-  }
-
-  // 個股
-  if (isStockId(key)) {
-    // 上市
-    let url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${key}.tw&json=1&delay=0&_=${ts}`;
-    let data = await getTWSEQuote(url, key, null, "stock");
-    if (data) return data;
-
-    // 上櫃
-    url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_${key}.tw&json=1&delay=0&_=${ts}`;
-    data = await getTWSEQuote(url, key, null, "stock");
-    if (data) return data;
-  }
-
-  return null;
-}
-
-module.exports = { getStockQuote };
+module.exports = { buildStockSingleFlex };
