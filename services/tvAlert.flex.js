@@ -1,16 +1,20 @@
 // ======================================================
-// 📢 TradingView Alert Flex（版型微調版 v1.0.1）
+// 📢 TradingView Alert Flex
+// 狀態式訊號版（不動邏輯，只優化呈現）
 // ======================================================
 
 function buildTVFlex({ product, direction, timeframe, price, stopLoss }) {
-  const dirColor =
-    direction === "買進" ? "#D32F2F" :
-    direction === "賣出" ? "#0B8F3A" :
-    "#222222";
+  // ---- 防呆顯示 ----
+  const dirText =
+    direction === "買進" ? "📈 買進" :
+    direction === "賣出" ? "📉 賣出" :
+    "—";
+
+  const tfText = timeframe || "未指定";
 
   return {
     type: "flex",
-    altText: "📢 毛怪秘書出明牌",
+    altText: "📣 毛怪秘書出明牌",
     contents: {
       type: "bubble",
       size: "mega",
@@ -20,62 +24,77 @@ function buildTVFlex({ product, direction, timeframe, price, stopLoss }) {
         spacing: "md",
         contents: [
 
-          // ===== 標題 =====
+          // =========================
+          // 標題
+          // =========================
           {
             type: "text",
-            text: "📢 毛怪秘書出明牌",
+            text: "📣 毛怪秘書出明牌",
             size: "lg",
+            weight: "bold"
+          },
+
+          { type: "separator" },
+
+          // =========================
+          // 狀態列（週期 + 方向）
+          // =========================
+          {
+            type: "text",
+            text: `📊 ${tfText}｜${dirText}`,
+            size: "md",
             weight: "bold",
             color: "#111111"
           },
-          { type: "separator" },
 
-          // ===== 週期（重要）=====
+          // =========================
+          // 毛怪嘴一句（重點區）
+          // 之後你要接分數語意，就改這裡
+          // =========================
           {
-            type: "text",
-            text: `📊 週期　${timeframe}`,
-            size: "md",
-            weight: "bold",
-            color: "#222222"
-          },
-
-          // ===== 方向（重要）=====
-          {
-            type: "text",
-            text: `📈 方向　${direction}`,
-            size: "md",
-            weight: "bold",
-            color: dirColor
-          },
-
-          // ===== 毛怪一句話（先留空，之後再接）=====
-          {
-            type: "text",
-            text: "💬 毛怪：條件過了，剩下看你敢不敢。",
-            size: "md",
-            color: "#333333",
-            wrap: true
+            type: "box",
+            layout: "vertical",
+            backgroundColor: "#F6F6F6",
+            cornerRadius: "md",
+            paddingAll: "md",
+            contents: [
+              {
+                type: "text",
+                text: "💬 毛怪嘴一句：條件過了，剩下看你敢不敢。",
+                wrap: true,
+                size: "md",
+                color: "#333333"
+              }
+            ]
           },
 
           { type: "separator" },
 
-          // ===== 價格資訊 =====
-          buildKV("💎 進場價", price),
-          buildKV("🛡 停損", stopLoss),
-          buildKV(
-            "⏱ 時間",
-            new Date().toLocaleTimeString("zh-TW", {
-              hour: "2-digit",
-              minute: "2-digit"
-            })
-          )
+          // =========================
+          // 行動區（進場 / 停損）
+          // =========================
+          buildActionRow("💎 進場價", price),
+          buildActionRow("🛡 停損", stopLoss),
+
+          // =========================
+          // 時間（輕提示）
+          // =========================
+          {
+            type: "text",
+            text: "⏱ 即時訊號",
+            size: "xs",
+            color: "#999999"
+          }
         ]
       }
     }
   };
 }
 
-function buildKV(label, value) {
+// ======================================================
+// 行動列（進場 / 停損）
+// ======================================================
+function buildActionRow(label, value) {
   return {
     type: "box",
     layout: "baseline",
@@ -84,14 +103,15 @@ function buildKV(label, value) {
         type: "text",
         text: label,
         size: "md",
-        color: "#888888",
+        color: "#666666",
         flex: 2
       },
       {
         type: "text",
         text: String(value ?? "—"),
-        size: "md",
-        color: "#222222",
+        size: "lg",
+        weight: "bold",
+        color: "#111111",
         flex: 4
       }
     ]
