@@ -1,20 +1,16 @@
 // ======================================================
-// 📊 Stock Service v2.5.1（盤中即時穩定版｜定版）
+// 📊 Stock Service v2.6.0（最終定版）
 // ------------------------------------------------------
-// 職責：
-// - 只做「資料取得」
-// - 股票 / 指數 / 台指期
-// - 盤中沒成交 → 用買一 / 賣一救援
-// - 絕不輸出 Flex / UI
-//
-// 對應 index.js：
-// const { getStockQuote } = require("./services/stock.service");
+// ✔ 盤中即時：成交價 z → 買一 b → 賣一 a → 快取 → 昨收
+// ✔ 指數代號固定：TWII / OTC 不被 API 蓋掉
+// ✔ 個股名稱嚴格檢查，避免 undefined
+// ✔ 不再出現 -100% / 0 價格假象
 // ======================================================
 
 const axios = require("axios");
 
 // ------------------------------------------------------
-// 工具
+// 🔧 工具
 // ------------------------------------------------------
 const num = (v) => {
   if (v === undefined || v === null || v === "-" || v === "null") return null;
@@ -24,61 +20,69 @@ const num = (v) => {
 
 const isStockId = (v) => /^\d{4}$/.test(v);
 
-// 快取最後一筆盤中價格（避免瞬斷）
+// 快取最後有效價格（盤中救援）
 const lastPriceCache = {};
 
 // ------------------------------------------------------
-// TWSE / OTC（股票＋指數）
+// 📈 TWSE / OTC（股票＋指數）
 // ------------------------------------------------------
-async function getTWSEQuote(url, fixedId, fixedName, type) {
+async function getTWSEQuote(url, id, fixedName, type) {
   try {
     const { data } = await axios.get(url);
     const info = data?.msgArray?.[0];
 
-    // 沒資料 or 沒名稱 = 此市場不存在
+    // 🚫 沒資料或沒名稱 = 無效（防止空殼）
     if (!info || !info.n) return null;
 
-    const id = info.c || fixedId;
+    const stockId = id; // 🔥 關鍵：顯示代號一律用「我們傳進來的」
     const y = num(info.y); // 昨收
     let z = num(info.z);   // 成交價
 
-    // ===== 盤中救援邏輯 =====
+    // --------------------------------------------------
+    // 🧠 盤中救援邏輯
+    // --------------------------------------------------
     if (z === null) {
       // 買一
       if (info.b && info.b !== "-") {
-        const bid = num(info.b.split("_")[0]);
-        if (bid !== null) z = bid;
+        const bids = info.b.split("_");
+        if (bids[0]) z = num(bids[0]);
       }
       // 賣一
       if (z === null && info.a && info.a !== "-") {
-        const ask = num(info.a.split("_")[0]);
-        if (ask !== null) z = ask;
+        const asks = info.a.split("_");
+        if (asks[0]) z = num(asks[0]);
       }
     }
 
-    // 最終價格決定
+    // --------------------------------------------------
+    // 💰 價格最終決策
+    // --------------------------------------------------
     let price = null;
+
     if (z !== null) {
       price = z;
-      lastPriceCache[id] = z;
-    } else if (lastPriceCache[id] !== undefined) {
-      price = lastPriceCache[id];
+      lastPriceCache[stockId] = z;
+    } else if (lastPriceCache[stockId] !== undefined) {
+      price = lastPriceCache[stockId];
     } else {
-      price = y;
+      price = y; // 最後 fallback（未開盤 / 暫停）
     }
 
-    // 漲跌計算
+    // --------------------------------------------------
+    // 📊 漲跌計算（只有在合理時）
+    // --------------------------------------------------
     let change = 0;
     let percent = 0;
+
     if (price !== null && y !== null) {
       change = price - y;
       percent = (change / y) * 100;
     }
 
     return {
-      type,                 // stock | index
-      id,
-      name: fixedName || info.n,
+      type,
+      id: stockId,                 // ✅ 不再用 info.c
+      name: fixedName || info.n,   // 指數用固定名，個股用 API
       price,
       yPrice: y,
       change,
@@ -89,18 +93,17 @@ async function getTWSEQuote(url, fixedId, fixedName, type) {
       vol: num(info.v),
       time: info.t
     };
-  } catch (err) {
+  } catch (e) {
     return null;
   }
 }
 
 // ------------------------------------------------------
-// 台指期 TXF（鉅亨網）
+// 📊 台指期 TXF（鉅亨網）
 // ------------------------------------------------------
 async function getTXFQuote() {
   try {
-    const url =
-      "https://ws.api.cnyes.com/ws/api/v1/quote/quotes/TFE:TXF:FUTURE";
+    const url = "https://ws.api.cnyes.com/ws/api/v1/quote/quotes/TFE:TXF:FUTURE";
     const { data } = await axios.get(url);
     const info = data?.data?.[0];
     if (!info) return null;
@@ -126,13 +129,13 @@ async function getTXFQuote() {
         minute: "2-digit"
       })
     };
-  } catch (err) {
+  } catch {
     return null;
   }
 }
 
 // ------------------------------------------------------
-// 🔥 主入口（index.js 唯一會用到的）
+// 🚪 主入口
 // ------------------------------------------------------
 async function getStockQuote(input) {
   const key = String(input).trim();
@@ -145,33 +148,25 @@ async function getStockQuote(input) {
 
   // 加權指數
   if (["加權", "加權指數", "大盤", "TWII"].includes(key)) {
-    const url =
-      `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?` +
-      `ex_ch=tse_t00.tw&json=1&delay=0&_=${ts}`;
+    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw&json=1&delay=0&_=${ts}`;
     return await getTWSEQuote(url, "TWII", "加權指數", "index");
   }
 
   // 櫃買指數
   if (["櫃買", "櫃買指數", "OTC"].includes(key)) {
-    const url =
-      `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?` +
-      `ex_ch=otc_o00.tw&json=1&delay=0&_=${ts}`;
+    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_o00.tw&json=1&delay=0&_=${ts}`;
     return await getTWSEQuote(url, "OTC", "櫃買指數", "index");
   }
 
   // 個股
   if (isStockId(key)) {
-    // 先查上市
-    let url =
-      `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?` +
-      `ex_ch=tse_${key}.tw&json=1&delay=0&_=${ts}`;
+    // 上市
+    let url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${key}.tw&json=1&delay=0&_=${ts}`;
     let data = await getTWSEQuote(url, key, null, "stock");
     if (data) return data;
 
-    // 再查上櫃
-    url =
-      `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?` +
-      `ex_ch=otc_${key}.tw&json=1&delay=0&_=${ts}`;
+    // 上櫃
+    url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_${key}.tw&json=1&delay=0&_=${ts}`;
     data = await getTWSEQuote(url, key, null, "stock");
     if (data) return data;
   }
@@ -179,6 +174,4 @@ async function getStockQuote(input) {
   return null;
 }
 
-// ------------------------------------------------------
 module.exports = { getStockQuote };
-console.log("🧪 stock.service exports =", module.exports);
