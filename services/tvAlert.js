@@ -42,16 +42,17 @@ async function getNotifyList() {
 // 工具：字串解析
 // ======================================================
 function extract(text, key) {
+  if (typeof text !== "string") return null;
   const m = text.match(new RegExp(`${key}=([^|\\s]+)`, "i"));
   return m ? m[1] : null;
 }
 
 // ======================================================
-// 🧠 毛怪嘴砲邏輯（現在只做最小可用）
+// 🧠 毛怪嘴砲邏輯（依 excess + 週期）
 // ======================================================
 function maoTalk({ tf, excess }) {
-  const isLTF = tf === "3";
   const e = Number(excess) || 0;
+  const isLTF = tf === "3"; // 3 分 K 視為子級
 
   if (isLTF) {
     if (e <= 5)  return "有在動了啦，先看不要急 👀";
@@ -81,17 +82,27 @@ module.exports = async function tvAlert(client, alertContent) {
     /SELL/i.test(text) ? "賣出" :
     "—";
 
-  // ---------- 資料解析 ----------
-  const tf = extract(text, "tf") || "未指定";
-  const price = extract(text, "price") || "—";
-  const sl = extract(text, "sl") || "—";
-  const excess = extract(text, "excess") || "0";
+  // ---------- 解析 TV 傳來的資料 ----------
+  const tfRaw   = extract(text, "tf")     || "";
+  const price   = extract(text, "price")  || "—";
+  const sl      = extract(text, "sl")     || "—";
+  const excess  = extract(text, "excess") || "0";
 
   // ---------- 週期顯示 ----------
-  const tfDisplay = /^\d+$/.test(tf) ? `${tf} 分 K` : tf;
+  const tfDisplay =
+    /^\d+$/.test(tfRaw) ? `${tfRaw} 分 K`
+    : tfRaw === "D"     ? "日 K"
+    : tfRaw === "W"     ? "週 K"
+    : "未指定";
 
   // ---------- 毛怪嘴砲 ----------
-  const talk = maoTalk({ tf, excess });
+  const talk = maoTalk({ tf: tfRaw, excess });
+
+  // ---------- 時間（即時看到算你快） ----------
+  const timeText = new Date().toLocaleTimeString("zh-TW", {
+    hour: "2-digit",
+    minute: "2-digit"
+  });
 
   // ---------- Flex ----------
   const msg = buildTVFlex({
@@ -99,7 +110,8 @@ module.exports = async function tvAlert(client, alertContent) {
     direction,
     talk,
     price,
-    stopLoss: sl
+    stopLoss: sl,
+    timeText
   });
 
   // ---------- 推播 ----------
