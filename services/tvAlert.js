@@ -39,48 +39,29 @@ async function getNotifyList() {
 }
 
 // ======================================================
-// 🔧 工具（解析 TV 字串）
+// 工具：字串解析
 // ======================================================
-function extractTF(text) {
-  const m = text.match(/tf\s*=\s*([^|]+)/i);
-  if (!m) return "未指定";
-  const tf = m[1].trim();
-  return /^\d+$/.test(tf) ? `${tf} 分 K` : tf;
-}
-
-function extractPrice(text) {
-  const m = text.match(/price\s*=\s*(\d+(\.\d+)?)/i);
-  return m ? m[1] : "—";
-}
-
-function extractSL(text) {
-  const m = text.match(/sl\s*=\s*(\d+(\.\d+)?)/i);
-  return m ? m[1] : "—";
-}
-
-function extractScore(text) {
-  const m = text.match(/score\s*=\s*(\d+)\s*\(\+?(\d+)\)/i);
-  if (!m) return null;
-  return {
-    score: Number(m[1]),
-    excess: Number(m[2])
-  };
+function extract(text, key) {
+  const m = text.match(new RegExp(`${key}=([^|\\s]+)`, "i"));
+  return m ? m[1] : null;
 }
 
 // ======================================================
-// 🧠 毛怪語氣判斷（只在 Bot）
+// 🧠 毛怪嘴砲邏輯（現在只做最小可用）
 // ======================================================
-function getMaoTone(excess) {
-  if (excess >= 15)
-    return "🧠 毛怪直接跟你說：這分數還不進，是要對不起誰？";
+function maoTalk({ tf, excess }) {
+  const isLTF = tf === "3";
+  const e = Number(excess) || 0;
 
-  if (excess >= 10)
-    return "😈 條件齊到靠北，錯過真的會捶心肝。";
-
-  if (excess >= 5)
-    return "👀 分數有過，先盯著看，很可能要發動。";
-
-  return "🤏 剛過門檻，想搶可以，但風險自己吞。";
+  if (isLTF) {
+    if (e <= 5)  return "有在動了啦，先看不要急 👀";
+    if (e <= 10) return "這個開始有點樣子了，不看會後悔";
+    return "3 分就這樣了，5 分不出我不信";
+  } else {
+    if (e <= 5)  return "條件過了，但不是那種一定要衝的";
+    if (e <= 10) return "條件到齊，這種不進說不過去";
+    return "這種你不進，盤後一定怪我";
+  }
 }
 
 // ======================================================
@@ -92,36 +73,33 @@ module.exports = async function tvAlert(client, alertContent) {
   const ids = await getNotifyList();
   if (!ids.length) return;
 
-  const sourceText =
-    typeof alertContent === "string"
-      ? alertContent
-      : JSON.stringify(alertContent);
+  const text = String(alertContent || "");
 
   // ---------- 方向 ----------
   const direction =
-    /BUY/i.test(sourceText)
-      ? "買進"
-      : /SELL/i.test(sourceText)
-      ? "賣出"
-      : "—";
+    /BUY/i.test(text) ? "買進" :
+    /SELL/i.test(text) ? "賣出" :
+    "—";
 
-  // ---------- 基本資料 ----------
-  const timeframe = extractTF(sourceText);
-  const price = extractPrice(sourceText);
-  const stopLoss = extractSL(sourceText);
+  // ---------- 資料解析 ----------
+  const tf = extract(text, "tf") || "未指定";
+  const price = extract(text, "price") || "—";
+  const sl = extract(text, "sl") || "—";
+  const excess = extract(text, "excess") || "0";
 
-  // ---------- 分數 ----------
-  const scoreInfo = extractScore(sourceText);
-  const tone = scoreInfo ? getMaoTone(scoreInfo.excess) : null;
+  // ---------- 週期顯示 ----------
+  const tfDisplay = /^\d+$/.test(tf) ? `${tf} 分 K` : tf;
+
+  // ---------- 毛怪嘴砲 ----------
+  const talk = maoTalk({ tf, excess });
 
   // ---------- Flex ----------
   const msg = buildTVFlex({
-    product: "台指期",
+    timeframe: tfDisplay,
     direction,
-    timeframe,
+    talk,
     price,
-    stopLoss,
-    tone
+    stopLoss: sl
   });
 
   // ---------- 推播 ----------
