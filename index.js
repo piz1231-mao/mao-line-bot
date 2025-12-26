@@ -404,10 +404,37 @@ await client.replyMessage(e.replyToken, flex);
 });
 
 // ======================================================
-// 排程接口（保留）
+// 每日摘要 API（08:00 推播用）
 // ======================================================
 app.post("/api/daily-summary", async (req, res) => {
-  res.send("ok");
+  try {
+    const c = await auth.getClient();
+    const sheets = google.sheets({ version:"v4", auth:c });
+
+    let out = [];
+    for (const s of SHOP_LIST) {
+      const r = await sheets.spreadsheets.values.get({
+        spreadsheetId:SPREADSHEET_ID,
+        range:`${s}!Q:Q`
+      });
+      const list = r.data.values?.map(v=>v[0]).filter(Boolean) || [];
+      if (list.length) out.push(list.at(-1));
+    }
+
+    if (!out.length) return res.send("no data");
+
+    if (process.env.BOSS_USER_ID) {
+      await client.pushMessage(process.env.BOSS_USER_ID, {
+        type:"text",
+        text: out.join("\n\n━━━━━━━━━━━\n\n")
+      });
+    }
+
+    res.send("ok");
+  } catch (err) {
+    console.error("❌ daily-summary error:", err);
+    res.status(500).send("error");
+  }
 });
 
 // ======================================================
