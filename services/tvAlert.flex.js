@@ -1,6 +1,6 @@
 // ======================================================
 // 📢 TradingView Alert Flex
-// v1.1（時間語氣優化版｜不動邏輯）
+// 狀態式訊號版（只補時間，不動感覺）
 // ======================================================
 
 function buildTVFlex({
@@ -11,6 +11,14 @@ function buildTVFlex({
   stopLoss,
   timeText
 }) {
+  // ---- 防呆顯示 ----
+  const dirText =
+    direction === "買進" ? "📈 買進" :
+    direction === "賣出" ? "📉 賣出" :
+    "—";
+
+  const tfText = timeframe || "未指定";
+
   return {
     type: "flex",
     altText: "📣 毛怪秘書出明牌",
@@ -22,53 +30,60 @@ function buildTVFlex({
         layout: "vertical",
         spacing: "md",
         contents: [
+
           // ===== 標題 =====
           {
             type: "text",
-            text: "📣 毛怪秘書出明牌",
+            text: "📢 毛怪秘書出明牌",
             size: "lg",
             weight: "bold"
           },
 
           { type: "separator" },
 
-          // ===== 週期 & 方向 =====
-          buildKV("📊 週期", timeframe || "未指定"),
-          buildKV("📈 方向", direction || "—"),
+          // ===== 狀態列 =====
+          {
+            type: "text",
+            text: `📊 ${tfText}｜${dirText}`,
+            size: "md",
+            weight: "bold",
+            color: "#111111"
+          },
 
-          // ===== 毛怪嘴一句（先固定，後面再接分數）=====
+          // ===== 毛怪嘴 =====
           {
             type: "box",
             layout: "vertical",
+            backgroundColor: "#F6F6F6",
+            cornerRadius: "md",
+            paddingAll: "md",
             contents: [
               {
                 type: "text",
-                text: "💬 毛怪嘴一句",
-                size: "sm",
-                color: "#888888"
-              },
-              {
-                type: "text",
-                text: "條件過了，剩下看你敢不敢。",
+                text: "💬 毛怪嘴一句：條件過了，剩下看你敢不敢。",
+                wrap: true,
                 size: "md",
-                wrap: true
+                color: "#333333"
               }
             ]
           },
 
-          // ===== 時間（有態度）=====
-          buildKV(
-            "⏱",
-            timeText
-              ? `${timeText}　你現在看到算你快`
-              : "即時訊號"
-          ),
-
           { type: "separator" },
 
-          // ===== 價格 =====
-          buildKV("💎 進場價", price ?? "—"),
-          buildKV("🛡 停損", stopLoss ?? "—")
+          // ===== 行動區 =====
+          buildActionRow("💎 進場價", price),
+          buildActionRow("🛡 停損", stopLoss),
+
+          // ===== 時間（輕提示）=====
+          {
+            type: "text",
+            text: timeText
+              ? `⏱ ${timeText}　你現在看到算你快`
+              : "⏱ 即時訊號",
+            size: "xs",
+            color: "#999999",
+            margin: "md"
+          }
         ]
       }
     }
@@ -76,9 +91,9 @@ function buildTVFlex({
 }
 
 // ======================================================
-// 共用 Key / Value
+// 行動列
 // ======================================================
-function buildKV(label, value) {
+function buildActionRow(label, value) {
   return {
     type: "box",
     layout: "baseline",
@@ -87,16 +102,16 @@ function buildKV(label, value) {
         type: "text",
         text: label,
         size: "md",
-        color: "#888888",
+        color: "#666666",
         flex: 2
       },
       {
         type: "text",
-        text: String(value),
-        size: "md",
-        color: "#222222",
-        flex: 4,
-        wrap: true
+        text: String(value ?? "—"),
+        size: "lg",
+        weight: "bold",
+        color: "#111111",
+        flex: 4
       }
     ]
   };
