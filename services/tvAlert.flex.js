@@ -1,27 +1,23 @@
 // ======================================================
 // 📢 TradingView Alert Flex
-// 狀態式訊號版（只補時間，不動感覺）
+// 呈現優化版（字體放大＋方向上色）
 // ======================================================
 
-function buildTVFlex({
-  product,
-  direction,
-  timeframe,
-  price,
-  stopLoss,
-  timeText
-}) {
-  // ---- 防呆顯示 ----
-  const dirText =
-    direction === "買進" ? "📈 買進" :
-    direction === "賣出" ? "📉 賣出" :
-    "—";
+function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
+  const isBuy  = direction === "買進";
+  const isSell = direction === "賣出";
 
-  const tfText = timeframe || "未指定";
+  const dirColor = isBuy
+    ? "#D32F2F"   // 紅
+    : isSell
+    ? "#0B8F3A"   // 綠
+    : "#333333";
+
+  const dirIcon = isBuy ? "📈" : isSell ? "📉" : "—";
 
   return {
     type: "flex",
-    altText: "📣 毛怪秘書出明牌",
+    altText: "📢 毛怪秘書出明牌",
     contents: {
       type: "bubble",
       size: "mega",
@@ -31,26 +27,48 @@ function buildTVFlex({
         spacing: "md",
         contents: [
 
-          // ===== 標題 =====
+          // =========================
+          // 標題
+          // =========================
           {
             type: "text",
-            text: "📢 毛怪秘書出明牌",
+            text: "📣 毛怪秘書出明牌",
             size: "lg",
             weight: "bold"
           },
 
           { type: "separator" },
 
-          // ===== 狀態列 =====
+          // =========================
+          // 狀態列（週期 + 方向）➡ 放大＋上色
+          // =========================
           {
-            type: "text",
-            text: `📊 ${tfText}｜${dirText}`,
-            size: "md",
-            weight: "bold",
-            color: "#111111"
+            type: "box",
+            layout: "baseline",
+            contents: [
+              {
+                type: "text",
+                text: `📊 ${timeframe}`,
+                size: "lg",
+                weight: "bold",
+                color: "#111111",
+                flex: 3
+              },
+              {
+                type: "text",
+                text: `${dirIcon} ${direction}`,
+                size: "lg",
+                weight: "bold",
+                color: dirColor,
+                align: "end",
+                flex: 3
+              }
+            ]
           },
 
-          // ===== 毛怪嘴 =====
+          // =========================
+          // 毛怪嘴一句（核心）
+          // =========================
           {
             type: "box",
             layout: "vertical",
@@ -60,7 +78,7 @@ function buildTVFlex({
             contents: [
               {
                 type: "text",
-                text: "💬 毛怪嘴一句：條件過了，剩下看你敢不敢。",
+                text: `💬 ${talk}`,
                 wrap: true,
                 size: "md",
                 color: "#333333"
@@ -70,19 +88,20 @@ function buildTVFlex({
 
           { type: "separator" },
 
-          // ===== 行動區 =====
-          buildActionRow("💎 進場價", price),
-          buildActionRow("🛡 停損", stopLoss),
+          // =========================
+          // 行動區（進場 / 停損）➡ 字體放大
+          // =========================
+          buildActionRow("💎 進場價", price, dirColor),
+          buildActionRow("🛡 停損", stopLoss, "#111111"),
 
-          // ===== 時間（輕提示）=====
+          // =========================
+          // 時間（輕提示）
+          // =========================
           {
             type: "text",
-            text: timeText
-              ? `⏱ ${timeText}　你現在看到算你快`
-              : "⏱ 即時訊號",
+            text: "⏱ 即時訊號",
             size: "xs",
-            color: "#999999",
-            margin: "md"
+            color: "#999999"
           }
         ]
       }
@@ -91,9 +110,9 @@ function buildTVFlex({
 }
 
 // ======================================================
-// 行動列
+// 行動列（進場 / 停損）
 // ======================================================
-function buildActionRow(label, value) {
+function buildActionRow(label, value, valueColor) {
   return {
     type: "box",
     layout: "baseline",
@@ -108,9 +127,9 @@ function buildActionRow(label, value) {
       {
         type: "text",
         text: String(value ?? "—"),
-        size: "lg",
+        size: "lg",          // 🔥 比原本大
         weight: "bold",
-        color: "#111111",
+        color: valueColor,
         flex: 4
       }
     ]
