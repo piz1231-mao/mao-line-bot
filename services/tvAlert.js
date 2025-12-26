@@ -99,10 +99,12 @@ module.exports = async function tvAlert(client, alertContent) {
   const talk = maoTalk({ tf: tfRaw, excess });
 
   // ---------- 時間（即時看到算你快） ----------
-  const timeText = new Date().toLocaleTimeString("zh-TW", {
-    hour: "2-digit",
-    minute: "2-digit"
-  });
+ const timeText = new Date().toLocaleTimeString("zh-TW", {
+  timeZone: "Asia/Taipei",
+  hour: "2-digit",
+  minute: "2-digit",
+  hour12: false
+});
 
   // ---------- Flex ----------
   const msg = buildTVFlex({
