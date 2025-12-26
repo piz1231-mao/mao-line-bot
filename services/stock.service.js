@@ -176,3 +176,4 @@ function buildStockSingleFlex(data) {
 }
 
 module.exports = { buildStockSingleFlex };
+console.log("🧪 stock.service exports =", module.exports);
