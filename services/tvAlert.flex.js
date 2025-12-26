@@ -1,11 +1,11 @@
 // ======================================================
-// 📢 TradingView Alert Flex（定版 v1.1｜支援毛怪語氣）
+// 📢 TradingView Alert Flex（毛怪版 v1.1）
 // ======================================================
 
-function buildTVFlex({ product, direction, timeframe, price, stopLoss, tone }) {
+function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
   return {
     type: "flex",
-    altText: "📢 毛怪秘書出明牌",
+    altText: "📣 毛怪秘書出明牌",
     contents: {
       type: "bubble",
       size: "mega",
@@ -16,32 +16,39 @@ function buildTVFlex({ product, direction, timeframe, price, stopLoss, tone }) {
         contents: [
           {
             type: "text",
-            text: "📢 毛怪秘書出明牌",
+            text: "📣 毛怪秘書出明牌",
             size: "lg",
             weight: "bold"
+          },
+          { type: "separator" },
+
+          buildKV("📊 週期", timeframe),
+          buildKV("📈 方向", direction),
+
+          {
+            type: "text",
+            text: `💬 ${talk}`,
+            wrap: true,
+            size: "md",
+            margin: "md"
           },
 
           { type: "separator" },
 
-          buildKV("📦 商品", product),
-          buildKV("📈 方向", direction),
-          buildKV("🕒 週期", timeframe),
-          buildKV("💰 進場價", price),
-          buildKV("🛡️ 停損價", stopLoss),
+          buildKV("💎 進場價", price),
+          buildKV("🛡 停損", stopLoss),
 
-          ...(tone
-            ? [
-                { type: "separator" },
-                {
-                  type: "text",
-                  text: tone,
-                  wrap: true,
-                  size: "md",
-                  weight: "bold",
-                  color: "#333333"
-                }
-              ]
-            : [])
+          {
+            type: "text",
+            text: `⏱ ${new Date().toLocaleTimeString("zh-TW", {
+              hour: "2-digit",
+              minute: "2-digit"
+            })}`,
+            size: "sm",
+            color: "#888888",
+            align: "end",
+            margin: "md"
+          }
         ]
       }
     }
