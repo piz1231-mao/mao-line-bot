@@ -1,9 +1,9 @@
 // ======================================================
 // 📢 TradingView Alert Flex
-// 呈現優化版（字體放大＋方向上色）
+// 呈現優化定版（標題放大＋正確時間顯示）
 // ======================================================
 
-function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
+function buildTVFlex({ timeframe, direction, talk, price, stopLoss, timeText }) {
   const isBuy  = direction === "買進";
   const isSell = direction === "賣出";
 
@@ -28,19 +28,19 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
         contents: [
 
           // =========================
-          // 標題
+          // 🔊 品牌標題（放大一級）
           // =========================
           {
             type: "text",
             text: "📣 毛怪秘書出明牌",
-            size: "lg",
+            size: "xl",              // 🔥 原本 lg → xl
             weight: "bold"
           },
 
           { type: "separator" },
 
           // =========================
-          // 狀態列（週期 + 方向）➡ 放大＋上色
+          // 📊 訊號狀態列（週期 + 方向）
           // =========================
           {
             type: "box",
@@ -67,7 +67,7 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
           },
 
           // =========================
-          // 毛怪嘴一句（核心）
+          // 💬 毛怪嘴一句（核心）
           // =========================
           {
             type: "box",
@@ -89,17 +89,17 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
           { type: "separator" },
 
           // =========================
-          // 行動區（進場 / 停損）➡ 字體放大
+          // 💎 行動區（進場 / 停損）
           // =========================
           buildActionRow("💎 進場價", price, dirColor),
           buildActionRow("🛡 停損", stopLoss, "#111111"),
 
           // =========================
-          // 時間（輕提示）
+          // ⏱ 時間提示（真的時間）
           // =========================
           {
             type: "text",
-            text: "⏱ 即時訊號",
+            text: timeText ? `⏱ ${timeText}` : "⏱ 即時訊號",
             size: "xs",
             color: "#999999"
           }
@@ -127,7 +127,7 @@ function buildActionRow(label, value, valueColor) {
       {
         type: "text",
         text: String(value ?? "—"),
-        size: "lg",          // 🔥 比原本大
+        size: "lg",
         weight: "bold",
         color: valueColor,
         flex: 4
