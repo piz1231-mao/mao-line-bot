@@ -1,22 +1,21 @@
 // ======================================================
-// 📢 TradingView Alert Flex
-// 穩定微調版（語意正確＋排版鬆）
+// 📢 TradingView Alert Flex（定版）
 // ======================================================
 
-function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
+function buildTVFlex({ timeframe, direction, talk, price, stopLoss, timeText }) {
   const isBuy  = direction === "買進";
   const isSell = direction === "賣出";
 
   const dirColor = isBuy
-    ? "#D32F2F"
+    ? "#D32F2F"   // 紅
     : isSell
-    ? "#0B8F3A"
+    ? "#0B8F3A"   // 綠
     : "#333333";
 
   const dirIcon = isBuy ? "📈" : isSell ? "📉" : "—";
 
   const entryColor = dirColor;
-  const stopColor  = "#D97706";
+  const stopColor = "#D97706"; // 停損提醒色
 
   return {
     type: "flex",
@@ -40,7 +39,7 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
 
           { type: "separator" },
 
-          // ===== 週期 + 方向 =====
+          // ===== 週期＋方向 =====
           {
             type: "box",
             layout: "baseline",
@@ -59,26 +58,25 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
                 size: "lg",
                 weight: "bold",
                 color: dirColor,
-                flex: 3
+                flex: 2
               }
             ]
           },
 
-          // ===== 毛怪嘴炮（純文字，不擠）=====
+          // ===== 毛怪嘴炮 =====
           {
             type: "box",
             layout: "vertical",
-            backgroundColor: "#F3F4F6",
-            cornerRadius: "lg",
+            backgroundColor: "#F6F6F6",
+            cornerRadius: "md",
             paddingAll: "md",
-            margin: "md",
             contents: [
               {
                 type: "text",
-                text: talk,          // ⬅️ 沒有 emoji
+                text: talk,
                 wrap: true,
                 size: "md",
-                color: "#374151"
+                color: "#333333"
               }
             ]
           },
@@ -89,12 +87,12 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
           buildActionRow("💎 進場價", price, entryColor),
           buildActionRow("🛡 停損", stopLoss, stopColor),
 
-          // ===== 狀態時間（語意正確）=====
+          // ===== 時間（真正即時）=====
           {
             type: "text",
-            text: "⏱ 即時",
+            text: timeText ? `⏱ ${timeText}` : "⏱ 即時訊號",
             size: "xs",
-            color: "#9CA3AF"
+            color: "#999999"
           }
         ]
       }
@@ -102,6 +100,9 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss }) {
   };
 }
 
+// ======================================================
+// 行動列
+// ======================================================
 function buildActionRow(label, value, valueColor) {
   return {
     type: "box",
@@ -111,7 +112,7 @@ function buildActionRow(label, value, valueColor) {
         type: "text",
         text: label,
         size: "md",
-        color: "#6B7280",
+        color: "#666666",
         flex: 2
       },
       {
