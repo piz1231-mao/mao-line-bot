@@ -1,6 +1,6 @@
 // ======================================================
 // 📢 TradingView Alert Flex
-// 呈現定版（只修間距＋嘴砲框）
+// 穩定版（修正 400 問題）
 // ======================================================
 
 function buildTVFlex({ timeframe, direction, talk, price, stopLoss, time }) {
@@ -8,15 +8,17 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss, time }) {
   const isSell = direction === "賣出";
 
   const dirColor = isBuy
-    ? "#D32F2F"   // 多：紅
+    ? "#D32F2F"
     : isSell
-    ? "#0B8F3A"   // 空：綠
+    ? "#0B8F3A"
     : "#333333";
 
   const dirIcon = isBuy ? "📈" : isSell ? "📉" : "—";
 
   const entryColor = dirColor;
-  const stopColor  = "#D97706"; // 停損警示色（琥珀橘）
+  const stopColor  = "#D97706";
+
+  const timeText = time || "即時";
 
   return {
     type: "flex",
@@ -40,7 +42,7 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss, time }) {
 
           { type: "separator" },
 
-          // ===== 週期 + 方向（靠中一點）=====
+          // ===== 週期 + 方向（已拉近）=====
           {
             type: "box",
             layout: "baseline",
@@ -59,51 +61,40 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss, time }) {
                 size: "lg",
                 weight: "bold",
                 color: dirColor,
-                flex: 3   // ← 原本 2，拉近中間
+                flex: 3
               }
             ]
           },
 
-          // ===== Spacer：讓嘴砲沉下來 =====
+          // ===== 毛怪嘴砲（往下拉，用 margin）=====
           {
             type: "box",
             layout: "vertical",
-            contents: [],
-            margin: "md"
-          },
-
-          // ===== 毛怪嘴砲框（微調後）=====
-          {
-            type: "box",
-            layout: "vertical",
-            backgroundColor: "#F3F4F6",   // 比原本再淡一點
+            backgroundColor: "#F3F4F6",
             cornerRadius: "lg",
-            paddingTop: "sm",
-            paddingBottom: "sm",
-            paddingStart: "md",
-            paddingEnd: "md",
+            paddingAll: "md",
+            margin: "md",          // ✅ 用這個拉距離
             contents: [
               {
                 type: "text",
                 text: `💬 ${talk}`,
                 wrap: true,
                 size: "md",
-                color: "#374151",          // 深灰，不搶紅綠
-                lineSpacing: "md"
+                color: "#374151"
               }
             ]
           },
 
           { type: "separator" },
 
-          // ===== 價格區 =====
+          // ===== 價格 =====
           buildActionRow("💎 進場價", price, entryColor),
           buildActionRow("🛡 停損", stopLoss, stopColor),
 
           // ===== 時間 =====
           {
             type: "text",
-            text: `⏱ ${time}`,
+            text: `⏱ ${timeText}`,
             size: "xs",
             color: "#9CA3AF"
           }
@@ -113,9 +104,6 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss, time }) {
   };
 }
 
-// ======================================================
-// 行動列
-// ======================================================
 function buildActionRow(label, value, valueColor) {
   return {
     type: "box",
