@@ -1,10 +1,11 @@
 // ======================================================
-// 📊 Stock Service v2.1.0（盤中修正版）
+// 📊 Stock Service（最終定版｜最後一筆回退邏輯）
 // ------------------------------------------------------
-// 修正說明：
-// 放寬個股判斷邏輯。只要代號存在於該市場（TSE/OTC），
-// 即便盤中短暫沒有成交價（price 為 null），也要回傳資料，
-// 避免因為沒有成交價而誤判為「查無此股」。
+// 規則：
+// 1. 價格顯示：z 有值用 z，否則回退用 y（昨收）
+// 2. 漲跌 / 漲跌幅：一律用 price vs yPrice 計算
+// 3. 不允許 undefined name
+// 4. 不允許 -100% 這種假數據
 // ======================================================
 
 const axios = require("axios");
@@ -18,29 +19,38 @@ const num = (v) => {
 
 const isStockId = (v) => /^\d{4}$/.test(v);
 
-// ------------------ TWSE / OTC ------------------
-async function getTWSEQuote(url, id, fixedName) {
+// ======================================================
+// TWSE / OTC（股票 + 指數）
+// ======================================================
+async function getTWSEQuote(url, fixedId, fixedName) {
   try {
     const { data } = await axios.get(url);
     const info = data?.msgArray?.[0];
-    
-    // 如果 info 不存在，代表該市場沒這支股票
-    if (!info) return null;
 
-    const price = num(info.z);  // 成交價
-    const yPrice = num(info.y); // 昨收
+    // 🚨 必須要有名稱，否則視為無效（避免空殼）
+    if (!info || !info.n) return null;
 
-    let change = null;
-    let percent = null;
-    
-    // 只有當現價與昨收都有值時，才計算漲跌
+    const tradePrice = num(info.z); // 成交價（可能為 null）
+    const yPrice = num(info.y);     // 昨收（一定存在）
+
+    // ✅ 顯示用價格：成交價優先，否則用昨收
+    const price =
+      tradePrice !== null
+        ? tradePrice
+        : yPrice !== null
+          ? yPrice
+          : null;
+
+    let change = 0;
+    let percent = 0;
+
     if (price !== null && yPrice !== null) {
       change = price - yPrice;
       percent = (change / yPrice) * 100;
     }
 
     return {
-      id: info.c || id,
+      id: fixedId || info.c,
       name: fixedName || info.n,
       price,
       yPrice,
@@ -57,10 +67,13 @@ async function getTWSEQuote(url, id, fixedName) {
   }
 }
 
-// ------------------ 台指期 TXF ------------------
+// ======================================================
+// 台指期 TXF（鉅亨 API，本來就有完整資料）
+// ======================================================
 async function getTXFQuote() {
-  const url = "https://ws.api.cnyes.com/ws/api/v1/quote/quotes/TFE:TXF:FUTURE";
   try {
+    const url =
+      "https://ws.api.cnyes.com/ws/api/v1/quote/quotes/TFE:TXF:FUTURE";
     const { data } = await axios.get(url);
     const info = data?.data?.[0];
     if (!info) return null;
@@ -73,59 +86,66 @@ async function getTXFQuote() {
       id: "TXF",
       name: "台指期",
       price,
-      yPrice: price !== null && change !== null ? price - change : null,
+      yPrice:
+        price !== null && change !== null ? price - change : null,
       change,
       percent,
       open: num(info["19"]),
       high: num(info["12"]),
       low: num(info["13"]),
       vol: num(info["200013"]),
-      time: new Date(info["200007"] * 1000).toLocaleTimeString("zh-TW", {
-        hour: "2-digit",
-        minute: "2-digit"
-      })
+      time: new Date(info["200007"] * 1000).toLocaleTimeString(
+        "zh-TW",
+        { hour: "2-digit", minute: "2-digit" }
+      )
     };
   } catch (err) {
     return null;
   }
 }
 
-// ------------------ 主入口 ------------------
+// ======================================================
+// 🔥 主入口
+// ======================================================
 async function getStockQuote(input) {
   const key = String(input).trim();
   const ts = Date.now();
 
   // 台指期
-  if (["TXF", "台指期", "台指"].includes(key)) {
+  if (["TXF", "台指", "台指期"].includes(key)) {
     return await getTXFQuote();
   }
 
   // 加權指數
   if (["加權", "加權指數", "大盤", "TWII"].includes(key)) {
-    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw&json=1&delay=0&_=${ts}`;
+    const url =
+      `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?` +
+      `ex_ch=tse_t00.tw&json=1&delay=0&_=${ts}`;
     return await getTWSEQuote(url, "TWII", "加權指數");
   }
 
   // 櫃買指數
   if (["櫃買", "櫃買指數", "OTC"].includes(key)) {
-    const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_o00.tw&json=1&delay=0&_=${ts}`;
+    const url =
+      `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?` +
+      `ex_ch=otc_o00.tw&json=1&delay=0&_=${ts}`;
     return await getTWSEQuote(url, "OTC", "櫃買指數");
   }
 
   // 個股
   if (isStockId(key)) {
-    // 1. 先查上市
-    let url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${key}.tw&json=1&delay=0&_=${ts}`;
+    // 先查上市
+    let url =
+      `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?` +
+      `ex_ch=tse_${key}.tw&json=1&delay=0&_=${ts}`;
     let data = await getTWSEQuote(url, key, null);
-    
-    // 🔥 修正重點：只要 data 存在（代表代號正確），就直接回傳，不管 price 是不是 null
     if (data) return data;
 
-    // 2. 查不到才查上櫃
-    url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_${key}.tw&json=1&delay=0&_=${ts}`;
+    // 再查上櫃
+    url =
+      `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?` +
+      `ex_ch=otc_${key}.tw&json=1&delay=0&_=${ts}`;
     data = await getTWSEQuote(url, key, null);
-    
-    // 同理，只要有資料就回傳
     if (data) return data;
   }
 
