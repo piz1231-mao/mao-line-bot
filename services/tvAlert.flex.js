@@ -1,23 +1,11 @@
 // ======================================================
-// 📢 毛怪秘書出明牌｜TradingView Flex
-// ======================================================
-// 說明：
-// - 只負責「長相」
-// - 不做任何邏輯、不抓資料
-// - 資料全部由 tvAlert.js 傳進來
+// 📢 TradingView Alert Flex（定版 v1.0）
 // ======================================================
 
-function buildTVFlex({
-  product = "台指期",
-  direction = "—",
-  timeframe = "—",
-  condition = "分數通過",
-  entryPrice = "—",
-  stopLoss = "—"
-}) {
+function buildTVFlex({ product, direction, timeframe, price, stopLoss }) {
   return {
     type: "flex",
-    altText: `📢 毛怪秘書出明牌｜${product}`,
+    altText: "📢 毛怪秘書出明牌",
     contents: {
       type: "bubble",
       size: "mega",
@@ -26,43 +14,27 @@ function buildTVFlex({
         layout: "vertical",
         spacing: "md",
         contents: [
-          // ===== 標題 =====
           {
             type: "text",
             text: "📢 毛怪秘書出明牌",
             size: "lg",
             weight: "bold"
           },
-
-          {
-            type: "text",
-            text: "TradingView 訊號",
-            size: "sm",
-            color: "#666666"
-          },
-
           { type: "separator" },
 
-          // ===== 內容 =====
-          buildRow("📦 商品", product),
-          buildRow("📈 方向", direction),
-          buildRow("🕒 週期", timeframe),
-          buildRow("📊 條件", condition),
-
-          { type: "separator" },
-
-          buildRow("💰 進場價", entryPrice),
-          buildRow("🛡️ 停損價", stopLoss)
+          buildKV("📦 商品", product),
+          buildKV("📈 方向", direction),
+          buildKV("🕒 週期", timeframe),
+          buildKV("📊 條件", "分數通過"),
+          buildKV("💰 進場價", price),
+          buildKV("🛡️ 停損價", stopLoss)
         ]
       }
     }
   };
 }
 
-// ------------------------------------------------------
-// Key / Value Row（TV 專用）
-// ------------------------------------------------------
-function buildRow(label, value) {
+function buildKV(label, value) {
   return {
     type: "box",
     layout: "baseline",
@@ -72,20 +44,17 @@ function buildRow(label, value) {
         text: label,
         size: "md",
         color: "#888888",
-        flex: 3
+        flex: 2
       },
       {
         type: "text",
-        text: String(value),
+        text: String(value ?? "—"),
         size: "md",
-        weight: "bold",
         color: "#222222",
-        flex: 5
+        flex: 4
       }
     ]
   };
 }
 
-module.exports = {
-  buildTVFlex
-};
+module.exports = { buildTVFlex };
