@@ -1,7 +1,7 @@
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
 const fs = require("fs");
-const buildTVFlex = require("./tvAlert.flex");
+const { buildTVFlex } = require("./tvAlert.flex");
 
 // ======================================================
 // Google Sheet 設定（TV 通知名單）
