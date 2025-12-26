@@ -1,7 +1,7 @@
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
 const fs = require("fs");
-const { buildTVFlex } = require("./tvAlert.flex");
+const { buildTVFlex } = require("./tv.flex");
 
 // ======================================================
 // Google Sheet 設定（TV 通知名單）
@@ -39,16 +39,28 @@ async function getNotifyList() {
 }
 
 // ======================================================
-// 工具：從文字抓資料
+// 工具（全部防呆）
 // ======================================================
-function extract(text, regex) {
+function extractPriceFromText(text) {
   if (typeof text !== "string") return null;
-  const m = text.match(regex);
+  const m = text.match(/price\s*=\s*(\d+(\.\d+)?)/i);
+  return m ? Number(m[1]) : null;
+}
+
+function extractSLFromText(text) {
+  if (typeof text !== "string") return null;
+  const m = text.match(/sl\s*=\s*(\d+(\.\d+)?)/i);
   return m ? m[1] : null;
 }
 
+function extractTimeframeFromText(text) {
+  if (typeof text !== "string") return null;
+  const m = text.match(/tf\s*=\s*([^|\s]+)/i);
+  return m ? m[1].toUpperCase() : null;
+}
+
 // ======================================================
-// TradingView → LINE（文字穩定版）
+// TradingView → LINE（定版）
 // ======================================================
 module.exports = async function tvAlert(client, alertContent, payload = {}) {
   console.log("🧪 tvAlert triggered");
@@ -56,73 +68,80 @@ module.exports = async function tvAlert(client, alertContent, payload = {}) {
   const ids = await getNotifyList();
   if (!ids.length) return;
 
-  // 安全文字
+  // ---------- 安全文字 ----------
   let sourceText = "";
   if (typeof alertContent === "string") sourceText = alertContent;
   else if (alertContent && typeof alertContent === "object")
     sourceText = JSON.stringify(alertContent);
 
-  // 方向
+  // ---------- 方向 ----------
   const direction =
     /BUY/i.test(sourceText) ? "買進" :
     /SELL/i.test(sourceText) ? "賣出" :
     "—";
 
-  // 價格
-  const price =
+  // ---------- 價格 ----------
+  const priceText =
     typeof payload.price === "number"
       ? payload.price
-      : extract(sourceText, /price\s*=\s*(\d+(\.\d+)?)/i) || "—";
+      : extractPriceFromText(sourceText) ?? "—";
 
-  // 停損
-  const sl =
-    extract(sourceText, /sl\s*=\s*(\d+(\.\d+)?)/i) || "—";
-
-  // 週期
-  const tfRaw = extract(sourceText, /tf\s*=\s*([A-Za-z0-9]+)/i);
-  let tf = "未指定";
-  if (tfRaw) {
-    if (/^\d+$/.test(tfRaw)) tf = `${tfRaw} 分 K`;
-    else if (tfRaw === "D") tf = "日 K";
-    else if (tfRaw === "W") tf = "週 K";
-    else tf = tfRaw;
+  // ---------- 停損 ----------
+  const rawSL = extractSLFromText(sourceText);
+  let slPriceText = "—";
+  if (rawSL) {
+    const n = Number(rawSL);
+    slPriceText = !isNaN(n) ? String(Math.round(n)) : "解析錯誤";
   }
 
+  // ---------- 週期（⚠️ tfDisplay 一定先定義） ----------
+  const rawTF = extractTimeframeFromText(sourceText);
+  let tfDisplay = "未指定";
+
+  if (rawTF) {
+    if (/^\d+$/.test(rawTF)) tfDisplay = `${rawTF} 分 K`;
+    else if (rawTF === "D") tfDisplay = "日 K";
+    else if (rawTF === "W") tfDisplay = "週 K";
+    else tfDisplay = rawTF;
+  }
+
+  // ---------- Flex ----------
   let msg;
+  try {
+    msg = buildTVFlex({
+      product: "台指期",
+      direction,
+      timeframe: tfDisplay,
+      price: priceText,
+      stopLoss: slPriceText
+    });
+  } catch (e) {
+    console.warn("⚠️ Flex 失敗，退回文字版", e.message);
+  }
 
-try {
-  msg = buildTVFlex({
-    product: "台指期",
-    direction,
-    timeframe: tfDisplay,
-    price: priceText,
-    stopLoss: slPriceText
-  });
-} catch (e) {
-  console.warn("⚠️ Flex 失敗，退回文字版", e.message);
-}
-
+  // ---------- 文字 fallback ----------
   if (!msg) {
-  msg = {
-    type: "text",
-    text:
-      `📢 毛怪秘書出明牌\n` +
-      `━━━━━━━━━━━\n` +
-      `📦 商品：台指期\n` +
-      `📈 方向：${direction}\n` +
-      `🕒 週期：${tfDisplay}\n` +
-      `📊 條件：分數通過\n` +
-      `💰 進場價：${priceText}\n` +
-      `🛡️ 停損價：${slPriceText}`
-  };
-}
+    msg = {
+      type: "text",
+      text:
+        `📢 毛怪秘書出明牌\n` +
+        `━━━━━━━━━━━\n` +
+        `📦 商品：台指期\n` +
+        `📈 方向：${direction}\n` +
+        `🕒 週期：${tfDisplay}\n` +
+        `📊 條件：分數通過\n` +
+        `💰 進場價：${priceText}\n` +
+        `🛡️ 停損價：${slPriceText}`
+    };
+  }
 
+  // ---------- 推播 ----------
   for (const id of ids) {
     try {
       await client.pushMessage(id, msg);
-      console.log("✅ 推播成功：", id);
+      console.log("✅ TV 推播成功：", id);
     } catch (err) {
-      console.error("❌ 推播失敗：", id, err.message);
+      console.error("❌ TV 推播失敗：", id, err.message);
     }
   }
 };
