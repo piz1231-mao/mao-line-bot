@@ -1,8 +1,8 @@
 // ======================================================
-// 📢 TradingView Alert Flex（定版 v1.0）
+// 📢 TradingView Alert Flex（定版 v1.1｜支援毛怪語氣）
 // ======================================================
 
-function buildTVFlex({ product, direction, timeframe, price, stopLoss }) {
+function buildTVFlex({ product, direction, timeframe, price, stopLoss, tone }) {
   return {
     type: "flex",
     altText: "📢 毛怪秘書出明牌",
@@ -20,14 +20,28 @@ function buildTVFlex({ product, direction, timeframe, price, stopLoss }) {
             size: "lg",
             weight: "bold"
           },
+
           { type: "separator" },
 
           buildKV("📦 商品", product),
           buildKV("📈 方向", direction),
           buildKV("🕒 週期", timeframe),
-          buildKV("📊 條件", "分數通過"),
           buildKV("💰 進場價", price),
-          buildKV("🛡️ 停損價", stopLoss)
+          buildKV("🛡️ 停損價", stopLoss),
+
+          ...(tone
+            ? [
+                { type: "separator" },
+                {
+                  type: "text",
+                  text: tone,
+                  wrap: true,
+                  size: "md",
+                  weight: "bold",
+                  color: "#333333"
+                }
+              ]
+            : [])
         ]
       }
     }
