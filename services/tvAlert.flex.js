@@ -32,7 +32,7 @@ function buildTVFlex({ timeframe, direction, talk, price, stopLoss, timeText }) 
           // =========================
           {
             type: "text",
-            text: "📣 毛怪秘書出明牌",
+            text: "📢 毛怪秘書出明牌",
             size: "xl",              // 🔥 原本 lg → xl
             weight: "bold"
           },
