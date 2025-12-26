@@ -1,14 +1,11 @@
 // ======================================================
-// 📊 Stock Service v2.3.0（盤中穩定最終版）
+// 📊 Stock Service v2.3.0（盤中最終定版）
 // ------------------------------------------------------
-// 設計原則：
-// 1. 成交價 z 若不存在（盤中瞬間無成交）
-//    → 以昨收 y 作為顯示價
-// 2. 漲跌 / 漲跌幅一律用「顯示價 price」計算
-// 3. 嚴格避免：
-//    - undefined 名稱
-//    - -100% 假暴跌
-//    - 盤中查無資料
+// 核心原則：
+// 1️⃣ API 有資料就回（不因盤中 z 為 '-' 判死刑）
+// 2️⃣ 成交價優先順序：z → p → y
+// 3️⃣ 漲跌/幅度只在「可算」時才算
+// 4️⃣ 絕不製造假 0%、假 -100%
 // ======================================================
 
 const axios = require("axios");
@@ -23,40 +20,40 @@ const num = (v) => {
 const isStockId = (v) => /^\d{4}$/.test(v);
 
 // ======================================================
-// TWSE / OTC（指數 + 個股）
+// 📈 TWSE / OTC（個股 / 指數）
 // ======================================================
 async function getTWSEQuote(url, id, fixedName) {
   try {
     const { data } = await axios.get(url);
     const info = data?.msgArray?.[0];
 
-    // 🚨 沒資料或沒名稱 → 視為不存在
+    // ❌ 完全沒資料才算查無
     if (!info || !info.n) return null;
 
-    const tradePrice = num(info.z); // 即時成交價（可能為 null）
-    const yPrice = num(info.y);     // 昨收（一定有）
+    const z = num(info.z); // 即時成交
+    const p = num(info.p); // 試撮合 / 最近價
+    const y = num(info.y); // 昨收
 
-    // ⭐ 核心邏輯：成交價沒有時，用昨收當顯示價
+    // ✅ 成交價選擇邏輯（非常關鍵）
     const price =
-      tradePrice !== null
-        ? tradePrice
-        : yPrice !== null
-          ? yPrice
-          : null;
+      z !== null ? z :
+      p !== null ? p :
+      y !== null ? y :
+      null;
 
-    let change = 0;
-    let percent = 0;
+    let change = null;
+    let percent = null;
 
-    if (price !== null && yPrice !== null) {
-      change = price - yPrice;
-      percent = (change / yPrice) * 100;
+    if (price !== null && y !== null) {
+      change = price - y;
+      percent = (change / y) * 100;
     }
 
     return {
       id: info.c || id,
       name: fixedName || info.n,
-      price,           // ⭐ 顯示用價格（永遠不會是 0 假跌）
-      yPrice,
+      price,
+      yPrice: y,
       change,
       percent,
       open: num(info.o),
@@ -65,13 +62,13 @@ async function getTWSEQuote(url, id, fixedName) {
       vol: num(info.v),
       time: info.t
     };
-  } catch (err) {
+  } catch (e) {
     return null;
   }
 }
 
 // ======================================================
-// 台指期 TXF（鉅亨 API，本身就穩定）
+// 📊 台指期 TXF（鉅亨）
 // ======================================================
 async function getTXFQuote() {
   try {
@@ -101,7 +98,7 @@ async function getTXFQuote() {
         timeZone: "Asia/Taipei"
       })
     };
-  } catch (err) {
+  } catch (e) {
     return null;
   }
 }
