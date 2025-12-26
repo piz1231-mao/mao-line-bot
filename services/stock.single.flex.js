@@ -1,7 +1,7 @@
 // ======================================================
 // 📊 Stock / TXF Single Flex（定版最終版）
 // ======================================================
-
+ 
 function colorByChange(change) {
   if (change > 0) return "#D32F2F";
   if (change < 0) return "#0B8F3A";
