@@ -1,12 +1,15 @@
 // ======================================================
-// 📊 Stock Service（盤中即時最終定版）
-// - 解決 TWSE 盤中 z = "-" 問題
-// - 使用「最後一筆有效成交價」
+// 📊 Stock Service v2.5.0（最佳五檔救援版）
+// ------------------------------------------------------
+// 邏輯升級：
+// 1. 優先用 z (成交價)。
+// 2. 沒 z，嘗試抓 b (買一) 或 a (賣一) -> 這就是盤中即時行情！
+// 3. 都沒有，才用 y (昨收) -> 這只有在未開盤或暫停交易時才會發生。
 // ======================================================
 
 const axios = require("axios");
 
-// 🔥 記住盤中最後一筆有效成交價
+// 記住最後價格 (輔助用)
 const lastPriceCache = {};
 
 // ------------------ 工具 ------------------
@@ -19,7 +22,7 @@ const num = (v) => {
 const isStockId = (v) => /^\d{4}$/.test(v);
 
 // ------------------ TWSE / OTC ------------------
-async function getTWSEQuote(url, id, fixedName) {
+async function getTWSEQuote(url, id, fixedName, type) {
   try {
     const { data } = await axios.get(url);
     const info = data?.msgArray?.[0];
@@ -28,22 +31,39 @@ async function getTWSEQuote(url, id, fixedName) {
     if (!info || !info.n) return null;
 
     const stockId = info.c || id;
-    const z = num(info.z); // 成交價
+    let z = num(info.z); // 成交價
     const y = num(info.y); // 昨收
 
-    // ===== 現價判斷 =====
+    // 🔥【關鍵救援】若無成交價，改抓「買一」或「賣一」
+    if (z === null) {
+        // info.b 格式通常是 "1049.00_1048.00_..." (最佳五檔買入)
+        if (info.b && info.b !== "-") {
+            const bids = info.b.split("_");
+            if (bids[0]) z = num(bids[0]); // 抓買一
+        }
+        
+        // 如果連買單都沒有，抓賣單 (info.a)
+        if (z === null && info.a && info.a !== "-") {
+            const asks = info.a.split("_");
+            if (asks[0]) z = num(asks[0]); // 抓賣一
+        }
+    }
+
+    // ===== 價格決定 =====
     let price = null;
 
     if (z !== null) {
       price = z;
-      lastPriceCache[stockId] = z; // 🔥 記住最後成交
+      lastPriceCache[stockId] = z; // 更新快取
     } else if (lastPriceCache[stockId] !== undefined) {
-      price = lastPriceCache[stockId]; // 🔥 沿用上一筆
+      price = lastPriceCache[stockId]; // 用上一筆快取
+    } else {
+      price = y; // 真的都沒有，才用昨收 (極少發生)
     }
 
-    // ===== 漲跌 =====
-    let change = null;
-    let percent = null;
+    // ===== 漲跌計算 =====
+    let change = 0;
+    let percent = 0;
 
     if (price !== null && y !== null) {
       change = price - y;
@@ -51,6 +71,7 @@ async function getTWSEQuote(url, id, fixedName) {
     }
 
     return {
+      type: type,
       id: stockId,
       name: fixedName || info.n,
       price,
@@ -68,7 +89,7 @@ async function getTWSEQuote(url, id, fixedName) {
   }
 }
 
-// ------------------ 台指期 TXF ------------------
+// ------------------ 台指期 TXF (鉅亨網) ------------------
 async function getTXFQuote() {
   try {
     const url = "https://ws.api.cnyes.com/ws/api/v1/quote/quotes/TFE:TXF:FUTURE";
@@ -81,6 +102,7 @@ async function getTXFQuote() {
     const percent = num(info["56"]);
 
     return {
+      type: "future",
       id: "TXF",
       name: "台指期",
       price,
@@ -112,21 +134,23 @@ async function getStockQuote(input) {
 
   if (["加權", "加權指數", "大盤", "TWII"].includes(key)) {
     const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_t00.tw&json=1&delay=0&_=${ts}`;
-    return await getTWSEQuote(url, "TWII", "加權指數");
+    return await getTWSEQuote(url, "TWII", "加權指數", "index");
   }
 
   if (["櫃買", "櫃買指數", "OTC"].includes(key)) {
     const url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_o00.tw&json=1&delay=0&_=${ts}`;
-    return await getTWSEQuote(url, "OTC", "櫃買指數");
+    return await getTWSEQuote(url, "OTC", "櫃買指數", "index");
   }
 
   if (isStockId(key)) {
+    // 1. 查上市 (嚴格檢查有沒有名稱)
     let url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=tse_${key}.tw&json=1&delay=0&_=${ts}`;
-    let data = await getTWSEQuote(url, key, null);
+    let data = await getTWSEQuote(url, key, null, "stock");
     if (data) return data;
 
+    // 2. 查上櫃
     url = `https://mis.twse.com.tw/stock/api/getStockInfo.jsp?ex_ch=otc_${key}.tw&json=1&delay=0&_=${ts}`;
-    data = await getTWSEQuote(url, key, null);
+    data = await getTWSEQuote(url, key, null, "stock");
     if (data) return data;
   }
 
