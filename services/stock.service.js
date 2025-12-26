@@ -11,7 +11,7 @@ const axios = require("axios");
 
 // 記住最後價格 (輔助用)
 const lastPriceCache = {};
- 
+
 // ------------------ 工具 ------------------
 const num = (v) => {
   if (v === undefined || v === null || v === "-" || v === "null") return null;
