@@ -536,7 +536,7 @@ function buildDailySummaryFlex({ date, shops }) {
   };
 }
 // ======================================================
-// C2-1 單店銷售佔比 Bubble（最終定版｜火在後＋對齊優化）
+// C2-1 單店銷售佔比 Bubble（🔥火在後｜湯棧份數不被切）
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
@@ -556,24 +556,14 @@ function buildShopRatioBubble({ shop, date, items }) {
     margin: "md"
   });
 
-  // ===============================
-  // 🔥 前三名計算（分區）
-  // ===============================
+  // 🔥 前三名（已排序後的 items）
   const hotTop3 = items
-    .filter(i =>
-      i.qty > 0 &&
-      !i.name.includes("冷藏") &&
-      i.name !== "麻油、燒酒鍋"
-    )
+    .filter(i => !i.name.includes("冷藏") && i.name !== "麻油、燒酒鍋")
     .slice(0, 3)
     .map(i => i.name);
 
   const coldTop3 = items
-    .filter(i =>
-      i.qty > 0 &&
-      i.name.includes("冷藏") &&
-      i.name !== "冷藏肉比例"
-    )
+    .filter(i => i.name.includes("冷藏") && i.name !== "冷藏肉比例")
     .slice(0, 3)
     .map(i => i.name);
 
@@ -603,11 +593,11 @@ function buildShopRatioBubble({ shop, date, items }) {
       layout: "horizontal",
       margin: (isOilMix || isColdRatio) ? "xl" : "md",
       contents: [
-        // ===== 品項名稱（🔥 放後面）=====
+        // ===== 品項（稍微縮）=====
         {
           type: "text",
           text: showFire ? `${item.name} 🔥` : item.name,
-          flex: 6,
+          flex: 5,
           size: "md",
           wrap: true,
           weight: (isOilMix || isColdRatio || isXmasItem)
@@ -615,11 +605,11 @@ function buildShopRatioBubble({ shop, date, items }) {
             : "regular"
         },
 
-        // ===== 份數（往左靠）=====
+        // ===== 份數（加寬，避免被切）=====
         {
           type: "text",
           text: `${item.qty}`,
-          flex: 1,
+          flex: 2,
           size: "md",
           align: "end",
           weight: (isOilMix || isColdRatio)
@@ -627,7 +617,7 @@ function buildShopRatioBubble({ shop, date, items }) {
             : "regular"
         },
 
-        // ===== %（拉開距離）=====
+        // ===== %（保留空間但不擠）=====
         {
           type: "text",
           text:
@@ -637,7 +627,7 @@ function buildShopRatioBubble({ shop, date, items }) {
           flex: 2,
           size: "md",
           align: "end",
-          margin: "md",
+          margin: "sm",
           weight: (isOilMix || isColdRatio)
             ? "bold"
             : "regular"
@@ -655,7 +645,6 @@ function buildShopRatioBubble({ shop, date, items }) {
     }
   };
 }
-
 // ======================================================
 // C2-2 三店銷售佔比 Carousel（定版）
 // ======================================================
