@@ -243,46 +243,91 @@ function parseTea6Combos(text) {
 
   return result;
 }
+// ======================================================
+// 茶六套餐佔比寫入（B2）
+// ======================================================
+async function writeTea6Combos(row, comboMap) {
+  const c = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: c });
+
+  // 固定欄位順序（⚠️ 這是定錨，不要動）
+  const FIELDS = [
+    "極品豚肉套餐",
+    "豐禾豚肉套餐",
+    "特級牛肉套餐",
+    "上等牛肉套餐",
+    "真饌和牛套餐",
+    "極炙牛肉套餐",
+    "日本和牛套餐",
+    "三人豚肉套餐",
+    "三人極上套餐",
+    "御。和牛賞套餐",
+    "聖誕歡饗套餐"
+  ];
+
+  const values = [];
+
+  for (const name of FIELDS) {
+    const item = comboMap[name] || { qty: 0, ratio: 0 };
+    values.push(item.qty);
+    values.push(item.ratio);
+  }
+
+  // R 欄起（第 18 欄）
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `茶六博愛!R${row}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [values] }
+  });
+}
 
 // ======================================================
-// Sheet 操作
+// Sheet 操作（定版）
 // ======================================================
 async function ensureSheet(shop) {
   if (shop === TEMPLATE_SHEET) return;
+
   const c = await auth.getClient();
-  const sheets = google.sheets({ version:"v4", auth:c });
-  const meta = await sheets.spreadsheets.get({ spreadsheetId:SPREADSHEET_ID });
+  const sheets = google.sheets({ version: "v4", auth: c });
+  const meta = await sheets.spreadsheets.get({
+    spreadsheetId: SPREADSHEET_ID
+  });
+
   if (meta.data.sheets.some(s => s.properties.title === shop)) return;
 
   await sheets.spreadsheets.batchUpdate({
-    spreadsheetId:SPREADSHEET_ID,
-    requestBody:{ requests:[{ addSheet:{ properties:{ title:shop } } }] }
+    spreadsheetId: SPREADSHEET_ID,
+    requestBody: {
+      requests: [{ addSheet: { properties: { title: shop } } }]
+    }
   });
 
   const header = await sheets.spreadsheets.values.get({
-    spreadsheetId:SPREADSHEET_ID,
-    range:`${TEMPLATE_SHEET}!A1:Q1`
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${TEMPLATE_SHEET}!A1:Q1`
   });
 
   await sheets.spreadsheets.values.update({
-    spreadsheetId:SPREADSHEET_ID,
-    range:`${shop}!A1:Q1`,
-    valueInputOption:"USER_ENTERED",
-    requestBody:{ values:header.data.values }
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${shop}!A1:Q1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: header.data.values }
   });
 }
 
 async function writeShop(shop, text, userId) {
   const c = await auth.getClient();
-  const sheets = google.sheets({ version:"v4", auth:c });
+  const sheets = google.sheets({ version: "v4", auth: c });
   const p = parseSales(text);
 
+  // 1️⃣ 寫入主資料
   const res = await sheets.spreadsheets.values.append({
-    spreadsheetId:SPREADSHEET_ID,
-    range:`${shop}!A1`,
-    valueInputOption:"USER_ENTERED",
-    requestBody:{
-      values:[[
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${shop}!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
         nowTW(), userId, userId, text,
         shop, p.date, p.revenue, "業績",
         p.qty, p.unit,
@@ -294,7 +339,12 @@ async function writeShop(shop, text, userId) {
     }
   });
 
-  const row = res.data.updates.updatedRange.match(/\d+/)[0];
+  // 2️⃣ 抓 row（給後續用）
+  const row = Number(
+    res.data.updates.updatedRange.match(/\d+/)[0]
+  );
+
+  // 3️⃣ 寫入摘要（Q 欄）
   const qtyLabel = shop === "湯棧中山" ? "總鍋數" : "套餐數";
 
   const summary =
@@ -311,12 +361,16 @@ async function writeShop(shop, text, userId) {
 總計：${p.fp[0] + p.bp[0]}（${Number((p.fp[1] + p.bp[1]).toFixed(2))}%）`;
 
   await sheets.spreadsheets.values.update({
-    spreadsheetId:SPREADSHEET_ID,
-    range:`${shop}!Q${row}`,
-    valueInputOption:"USER_ENTERED",
-    requestBody:{ values:[[summary]] }
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${shop}!Q${row}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[summary]] }
   });
+
+  // 4️⃣ 一定要回傳 row
+  return row;
 }
+
 
 // ======================================================
 // LINE Webhook（Router 主流程）
@@ -443,13 +497,17 @@ if (text.startsWith("大哥您好")) {
     // 1️⃣ 確保分頁存在
     await ensureSheet(shop);
 
-    // 2️⃣ 寫入既有定版業績資料（⚠️ 不動）
-    await writeShop(shop, text, e.source.userId);
+    // 2️⃣ 寫入【定版】業績主資料，並取得 row（⚠️ 關鍵）
+    const row = await writeShop(shop, text, e.source.userId);
 
-    // 3️⃣ 茶六套餐佔比解析（v1.2 測試中，不寫入、不影響）
+    // 3️⃣ 茶六博愛 → 寫入套餐佔比（B2 正式接線）
     if (shop === "茶六博愛") {
       const combo = parseTea6Combos(text);
-      console.log("🍱 茶六套餐佔比解析結果:", combo);
+
+      // 🔥 真正寫入試算表（R 欄開始）
+      await writeTea6Combos(row, combo);
+
+      console.log("🍱 茶六套餐佔比已寫入 row:", row, combo);
     }
 
   } catch (err) {
