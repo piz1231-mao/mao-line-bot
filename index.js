@@ -207,7 +207,7 @@ function parseSales(text) {
 }
 
 // ======================================================
-// 茶六套餐解析器（v1.2 疊加版）
+// 茶六套餐解析器（v1.2 疊加版｜已修正「御。和牛賞」問題）
 // ======================================================
 function parseTea6Combos(text) {
   const t = text
@@ -229,13 +229,21 @@ function parseTea6Combos(text) {
     "聖誕歡饗套餐"
   ];
 
+  // 🔒 正規式安全處理（避免「。」、「+」、「()」等炸 regex）
+  function escapeRegExp(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
   const result = {};
 
   for (const name of items) {
+    const safeName = escapeRegExp(name);
     const reg = new RegExp(
-      `${name}\\s*[:：]?\\s*(\\d+)\\s*套[^\\d%]*([\\d.]+)%`
+      `${safeName}\\s*[:：]?\\s*(\\d+)\\s*套[^\\d%]*([\\d.]+)%`
     );
+
     const m = t.match(reg);
+
     result[name] = m
       ? { qty: Number(m[1]), ratio: Number(m[2]) }
       : { qty: 0, ratio: 0 };
