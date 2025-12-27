@@ -207,15 +207,18 @@ function parseSales(text) {
 }
 
 // ======================================================
-// 茶六套餐解析器（v1.2 疊加版｜已修正「御。和牛賞」問題）
+// 茶六套餐解析器（v1.3 穩定版｜行級解析）
 // ======================================================
 function parseTea6Combos(text) {
-  const t = text
+  const lines = text
     .replace(/：/g, ":")
     .replace(/％/g, "%")
-    .replace(/。/g, " ");
+    .replace(/。/g, "。")
+    .split("\n")
+    .map(l => l.trim())
+    .filter(Boolean);
 
-  const items = [
+  const ITEMS = [
     "極品豚肉套餐",
     "豐禾豚肉套餐",
     "特級牛肉套餐",
@@ -229,28 +232,29 @@ function parseTea6Combos(text) {
     "聖誕歡饗套餐"
   ];
 
-  // 🔒 正規式安全處理（避免「。」、「+」、「()」等炸 regex）
-  function escapeRegExp(str) {
-    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const result = {};
+  for (const name of ITEMS) {
+    result[name] = { qty: 0, ratio: 0 };
   }
 
-  const result = {};
+  for (const line of lines) {
+    for (const name of ITEMS) {
+      if (!line.startsWith(name)) continue;
 
-  for (const name of items) {
-    const safeName = escapeRegExp(name);
-    const reg = new RegExp(
-      `${safeName}\\s*[:：]?\\s*(\\d+)\\s*套[^\\d%]*([\\d.]+)%`
-    );
+      // 抓「X套」
+      const qtyMatch = line.match(/(\d+)\s*套/);
+      // 抓「Y%」
+      const ratioMatch = line.match(/([\d.]+)\s*%/);
 
-    const m = t.match(reg);
-
-    result[name] = m
-      ? { qty: Number(m[1]), ratio: Number(m[2]) }
-      : { qty: 0, ratio: 0 };
+      if (qtyMatch) result[name].qty = Number(qtyMatch[1]);
+      if (ratioMatch) result[name].ratio = Number(ratioMatch[1]);
+    }
   }
 
   return result;
 }
+
+
 // ======================================================
 // 茶六套餐佔比寫入（B2）
 // ======================================================
