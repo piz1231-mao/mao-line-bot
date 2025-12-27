@@ -389,7 +389,7 @@ async function writeShop(shop, text, userId) {
 // 三店總覽 flex（C1 定版）
 // ======================================================
 // ======================================================
-// 三店總覽 Flex（C1｜直向｜字體放大｜業績粗體｜人事比條件反紅）
+// 三店總覽 Flex（C1｜完整摘要｜字體放大｜業績粗體｜人事條件反紅）
 // ======================================================
 function buildDailySummaryFlex({ date, shops }) {
   return {
@@ -410,7 +410,7 @@ function buildDailySummaryFlex({ date, shops }) {
           },
 
           ...shops.flatMap((shop, idx) => {
-            const hrOverLimit =
+            const overLimit =
               (shop.name === "茶六博愛" && shop.hrTotalRate > 22) ||
               (shop.name !== "茶六博愛" && shop.hrTotalRate > 25);
 
@@ -442,12 +442,23 @@ function buildDailySummaryFlex({ date, shops }) {
                     text: `🧾 客單價：${shop.unit}`,
                     size: "md"
                   },
+
                   {
                     type: "text",
-                    text: `👥 人事比：${shop.hrTotalRate}%`,
+                    text: `👥 外場：${shop.fp.toLocaleString()}（${shop.fpRate}%）`,
+                    size: "md"
+                  },
+                  {
+                    type: "text",
+                    text: `👥 內場：${shop.bp.toLocaleString()}（${shop.bpRate}%）`,
+                    size: "md"
+                  },
+                  {
+                    type: "text",
+                    text: `👥 總人事：${shop.hrTotal.toLocaleString()}（${shop.hrTotalRate}%）`,
                     size: "md",
                     weight: "bold",
-                    color: hrOverLimit ? "#D32F2F" : "#333333"
+                    color: overLimit ? "#D32F2F" : "#333333"
                   }
                 ]
               }
