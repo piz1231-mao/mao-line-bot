@@ -467,14 +467,6 @@ function buildShopRatioCarousel(bubbles) {
     }
   };
 }
-// ======================================================
-// C2 輔助：Flex → Bubble（一定要在外層）
-// ======================================================
-function buildShopRatioBubble(payload) {
-  // shopRatio.flex 回傳的是 { type:"flex", contents:{type:"bubble"} }
-  // carousel 只能吃 bubble
-  return buildShopRatioFlex(payload).contents;
-}
 
 // ======================================================
 // LINE Webhook（Router 主流程）
