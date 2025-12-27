@@ -403,53 +403,50 @@ function buildDailySummaryFlex({ date, shops }) {
             type: "text",
             text: `📊 每日營運總覽｜${date}`,
             weight: "bold",
-            size: "lg"
+            size: "xl"   // ⬅ 原 lg → xl
           },
 
           ...shops.flatMap((s, idx) => {
-            const hrLimit =
-              s.name === "茶六博愛" ? 22 : 25;
+            const hrLimit = s.name === "茶六博愛" ? 22 : 25;
 
             const blocks = [
               {
                 type: "text",
                 text: `【${s.name}】`,
                 weight: "bold",
-                size: "md"
+                size: "lg"   // ⬅ 原 md → lg
               },
               {
                 type: "text",
                 text: `💰 業績：${s.revenue.toLocaleString()}`,
-                size: "sm"
+                size: "md"   // ⬅ 原 sm → md
               },
               {
                 type: "text",
                 text: `📦 ${s.qtyLabel}：${s.qty}`,
-                size: "sm"
+                size: "md"
               },
               {
                 type: "text",
                 text: `🧾 客單價：${s.unit}`,
-                size: "sm"
+                size: "md"
               },
               {
                 type: "text",
                 text: `👥 外場：${s.fp}（${s.fpRate}%）`,
-                size: "sm"
+                size: "md"
               },
               {
                 type: "text",
                 text: `👥 內場：${s.bp}（${s.bpRate}%）`,
-                size: "sm"
+                size: "md"
               },
               {
                 type: "text",
                 text: `👥 總計：${s.hrTotal}（${s.hrTotalRate}%）`,
-                size: "sm",
-                color:
-                  s.hrTotalRate > hrLimit
-                    ? "#D32F2F"
-                    : "#333333"
+                size: "md",
+                weight: "bold",
+                color: s.hrTotalRate > hrLimit ? "#D32F2F" : "#333333"
               }
             ];
 
