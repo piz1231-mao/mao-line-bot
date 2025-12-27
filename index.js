@@ -808,7 +808,7 @@ if (text.startsWith("大哥您好")) {
 });
 
 // ======================================================
-// ✅ 定版修正：讀取各店銷售佔比（加入銷售排序邏輯）
+// ✅ 定版修正：讀取各店銷售佔比（排序正確＋彙總列不參與）
 // ======================================================
 async function readShopRatioBubble({ shop, date }) {
   const fields = SHOP_RATIO_FIELDS[shop];
@@ -821,7 +821,7 @@ async function readShopRatioBubble({ shop, date }) {
 
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${shop}!R:AZ`   
+    range: `${shop}!R:AZ`
   });
 
   const last = r.data.values?.at(-1);
@@ -829,52 +829,67 @@ async function readShopRatioBubble({ shop, date }) {
 
   const items = [];
 
+  // 依欄位定錨讀資料
   for (let i = 0; i < fields.length; i++) {
     const col = i * 2;
     const name = fields[i];
     const qty = Number(last[col] || 0);
     const ratio = Number(last[col + 1] || 0);
 
-    if (qty > 0 || name === "冷藏肉比例") { 
+    // qty > 0 才顯示，但「彙總列」例外一定要留
+    if (qty > 0 || name === "麻油、燒酒鍋" || name === "冷藏肉比例") {
       items.push({ name, qty, ratio });
     }
   }
 
-  // =============================
-  // 湯棧：上下段邏輯（且段內要排序）
-  // =============================
+  // ==================================================
+  // 🫕 湯棧中山：上下段排序＋彙總列獨立
+  // ==================================================
   if (shop === "湯棧中山") {
-    // 聖誕套餐在湯棧視為「熱鍋類」，與一般鍋物一起排序
-    const hotpot = items
-      .filter(i => !i.name.includes("冷藏") || i.name.includes("聖誕"))
-      .sort((a, b) => b.qty - a.qty); // 段內排序
+    // 👉 抓彙總列（不參與排序）
+    const oilMixTotal = items.find(i => i.name === "麻油、燒酒鍋");
+    const coldTotal   = items.find(i => i.name === "冷藏肉比例");
 
+    // ---- 上半段：鍋物＋聖誕（❌ 不含麻油、燒酒鍋）----
+    const hotpot = items
+      .filter(i =>
+        !i.name.includes("冷藏") &&
+        i.name !== "麻油、燒酒鍋"
+      )
+      .sort((a, b) => b.qty - a.qty);
+
+    // ---- 下半段：冷藏肉（❌ 不含冷藏肉比例）----
     const cold = items
-      .filter(i => i.name.includes("冷藏") && !i.name.includes("聖誕"))
-      // 冷藏肉比例通常放最後，不參與排序，其餘按銷量排
-      .sort((a, b) => {
-        if (a.name === "冷藏肉比例") return 1;
-        if (b.name === "冷藏肉比例") return -1;
-        return b.qty - a.qty;
-      });
+      .filter(i =>
+        i.name.includes("冷藏") &&
+        i.name !== "冷藏肉比例"
+      )
+      .sort((a, b) => b.qty - a.qty);
+
+    // 👉 最終顯示順序（這裡就是 UI 規格）
+    const finalItems = [
+      ...hotpot,
+      ...(oilMixTotal ? [oilMixTotal] : []),
+      ...cold,
+      ...(coldTotal ? [coldTotal] : [])
+    ];
 
     return buildShopRatioBubble({
       shop,
       date,
-      items: [...hotpot, ...cold]
+      items: finalItems
     });
   }
 
-  // =============================
-  // 茶六 / 三山：全部顯示且「全體按銷量排序」
-  // =============================
+  // ==================================================
+  // 🍱 茶六 / 三山：全部商品一起依銷量排序
+  // ==================================================
   return buildShopRatioBubble({
     shop,
     date,
-    items: items.sort((a, b) => b.qty - a.qty) // 聖誕套餐也會參與這裏的排序
+    items: items.sort((a, b) => b.qty - a.qty)
   });
 }
-
 
 // ======================================================
 // 每日摘要 API（08:00 推播用｜流檢同款｜只推一則）
