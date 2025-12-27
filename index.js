@@ -537,12 +537,11 @@ function buildDailySummaryFlex({ date, shops }) {
   };
 }
 // ======================================================
-// C2-1 單店銷售佔比 Bubble（Emoji 穩定嵌入版）
+// C2-1 單店銷售佔比 Bubble（定版｜不新增資料）
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
 
-  // 標題與日期
   contents.push({
     type: "text",
     text: `🍱 ${shop}｜銷售佔比`,
@@ -558,22 +557,22 @@ function buildShopRatioBubble({ shop, date, items }) {
     margin: "md"
   });
 
-  let coldStarted = false;
+  let coldSectionStarted = false;
 
-  items.forEach((item, idx) => {
+  items.forEach(item => {
     const isOilMix = item.name === "麻油、燒酒鍋";
     const isColdRatio = item.name === "冷藏肉比例";
-    const isCold = item.name.includes("冷藏") && !item.name.includes("聖誕");
-    const isXmas = item.name.includes("聖誕");
-    const isBold = isOilMix || isColdRatio || isXmas;
+    const isColdItem = item.name.includes("冷藏");
 
-    // 分隔線
-    if (!coldStarted && isCold) {
-      contents.push({ type: "separator", margin: "xl" });
-      coldStarted = true;
+    // 🔹 鍋 → 冷藏 分隔線（只出現一次）
+    if (!coldSectionStarted && isColdItem) {
+      contents.push({
+        type: "separator",
+        margin: "xl"
+      });
+      coldSectionStarted = true;
     }
 
-    // 🔥 極致壓縮 Box 結構
     contents.push({
       type: "box",
       layout: "horizontal",
@@ -581,30 +580,29 @@ function buildShopRatioBubble({ shop, date, items }) {
       contents: [
         {
           type: "text",
+          text: item.name,
           flex: 5,
           size: "md",
           wrap: true,
-          contents: [
-            { type: "span", text: item.name, weight: isBold ? "bold" : undefined },
-            { type: "span", text: (idx < 3 && item.qty > 0 && !isOilMix && !isColdRatio) ? " 🔥" : "" }
-          ]
+          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
         },
         {
           type: "text",
-          text: String(item.qty),
+          text: `${item.qty}`,
           flex: 2,
           size: "md",
           align: "end",
-          weight: (isOilMix || isColdRatio) ? "bold" : undefined
+          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
         },
         {
           type: "text",
-          text: (item.ratio && item.ratio !== 0) ? `${item.ratio}%` : " ",
+          text: item.ratio !== undefined && item.ratio !== ""
+            ? `${item.ratio}%`
+            : "",
           flex: 3,
           size: "md",
           align: "end",
-          margin: "md",
-          weight: (isOilMix || isColdRatio) ? "bold" : undefined
+          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
         }
       ]
     });
