@@ -307,11 +307,23 @@ function parseTangzhanCombos(text) {
   const fields = SHOP_RATIO_FIELDS["湯棧中山"];
   const result = {};
 
+  // escape regex
+  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
   for (const name of fields) {
+    /**
+     * 關鍵修正：
+     * - 名稱只抓「核心關鍵字」
+     * - 套餐 / 空白 / 其他描述全部容錯
+     */
+    const core = esc(name.replace("套餐", "").replace("雙饌", ""));
+    
     const reg = new RegExp(
-      `${name}\\s*[:：]?\\s*(\\d+)[^\\d%]*([\\d.]+)%`
+      `${core}.*?(\\d+)\\s*(?:套)?[^\\d%]*([\\d.]+)%`
     );
+
     const m = t.match(reg);
+
     result[name] = m
       ? { qty: Number(m[1]), ratio: Number(m[2]) }
       : { qty: 0, ratio: 0 };
@@ -528,64 +540,102 @@ function buildDailySummaryFlex({ date, shops }) {
 // C2-1 單店銷售佔比 Bubble（一定要存在）
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
+  const contents = [];
+// ===== 湯棧專用：自動加總 =====
+if (shop === "湯棧中山") {
+  const oil = items.find(i => i.name === "麻油鍋");
+  const wine = items.find(i => i.name === "燒酒鍋");
+
+  if (oil || wine) {
+    const totalQty = (oil?.qty || 0) + (wine?.qty || 0);
+    const totalRatio = Number(
+      ((oil?.ratio || 0) + (wine?.ratio || 0)).toFixed(2)
+    );
+
+    items.unshift({
+      name: "麻油、燒酒鍋",
+      qty: totalQty,
+      ratio: totalRatio,
+      _highlight: true
+    });
+  }
+}
+  
+  contents.push({
+    type: "text",
+    text: `🍱 ${shop}｜銷售佔比`,
+    weight: "bold",
+    size: "xl"
+  });
+
+  contents.push({
+    type: "text",
+    text: date,
+    size: "sm",
+    color: "#888888",
+    margin: "md"
+  });
+
+  let coldSectionStarted = false;
+
+  items.forEach(item => {
+    const isHighlight =
+      item._highlight ||
+      item.name === "冷藏肉比例";
+
+    const isColdItem = item.name.includes("冷藏");
+
+    // 冷藏區分隔線
+    if (!coldSectionStarted && isColdItem) {
+      contents.push({
+        type: "separator",
+        margin: "xl"
+      });
+      coldSectionStarted = true;
+    }
+
+    contents.push({
+      type: "box",
+      layout: "horizontal",
+      margin: isHighlight ? "xl" : "md",
+      contents: [
+        {
+          type: "text",
+          text: item.name,
+          flex: 5,
+          size: "md",
+          wrap: true,
+          weight: isHighlight ? "bold" : "regular"
+        },
+        {
+          type: "text",
+          text: `${item.qty}`,
+          flex: 2,
+          size: "md",
+          align: "end",
+          weight: isHighlight ? "bold" : "regular"
+        },
+        {
+          type: "text",
+          text: `${item.ratio}%`,
+          flex: 2,
+          size: "md",
+          align: "end",
+          weight: isHighlight ? "bold" : "regular"
+        }
+      ]
+    });
+  });
+
   return {
     type: "bubble",
     body: {
       type: "box",
       layout: "vertical",
-      spacing: "md",
-      contents: [
-        {
-          type: "text",
-          text: `🍱 ${shop}｜銷售佔比`,
-          weight: "bold",
-          size: "lg"
-        },
-        {
-          type: "text",
-          text: date,
-          size: "sm",
-          color: "#888888"
-        },
-        {
-          type: "separator",
-          margin: "md"
-        },
-        ...items.map(item => ({
-          type: "box",
-          layout: "horizontal",
-          spacing: "sm",
-          contents: [
-            {
-              type: "text",
-              text: item.name,
-              flex: 4,
-              size: "sm",
-              wrap: true
-            },
-            {
-              type: "text",
-              text: `${item.qty} 套`,
-              flex: 2,
-              size: "sm",
-              align: "end",
-              weight: "bold"
-            },
-            {
-              type: "text",
-              text: `${item.ratio}%`,
-              flex: 2,
-              size: "sm",
-              align: "end",
-              color: "#555555"
-            }
-          ]
-        }))
-      ]
+      contents
     }
   };
 }
-
 // ======================================================
 // C2-2 三店銷售佔比 Carousel（定版）
 // ======================================================
