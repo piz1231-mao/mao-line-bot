@@ -468,6 +468,47 @@ const SHOP_RATIO_FIELDS = {
   ]
 };
 
+// ------------------------------------------------
+// 共用 Row Builder（銷售佔比用）
+// ------------------------------------------------
+function buildRow(item, highlight = false) {
+  return {
+    type: "box",
+    layout: "horizontal",
+    margin: highlight ? "xl" : "md",
+    contents: [
+      {
+        type: "text",
+        text: item.name,
+        flex: 5,
+        size: "md",
+        wrap: true,
+        weight: highlight ? "bold" : "regular"
+      },
+      {
+        type: "text",
+        text: `${item.qty}`,
+        flex: 2,
+        size: "md",
+        align: "end",
+        weight: highlight ? "bold" : "regular"
+      },
+      {
+        type: "text",
+        // ratio 為 0 或 undefined 時不顯示 %
+        text:
+          item.ratio !== undefined && item.ratio !== null && item.ratio !== 0
+            ? `${item.ratio}%`
+            : "",
+        flex: 2,
+        size: "md",
+        align: "end",
+        weight: highlight ? "bold" : "regular"
+      }
+    ]
+  };
+}
+
 
 // ======================================================
 // 三店總覽 Flex（C1｜完整摘要｜字體放大｜業績粗體｜人事條件反紅）
