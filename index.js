@@ -536,8 +536,9 @@ function buildDailySummaryFlex({ date, shops }) {
     }
   };
 }
+
 // ======================================================
-// C2-1 單店銷售佔比 Bubble（定版｜不新增資料）
+// C2-1 單店銷售佔比 Bubble（v1.6.1｜前三名顏色＋粗體）
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
@@ -559,10 +560,27 @@ function buildShopRatioBubble({ shop, date, items }) {
 
   let coldSectionStarted = false;
 
-  items.forEach(item => {
-    const isOilMix = item.name === "麻油、燒酒鍋";
-    const isColdRatio = item.name === "冷藏肉比例";
-    const isColdItem = item.name.includes("冷藏");
+  items.forEach((item, idx) => {
+    const isOilMix     = item.name === "麻油、燒酒鍋";
+    const isColdRatio  = item.name === "冷藏肉比例";
+    const isColdItem   = item.name.includes("冷藏");
+
+    // ===== 排名判斷（只針對一般品項）=====
+    const isRankItem = !isOilMix && !isColdRatio;
+    const isTop1 = isRankItem && idx === 0;
+    const isTop2 = isRankItem && idx === 1;
+    const isTop3 = isRankItem && idx === 2;
+
+    const rankColor =
+      isTop1 ? "#D32F2F" :   // 第一名：紅
+      isTop2 ? "#F57C00" :   // 第二名：橘
+      isTop3 ? "#FBC02D" :   // 第三名：金
+      "#333333";
+
+    const nameWeight =
+      (isOilMix || isColdRatio || isTop1 || isTop2 || isTop3)
+        ? "bold"
+        : "regular";
 
     // 🔹 鍋 → 冷藏 分隔線（只出現一次）
     if (!coldSectionStarted && isColdItem) {
@@ -578,14 +596,17 @@ function buildShopRatioBubble({ shop, date, items }) {
       layout: "horizontal",
       margin: (isOilMix || isColdRatio) ? "xl" : "md",
       contents: [
+        // 品項名稱
         {
           type: "text",
           text: item.name,
           flex: 5,
           size: "md",
           wrap: true,
-          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
+          weight: nameWeight,
+          color: rankColor
         },
+        // 份數
         {
           type: "text",
           text: `${item.qty}`,
@@ -594,11 +615,13 @@ function buildShopRatioBubble({ shop, date, items }) {
           align: "end",
           weight: (isOilMix || isColdRatio) ? "bold" : "regular"
         },
+        // 佔比 %
         {
           type: "text",
-          text: item.ratio !== undefined && item.ratio !== ""
-            ? `${item.ratio}%`
-            : "",
+          text:
+            item.ratio !== undefined && item.ratio !== ""
+              ? `${item.ratio}%`
+              : "",
           flex: 3,
           size: "md",
           align: "end",
