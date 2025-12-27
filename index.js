@@ -89,6 +89,8 @@ const handleHSR = require("./handlers/hsr");
 const { buildStockListFlex } = require("./services/stock.list.flex");
 const { buildStockSingleFlex } = require("./services/stock.single.flex");
 
+const { buildShopRatioFlex } = require("./services/shopRatio.flex");
+
 // 股票
 const { getStockQuote } = require("./services/stock.service");
 const { buildStockText } = require("./services/stock.text");
@@ -658,6 +660,22 @@ app.post("/api/daily-summary", async (req, res) => {
   try {
     const c = await auth.getClient();
     const sheets = google.sheets({ version: "v4", auth: c });
+
+        // ===== C2-1 茶六銷售佔比 Flex（測試用）=====
+    const testFlex = buildShopRatioFlex({
+      shop: "茶六博愛",
+      date: "12-26",
+      items: [
+        { name: "極品豚肉套餐", qty: 19, ratio: 15.02 },
+        { name: "上等牛肉套餐", qty: 34, ratio: 15.96 },
+        { name: "真饌和牛套餐", qty: 34, ratio: 15.96 },
+        { name: "豐禾豚肉套餐", qty: 29, ratio: 13.62 },
+        { name: "三人極上套餐", qty: 22, ratio: 10.33 },
+        { name: "三人豚肉套餐", qty: 17, ratio: 7.98 }
+      ]
+    });
+
+    await client.pushMessage(process.env.BOSS_USER_ID, testFlex);
 
     const shops = [];
 
