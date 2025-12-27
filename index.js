@@ -536,7 +536,7 @@ function buildDailySummaryFlex({ date, shops }) {
   };
 }
 // ======================================================
-// C2-1 單店銷售佔比 Bubble（定版｜不新增資料）
+// C2-1 單店銷售佔比 Bubble（最終定版｜雙區前三🔥）
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
@@ -556,15 +556,45 @@ function buildShopRatioBubble({ shop, date, items }) {
     margin: "md"
   });
 
+  // ===============================
+  // 🔥 前三名計算（分區）
+  // ===============================
+
+  // 主區（鍋物 / 燒肉 / 聖誕）
+  const hotTop3 = items
+    .filter(i =>
+      i.qty > 0 &&
+      !i.name.includes("冷藏") &&
+      i.name !== "麻油、燒酒鍋"
+    )
+    .slice(0, 3)
+    .map(i => i.name);
+
+  // 冷藏肉區（排除比例）
+  const coldTop3 = items
+    .filter(i =>
+      i.qty > 0 &&
+      i.name.includes("冷藏") &&
+      i.name !== "冷藏肉比例"
+    )
+    .slice(0, 3)
+    .map(i => i.name);
+
   let coldSectionStarted = false;
 
   items.forEach(item => {
-    const isOilMix = item.name === "麻油、燒酒鍋";
+    const isOilMix    = item.name === "麻油、燒酒鍋";
     const isColdRatio = item.name === "冷藏肉比例";
-    const isColdItem = item.name.includes("冷藏");
+    const isColdItem  = item.name.includes("冷藏");
+    const isXmasItem  = item.name.includes("聖誕");
 
-    // 🔹 鍋 → 冷藏 分隔線（只出現一次）
-    if (!coldSectionStarted && isColdItem) {
+    const isHotTop3  = hotTop3.includes(item.name);
+    const isColdTop3 = coldTop3.includes(item.name);
+
+    const showFire = isHotTop3 || isColdTop3;
+
+    // 🔹 熱鍋 / 聖誕 → 冷藏 分隔線
+    if (!coldSectionStarted && isColdItem && !isXmasItem) {
       contents.push({
         type: "separator",
         margin: "xl"
@@ -579,11 +609,13 @@ function buildShopRatioBubble({ shop, date, items }) {
       contents: [
         {
           type: "text",
-          text: item.name,
+          text: showFire ? `🔥 ${item.name}` : item.name,
           flex: 5,
           size: "md",
           wrap: true,
-          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
+          weight: (isOilMix || isColdRatio || isXmasItem)
+            ? "bold"
+            : "regular"
         },
         {
           type: "text",
@@ -591,17 +623,22 @@ function buildShopRatioBubble({ shop, date, items }) {
           flex: 2,
           size: "md",
           align: "end",
-          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
+          weight: (isOilMix || isColdRatio)
+            ? "bold"
+            : "regular"
         },
         {
           type: "text",
-          text: item.ratio !== undefined && item.ratio !== ""
-            ? `${item.ratio}%`
-            : "",
+          text:
+            item.ratio !== undefined && item.ratio !== 0
+              ? `${item.ratio}%`
+              : "",
           flex: 2,
           size: "md",
           align: "end",
-          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
+          weight: (isOilMix || isColdRatio)
+            ? "bold"
+            : "regular"
         }
       ]
     });
@@ -616,6 +653,8 @@ function buildShopRatioBubble({ shop, date, items }) {
     }
   };
 }
+
+
 // ======================================================
 // C2-2 三店銷售佔比 Carousel（定版）
 // ======================================================
