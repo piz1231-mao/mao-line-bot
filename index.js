@@ -207,6 +207,44 @@ function parseSales(text) {
 }
 
 // ======================================================
+// 茶六套餐解析器（v1.2 疊加版）
+// ======================================================
+function parseTea6Combos(text) {
+  const t = text
+    .replace(/：/g, ":")
+    .replace(/％/g, "%")
+    .replace(/。/g, " ");
+
+  const items = [
+    "極品豚肉套餐",
+    "豐禾豚肉套餐",
+    "特級牛肉套餐",
+    "上等牛肉套餐",
+    "真饌和牛套餐",
+    "極炙牛肉套餐",
+    "日本和牛套餐",
+    "三人豚肉套餐",
+    "三人極上套餐",
+    "御。和牛賞套餐",
+    "聖誕歡饗套餐"
+  ];
+
+  const result = {};
+
+  for (const name of items) {
+    const reg = new RegExp(
+      `${name}\\s*[:：]?\\s*(\\d+)\\s*套[^\\d%]*([\\d.]+)%`
+    );
+    const m = t.match(reg);
+    result[name] = m
+      ? { qty: Number(m[1]), ratio: Number(m[2]) }
+      : { qty: 0, ratio: 0 };
+  }
+
+  return result;
+}
+
+// ======================================================
 // Sheet 操作
 // ======================================================
 async function ensureSheet(shop) {
@@ -394,25 +432,36 @@ await client.replyMessage(e.replyToken, flex);
         });
         continue;
       }
+// ===== 業績回報（只寫不回）=====
+if (text.startsWith("大哥您好")) {
+  const shop =
+    text.includes("湯棧") ? "湯棧中山"
+    : text.includes("三山") ? "三山博愛"
+    : "茶六博愛";
 
-      // ===== 業績回報（只寫不回）=====
-      if (text.startsWith("大哥您好")) {
-        const shop =
-          text.includes("湯棧") ? "湯棧中山"
-          : text.includes("三山") ? "三山博愛"
-          : "茶六博愛";
-        try {
-          await ensureSheet(shop);
-          await writeShop(shop, text, e.source.userId);
-        } catch (err) {
-          console.error("❌ 業績回報失敗:", err);
-          await client.replyMessage(e.replyToken, {
-            type:"text",
-            text:"⚠️ 業績回報失敗"
-          });
-        }
-        continue;
-      }
+  try {
+    // 1️⃣ 確保分頁存在
+    await ensureSheet(shop);
+
+    // 2️⃣ 寫入既有定版業績資料（⚠️ 不動）
+    await writeShop(shop, text, e.source.userId);
+
+    // 3️⃣ 茶六套餐佔比解析（v1.2 測試中，不寫入、不影響）
+    if (shop === "茶六博愛") {
+      const combo = parseTea6Combos(text);
+      console.log("🍱 茶六套餐佔比解析結果:", combo);
+    }
+
+  } catch (err) {
+    console.error("❌ 業績回報失敗:", err);
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "⚠️ 業績回報失敗"
+    });
+  }
+
+  continue;
+}
 
       // ===== Tier 2 / 3：高鐵 =====
       const hsrResult = await handleHSR(e);
