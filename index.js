@@ -624,7 +624,7 @@ if (text.startsWith("大哥您好")) {
 // ======================================================
 // 每日摘要 API（08:00 推播用）
 // ======================================================
-const { buildDailySummaryFlex } = require("./services/dailySummary.flex");
+
 
 app.post("/api/daily-summary", async (req, res) => {
   try {
