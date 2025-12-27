@@ -482,7 +482,7 @@ await client.replyMessage(e.replyToken, flex);
         });
         continue;
       }
-// ===== 業績回報（只寫不回）=====
+// ===== 業績回報（只寫不回｜定版）=====
 if (text.startsWith("大哥您好")) {
   const shop =
     text.includes("湯棧") ? "湯棧中山"
@@ -490,20 +490,24 @@ if (text.startsWith("大哥您好")) {
     : "茶六博愛";
 
   try {
-    // 1️⃣ 確保分頁存在
+    // 1️⃣ 確保店別分頁存在（既有定版）
     await ensureSheet(shop);
 
-    // 2️⃣ 寫入【定版】業績主資料，並取得 row（⚠️ 關鍵）
+    // 2️⃣ 寫入【定版】主業績資料，並「唯一可信」取得 row
     const row = await writeShop(shop, text, e.source.userId);
 
-    // 3️⃣ 茶六博愛 → 寫入套餐佔比（B2 正式接線）
+    // 3️⃣ 僅茶六博愛：寫入套餐佔比（B2 正式接線）
     if (shop === "茶六博愛") {
       const combo = parseTea6Combos(text);
 
-      // 🔥 真正寫入試算表（R 欄開始）
+      // 🔥 關鍵：用「同一個 row」寫入 R 欄後套餐佔比
       await writeTea6Combos(row, combo);
 
-      console.log("🍱 茶六套餐佔比已寫入 row:", row, combo);
+      console.log("🍱 茶六套餐佔比已寫入", {
+        shop,
+        row,
+        combo
+      });
     }
 
   } catch (err) {
