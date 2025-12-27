@@ -321,7 +321,6 @@ async function writeShop(shop, text, userId) {
   const sheets = google.sheets({ version: "v4", auth: c });
   const p = parseSales(text);
 
-  // 1️⃣ 寫入主資料
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: `${shop}!A1`,
@@ -339,12 +338,9 @@ async function writeShop(shop, text, userId) {
     }
   });
 
-  // 2️⃣ 抓 row（給後續用）
-  const row = Number(
-    res.data.updates.updatedRange.match(/\d+/)[0]
-  );
+  // ✅ 只信 append 回來的 row
+  const row = Number(res.data.updates.updatedRange.match(/\d+/)[0]);
 
-  // 3️⃣ 寫入摘要（Q 欄）
   const qtyLabel = shop === "湯棧中山" ? "總鍋數" : "套餐數";
 
   const summary =
@@ -367,7 +363,7 @@ async function writeShop(shop, text, userId) {
     requestBody: { values: [[summary]] }
   });
 
-  // 4️⃣ 一定要回傳 row
+  // ✅ 關鍵：把 row 回傳出去
   return row;
 }
 
