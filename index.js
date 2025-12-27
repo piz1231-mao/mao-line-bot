@@ -388,6 +388,9 @@ async function writeShop(shop, text, userId) {
 // ======================================================
 // 三店總覽 flex（C1 定版）
 // ======================================================
+// ======================================================
+// 三店總覽 Flex（C1｜直向｜字體放大｜業績粗體｜人事比條件反紅）
+// ======================================================
 function buildDailySummaryFlex({ date, shops }) {
   return {
     type: "flex",
@@ -397,67 +400,67 @@ function buildDailySummaryFlex({ date, shops }) {
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "md",
+        spacing: "lg",
         contents: [
           {
             type: "text",
             text: `📊 每日營運總覽｜${date}`,
             weight: "bold",
-            size: "xl"   // ⬅ 原 lg → xl
+            size: "xl"
           },
 
-          ...shops.flatMap((s, idx) => {
-            const hrLimit = s.name === "茶六博愛" ? 22 : 25;
+          ...shops.flatMap((shop, idx) => {
+            const hrOverLimit =
+              (shop.name === "茶六博愛" && shop.hrTotalRate > 22) ||
+              (shop.name !== "茶六博愛" && shop.hrTotalRate > 25);
 
-            const blocks = [
+            const block = [
               {
-                type: "text",
-                text: `【${s.name}】`,
-                weight: "bold",
-                size: "lg"   // ⬅ 原 md → lg
-              },
-              {
-                type: "text",
-                text: `💰 業績：${s.revenue.toLocaleString()}`,
-                size: "md"   // ⬅ 原 sm → md
-              },
-              {
-                type: "text",
-                text: `📦 ${s.qtyLabel}：${s.qty}`,
-                size: "md"
-              },
-              {
-                type: "text",
-                text: `🧾 客單價：${s.unit}`,
-                size: "md"
-              },
-              {
-                type: "text",
-                text: `👥 外場：${s.fp}（${s.fpRate}%）`,
-                size: "md"
-              },
-              {
-                type: "text",
-                text: `👥 內場：${s.bp}（${s.bpRate}%）`,
-                size: "md"
-              },
-              {
-                type: "text",
-                text: `👥 總計：${s.hrTotal}（${s.hrTotalRate}%）`,
-                size: "md",
-                weight: "bold",
-                color: s.hrTotalRate > hrLimit ? "#D32F2F" : "#333333"
+                type: "box",
+                layout: "vertical",
+                spacing: "sm",
+                contents: [
+                  {
+                    type: "text",
+                    text: shop.name,
+                    weight: "bold",
+                    size: "lg"
+                  },
+                  {
+                    type: "text",
+                    text: `💰 業績：${shop.revenue.toLocaleString()}`,
+                    size: "md",
+                    weight: "bold"
+                  },
+                  {
+                    type: "text",
+                    text: `📦 ${shop.qtyLabel}：${shop.qty}`,
+                    size: "md"
+                  },
+                  {
+                    type: "text",
+                    text: `🧾 客單價：${shop.unit}`,
+                    size: "md"
+                  },
+                  {
+                    type: "text",
+                    text: `👥 人事比：${shop.hrTotalRate}%`,
+                    size: "md",
+                    weight: "bold",
+                    color: hrOverLimit ? "#D32F2F" : "#333333"
+                  }
+                ]
               }
             ];
 
             if (idx < shops.length - 1) {
-              blocks.push({
+              block.push({
                 type: "separator",
-                margin: "md"
+                margin: "lg"
               });
             }
 
-            return blocks;
+            return block;
           })
         ]
       }
