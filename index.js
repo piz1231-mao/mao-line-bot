@@ -869,62 +869,18 @@ app.post("/api/daily-summary", async (req, res) => {
       return res.send("no data");
     }
 
-    // ==================================================
-    // C2｜茶六套餐佔比（真實資料）
-    // ==================================================
-    const ratioBubbles = [];
+   // ==================================================
+// C2｜三店銷售佔比（全部走同一套讀取）
+// ==================================================
+const ratioBubbles = [];
 
-    const r2 = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: "茶六博愛!R:AO"
-    });
-
-    const lastCombo = r2.data.values?.at(-1) || [];
-
-    const FIELDS = [
-      "極品豚肉套餐","豐禾豚肉套餐","特級牛肉套餐","上等牛肉套餐",
-      "真饌和牛套餐","極炙牛肉套餐","日本和牛套餐","三人豚肉套餐",
-      "三人極上套餐","御。和牛賞套餐","聖誕歡饗套餐"
-    ];
-
-    const items = [];
-
-    for (let i = 0; i < FIELDS.length; i++) {
-      const qty = Number(lastCombo[i * 2] || 0);
-      const ratio = Number(lastCombo[i * 2 + 1] || 0);
-      if (qty > 0) {
-        items.push({ name: FIELDS[i], qty, ratio });
-      }
-    }
-
-    if (items.length) {
-      ratioBubbles.push(
-        buildShopRatioBubble({
-          shop: "茶六博愛",
-          date: shops[0].date,
-          items: items.sort((a, b) => b.qty - a.qty).slice(0, 8)
-        })
-      );
-    }
-
-    // ==================================================
-    // C3｜三山 / 湯棧（暫時示意資料）
-    // ==================================================
-    ratioBubbles.push(
-      buildShopRatioBubble({
-        shop: "三山博愛",
-        date: shops[0].date,
-        items: [{ name: "豬&豬套餐", qty: 48, ratio: 18.6 }]
-      })
-    );
-
-    ratioBubbles.push(
-      buildShopRatioBubble({
-        shop: "湯棧中山",
-        date: shops[0].date,
-        items: [{ name: "麻油鍋", qty: 112, ratio: 22.8 }]
-      })
-    );
+for (const s of SHOP_LIST) {
+  const bubble = await readShopRatioBubble({
+    shop: s,
+    date: shops[0].date
+  });
+  if (bubble) ratioBubbles.push(bubble);
+}
 
     // ==================================================
     // ✅【關鍵】C1 + C2 合併成「一個 Carousel」
