@@ -851,6 +851,9 @@ if (text.startsWith("大哥您好")) {
 // ======================================================
 // ✅ 定版：讀取各店銷售佔比（保證不漏）
 // ======================================================
+// ======================================================
+// ✅ 定版：讀取各店銷售佔比（保證不漏、不重複）
+// ======================================================
 async function readShopRatioBubble({ shop, date }) {
   const fields = SHOP_RATIO_FIELDS[shop];
   if (!fields) return null;
@@ -862,56 +865,52 @@ async function readShopRatioBubble({ shop, date }) {
 
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${shop}!R:AZ`   // 🔥 一定要 AZ
+    range: `${shop}!R:AZ`   // ⚠️ 一定要到 AZ
   });
 
   const last = r.data.values?.at(-1);
   if (!last) return null;
 
-  // ==================================================
-  // 1️⃣ 組原始 items（完全照欄位，不漏）
-  // ==================================================
-  const rawItems = [];
+  const items = [];
 
+  // 👉 用欄位定錨，反推 qty / ratio
   for (let i = 0; i < fields.length; i++) {
-    const name = fields[i];
-    const qty = Number(last[i * 2] || 0);
-    const ratio = Number(last[i * 2 + 1] || 0);
-
-    rawItems.push({ name, qty, ratio });
+    const col = i * 2;
+    items.push({
+      name: fields[i],
+      qty: Number(last[col] || 0),
+      ratio: Number(last[col + 1] || 0)
+    });
   }
 
-  // ==================================================
-  // 2️⃣ 組 UI contents
-  // ==================================================
-  const contents = [];
-
-  // 標題
-  contents.push({
-    type: "text",
-    text: `🍱 ${shop}｜銷售佔比`,
-    weight: "bold",
-    size: "xl"
-  });
-
-  contents.push({
-    type: "text",
-    text: date,
-    size: "sm",
-    color: "#888888",
-    margin: "md"
-  });
-
-  // ==================================================
-  // 3️⃣ 湯棧專用顯示邏輯
-  // ==================================================
+  // ===============================
+  // 湯棧專用顯示邏輯（最終定版）
+  // ===============================
   if (shop === "湯棧中山") {
-    const hotpot = [];
-    const cold = [];
-    let hotpotTotal = null;
-    let coldTotal = null;
+    const contents = [];
 
-    for (const item of rawItems) {
+    // 標題
+    contents.push({
+      type: "text",
+      text: `🍱 ${shop}｜銷售佔比`,
+      weight: "bold",
+      size: "xl"
+    });
+
+    contents.push({
+      type: "text",
+      text: date,
+      size: "sm",
+      color: "#888888",
+      margin: "md"
+    });
+
+    const hotpot = [];        // 鍋物 + 聖誕
+    const cold = [];          // 冷藏肉
+    let hotpotTotal = null;   // 麻油、燒酒鍋
+    let coldTotal = null;     // 冷藏肉比例
+
+    for (const item of items) {
       if (item.name === "麻油、燒酒鍋") {
         hotpotTotal = item;
       } else if (item.name === "冷藏肉比例") {
@@ -919,49 +918,62 @@ async function readShopRatioBubble({ shop, date }) {
       } else if (item.name.includes("冷藏")) {
         cold.push(item);
       } else {
-        // 👉 鍋物 + 聖誕海陸雙饌套餐
+        // ✅ 鍋物 + 聖誕套餐 全部進來
         hotpot.push(item);
       }
     }
 
-    // ---- 上半段：鍋物＋聖誕（依佔比排序）----
+    // ---- 上半段：鍋物 + 聖誕（依佔比排序）----
     hotpot
-      .filter(i => i.qty > 0)
       .sort((a, b) => b.ratio - a.ratio)
-      .forEach(item => contents.push(buildRow(item)));
+      .forEach(item => {
+        contents.push(buildRow(item));
+      });
 
-    // 👉 麻油、燒酒鍋（粗體）
-    if (hotpotTotal && hotpotTotal.qty > 0) {
+    // 👉 麻油、燒酒鍋（粗體，只顯示一次）
+    if (hotpotTotal) {
       contents.push(buildRow(hotpotTotal, true));
     }
 
-    // 分隔線
+    // ---- 分隔線 ----
     contents.push({
       type: "separator",
       margin: "xl"
     });
 
-    // ---- 下半段：冷藏肉 ----
+    // ---- 下半段：冷藏肉（依佔比排序）----
     cold
-      .filter(i => i.qty > 0)
       .sort((a, b) => b.ratio - a.ratio)
-      .forEach(item => contents.push(buildRow(item)));
+      .forEach(item => {
+        contents.push(buildRow(item));
+      });
 
     // 👉 冷藏肉比例（粗體）
-    if (coldTotal && coldTotal.qty > 0) {
+    if (coldTotal) {
       contents.push(buildRow(coldTotal, true));
     }
 
-  } else {
-    // ==================================================
-    // 4️⃣ 茶六 / 三山（全部照銷售排序）
-    // ==================================================
-    rawItems
-      .filter(i => i.qty > 0)
-      .sort((a, b) => b.qty - a.qty)
-      .forEach(item => contents.push(buildRow(item)));
+    return {
+      type: "bubble",
+      body: {
+        type: "box",
+        layout: "vertical",
+        contents
+      }
+    };
   }
 
+  // =============================
+  // 茶六 / 三山：維持原本行為
+  // =============================
+  return buildShopRatioBubble({
+    shop,
+    date,
+    items: items
+      .filter(i => i.qty > 0)
+      .sort((a, b) => b.qty - a.qty)
+  });
+}
   // ==================================================
   // 5️⃣ 回傳完整 bubble
   // ==================================================
