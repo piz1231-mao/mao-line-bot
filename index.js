@@ -535,6 +535,48 @@ function buildDailySummaryFlex({ date, shops }) {
     }
   };
 }
+
+// ------------------------------------------------
+// 共用 Row Builder（銷售佔比用）
+// ------------------------------------------------
+function buildRow(item, highlight = false) {
+  return {
+    type: "box",
+    layout: "horizontal",
+    margin: highlight ? "xl" : "md",
+    contents: [
+      {
+        type: "text",
+        text: item.name,
+        flex: 5,
+        size: "md",
+        wrap: true,
+        weight: highlight ? "bold" : "regular"
+      },
+      {
+        type: "text",
+        text: `${item.qty}`,
+        flex: 2,
+        size: "md",
+        align: "end",
+        weight: highlight ? "bold" : "regular"
+      },
+      {
+        type: "text",
+        text:
+          item.ratio !== undefined &&
+          item.ratio !== null &&
+          item.ratio !== 0
+            ? `${item.ratio}%`
+            : "",
+        flex: 2,
+        size: "md",
+        align: "end",
+        weight: highlight ? "bold" : "regular"
+      }
+    ]
+  };
+}
 // ======================================================
 // C2-1 單店銷售佔比 Bubble（定版｜排序＋聖誕進鍋物）
 // ======================================================
