@@ -700,22 +700,31 @@ if (text.startsWith("大哥您好")) {
 });
 
 // ======================================================
-// 每日摘要 API（08:00 推播用）
+// 每日摘要 API（08:00 推播用｜流檢同款｜只推一則）
 // ======================================================
 app.post("/api/daily-summary", async (req, res) => {
   try {
-    const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
+    const sheets = google.sheets({
+      version: "v4",
+      auth: await auth.getClient()
+    });
 
-    // ---------- C1 ----------
+    // ==================================================
+    // C1｜讀取三店最新業績
+    // ==================================================
     const shops = [];
+
     for (const s of SHOP_LIST) {
       const r = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         range: `${s}!A:Q`
       });
+
       const rows = r.data.values || [];
       if (rows.length < 2) continue;
+
       const last = rows.at(-1);
+
       shops.push({
         name: s,
         date: last[5]?.slice(5),
@@ -732,62 +741,98 @@ app.post("/api/daily-summary", async (req, res) => {
       });
     }
 
-    if (!shops.length) return res.send("no data");
+    if (!shops.length) {
+      return res.send("no data");
+    }
 
-    await client.pushMessage(
-      process.env.BOSS_USER_ID,
-      buildDailySummaryFlex({ date: shops[0].date, shops })
-    );
-
-    // ---------- C2 ----------
+    // ==================================================
+    // C2｜茶六套餐佔比（真實資料）
+    // ==================================================
     const ratioBubbles = [];
 
-    // 茶六（真實資料）
     const r2 = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: "茶六博愛!R:AO"
     });
+
     const lastCombo = r2.data.values?.at(-1) || [];
+
     const FIELDS = [
       "極品豚肉套餐","豐禾豚肉套餐","特級牛肉套餐","上等牛肉套餐",
       "真饌和牛套餐","極炙牛肉套餐","日本和牛套餐","三人豚肉套餐",
       "三人極上套餐","御。和牛賞套餐","聖誕歡饗套餐"
     ];
+
     const items = [];
+
     for (let i = 0; i < FIELDS.length; i++) {
       const qty = Number(lastCombo[i * 2] || 0);
       const ratio = Number(lastCombo[i * 2 + 1] || 0);
-      if (qty > 0) items.push({ name: FIELDS[i], qty, ratio });
+      if (qty > 0) {
+        items.push({ name: FIELDS[i], qty, ratio });
+      }
     }
+
     if (items.length) {
       ratioBubbles.push(
         buildShopRatioBubble({
           shop: "茶六博愛",
           date: shops[0].date,
-          items: items.sort((a,b)=>b.qty-a.qty).slice(0,8)
+          items: items.sort((a, b) => b.qty - a.qty).slice(0, 8)
         })
       );
     }
 
-    // 三山 / 湯棧（暫時假資料）
-    ratioBubbles.push(buildShopRatioBubble({
-      shop:"三山博愛",date:shops[0].date,
-      items:[{name:"豬&豬套餐",qty:48,ratio:18.6}]
-    }));
-    ratioBubbles.push(buildShopRatioBubble({
-      shop:"湯棧中山",date:shops[0].date,
-      items:[{name:"麻油鍋",qty:112,ratio:22.8}]
-    }));
+    // ==================================================
+    // C3｜三山 / 湯棧（暫時示意資料）
+    // ==================================================
+    ratioBubbles.push(
+      buildShopRatioBubble({
+        shop: "三山博愛",
+        date: shops[0].date,
+        items: [{ name: "豬&豬套餐", qty: 48, ratio: 18.6 }]
+      })
+    );
 
+    ratioBubbles.push(
+      buildShopRatioBubble({
+        shop: "湯棧中山",
+        date: shops[0].date,
+        items: [{ name: "麻油鍋", qty: 112, ratio: 22.8 }]
+      })
+    );
+
+    // ==================================================
+    // ✅【關鍵】C1 + C2 合併成「一個 Carousel」
+    // ==================================================
+    const bubbles = [];
+
+    // 第一頁：總覽（C1）
+    bubbles.push(
+      buildDailySummaryFlex({
+        date: shops[0].date,
+        shops
+      }).contents   // ⚠️ 只取 bubble
+    );
+
+    // 後面頁：各店佔比（C2）
+    bubbles.push(...ratioBubbles);
+
+    // ==================================================
+    // ✅ 只 push 一次（流檢同款行為）
+    // ==================================================
     await client.pushMessage(process.env.BOSS_USER_ID, {
-      type:"flex",
-      altText:"🍱 三店銷售佔比",
-      contents:{ type:"carousel", contents:ratioBubbles }
+      type: "flex",
+      altText: `每日營運總覽 ${shops[0].date}`,
+      contents: {
+        type: "carousel",
+        contents: bubbles
+      }
     });
 
     res.send("OK");
   } catch (err) {
-    console.error(err);
+    console.error("❌ daily-summary failed:", err);
     res.status(500).send("fail");
   }
 });
