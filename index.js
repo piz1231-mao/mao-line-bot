@@ -538,7 +538,7 @@ function buildDailySummaryFlex({ date, shops }) {
 }
 
 // ======================================================
-// C2-1 單店銷售佔比 Bubble（v1.6.1｜前三名顏色＋粗體）
+// C2-1 單店銷售佔比 Bubble（v1.6.2｜冷藏肉獨立排名）
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
@@ -558,23 +558,39 @@ function buildShopRatioBubble({ shop, date, items }) {
     margin: "md"
   });
 
+  // ================================
+  // 🔢 建立「區塊內排名 index」
+  // ================================
+  let hotRank = 0;
+  let coldRank = 0;
   let coldSectionStarted = false;
 
-  items.forEach((item, idx) => {
-    const isOilMix     = item.name === "麻油、燒酒鍋";
-    const isColdRatio  = item.name === "冷藏肉比例";
-    const isColdItem   = item.name.includes("冷藏");
+  items.forEach(item => {
+    const isOilMix    = item.name === "麻油、燒酒鍋";
+    const isColdRatio = item.name === "冷藏肉比例";
+    const isColdItem  = item.name.includes("冷藏");
 
-    // ===== 排名判斷（只針對一般品項）=====
-    const isRankItem = !isOilMix && !isColdRatio;
-    const isTop1 = isRankItem && idx === 0;
-    const isTop2 = isRankItem && idx === 1;
-    const isTop3 = isRankItem && idx === 2;
+    // === 判斷這一列要不要算排名 ===
+    let rankIndex = null;
+
+    if (!isOilMix && !isColdRatio) {
+      if (!isColdItem) {
+        rankIndex = hotRank;
+        hotRank++;
+      } else {
+        rankIndex = coldRank;
+        coldRank++;
+      }
+    }
+
+    const isTop1 = rankIndex === 0;
+    const isTop2 = rankIndex === 1;
+    const isTop3 = rankIndex === 2;
 
     const rankColor =
-      isTop1 ? "#D32F2F" :   // 第一名：紅
-      isTop2 ? "#F57C00" :   // 第二名：橘
-      isTop3 ? "#FBC02D" :   // 第三名：金
+      isTop1 ? "#D32F2F" :   // 🥇
+      isTop2 ? "#F57C00" :   // 🥈
+      isTop3 ? "#FBC02D" :   // 🥉
       "#333333";
 
     const nameWeight =
@@ -582,7 +598,7 @@ function buildShopRatioBubble({ shop, date, items }) {
         ? "bold"
         : "regular";
 
-    // 🔹 鍋 → 冷藏 分隔線（只出現一次）
+    // 🔹 冷藏區分隔線（只出現一次）
     if (!coldSectionStarted && isColdItem) {
       contents.push({
         type: "separator",
