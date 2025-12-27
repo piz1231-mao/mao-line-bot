@@ -386,6 +386,72 @@ async function writeShop(shop, text, userId) {
 
 
 // ======================================================
+// 三店總覽 flex
+// ======================================================
+function buildDailySummaryFlex({ date, shops }) {
+  return {
+    type: "flex",
+    altText: `每日營運總覽 ${date}`,
+    contents: {
+      type: "bubble",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          {
+            type: "text",
+            text: `📊 每日營運總覽｜${date}`,
+            weight: "bold",
+            size: "lg"
+          },
+
+          ...shops.flatMap((shop, idx) => {
+            const block = [
+              {
+                type: "box",
+                layout: "vertical",
+                spacing: "xs",
+                contents: [
+                  {
+                    type: "text",
+                    text: shop.name,
+                    weight: "bold",
+                    size: "md"
+                  },
+                  {
+                    type: "text",
+                    text: `💰 業績：${shop.revenue.toLocaleString()}`,
+                    size: "sm"
+                  },
+                  {
+                    type: "text",
+                    text: `👥 人事比：${shop.hrRate}%`,
+                    size: "sm",
+                    color: shop.hrRate > 25 ? "#D32F2F" : "#333333"
+                  }
+                ]
+              }
+            ];
+
+            // 不是最後一家才加分隔線
+            if (idx < shops.length - 1) {
+              block.push({
+                type: "separator",
+                margin: "md"
+              });
+            }
+
+            return block;
+          })
+        ]
+      }
+    }
+  };
+}
+
+
+// ======================================================
 // LINE Webhook（Router 主流程）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
@@ -556,30 +622,51 @@ if (text.startsWith("大哥您好")) {
 });
 
 // ======================================================
-// 每日摘要 API（08:00 推播用）
+// 每日摘要 API（08:00 推播用｜C1 三店總覽 Flex）
 // ======================================================
 app.post("/api/daily-summary", async (req, res) => {
   try {
     const c = await auth.getClient();
-    const sheets = google.sheets({ version:"v4", auth:c });
+    const sheets = google.sheets({ version: "v4", auth: c });
 
-    let out = [];
-    for (const s of SHOP_LIST) {
+    const shops = [];
+
+    for (const shop of SHOP_LIST) {
       const r = await sheets.spreadsheets.values.get({
-        spreadsheetId:SPREADSHEET_ID,
-        range:`${s}!Q:Q`
+        spreadsheetId: SPREADSHEET_ID,
+        range: `${shop}!Q:Q`
       });
-      const list = r.data.values?.map(v=>v[0]).filter(Boolean) || [];
-      if (list.length) out.push(list.at(-1));
+
+      const list = r.data.values?.map(v => v[0]).filter(Boolean) || [];
+      if (!list.length) continue;
+
+      const last = list.at(-1);
+
+      // 從摘要文字中抓數字（⚠️ 沿用你現有摘要格式）
+      const revenue = Number(last.match(/業績：([\d,]+)/)?.[1]?.replace(/,/g, "")) || 0;
+      const hrRate  = Number(last.match(/總計：[\d,]+（([\d.]+)%）/)?.[1]) || 0;
+
+      shops.push({
+        name: shop,
+        revenue,
+        hrRate
+      });
     }
 
-    if (!out.length) return res.send("no data");
+    if (!shops.length) return res.send("no data");
+
+    // ===== C1：三店總覽 Flex（直向）=====
+    const flex = buildDailySummaryFlex({
+      date: new Date().toLocaleDateString("zh-TW", {
+        month: "2-digit",
+        day: "2-digit",
+        timeZone: "Asia/Taipei"
+      }),
+      shops
+    });
 
     if (process.env.BOSS_USER_ID) {
-      await client.pushMessage(process.env.BOSS_USER_ID, {
-        type:"text",
-        text: out.join("\n\n━━━━━━━━━━━\n\n")
-      });
+      await client.pushMessage(process.env.BOSS_USER_ID, flex);
     }
 
     res.send("ok");
