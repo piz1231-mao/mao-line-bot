@@ -714,6 +714,7 @@ await client.replyMessage(e.replyToken, flex);
         });
         continue;
       }
+
 // ===== 業績回報（只寫不回｜定版）=====
 if (text.startsWith("大哥您好")) {
   const shop =
@@ -722,35 +723,32 @@ if (text.startsWith("大哥您好")) {
     : "茶六博愛";
 
   try {
-    // 1️⃣ 確保店別分頁存在（既有定版）
+    // 1️⃣ 確保店別分頁存在
     await ensureSheet(shop);
 
-    // 2️⃣ 寫入【定版】主業績資料，並「唯一可信」取得 row
+    // 2️⃣ 寫入主業績資料（唯一可信 row）
     const row = await writeShop(shop, text, e.source.userId);
 
+    // 3️⃣ 寫入銷售佔比（如果該店有定義）
     if (SHOP_RATIO_FIELDS[shop]) {
-  let comboMap = {};
+      let comboMap = {};
 
-  if (shop === "茶六博愛") {
-    comboMap = parseTea6Combos(text);
-  } else if (shop === "三山博愛") {
-    comboMap = parseSanshanCombos(text);
-  } else if (shop === "湯棧中山") {
-    comboMap = parseTangzhanCombos(text);
-  }
+      if (shop === "茶六博愛") {
+        comboMap = parseTea6Combos(text);
+      } else if (shop === "三山博愛") {
+        comboMap = parseSanshanCombos(text);
+      } else if (shop === "湯棧中山") {
+        comboMap = parseTangzhanCombos(text);
+      }
 
-  await writeShopRatios({
-    shop,
-    row,
-    comboMap
-  });
-
-  console.log("🍱 銷售佔比已寫入", shop, row);
-}
-        combo
+      await writeShopRatios({
+        shop,
+        row,
+        comboMap
       });
-    }
 
+      console.log("🍱 銷售佔比已寫入", shop, row);
+    }
   } catch (err) {
     console.error("❌ 業績回報失敗:", err);
     await client.replyMessage(e.replyToken, {
