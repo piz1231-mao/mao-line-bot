@@ -908,7 +908,7 @@ async function readShopRatioBubble({ shop, date }) {
     date,
     items: items.sort((a, b) => b.qty - a.qty)
   });
-}
+
 
 // ======================================================
 // 每日摘要 API（08:00 推播用｜流檢同款｜只推一則）
