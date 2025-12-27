@@ -827,55 +827,112 @@ async function readShopRatioBubble({ shop, date }) {
   const last = r.data.values?.at(-1);
   if (!last) return null;
 
-  const items = [];
+  // ==================================================
+  // 1️⃣ 組原始 items（完全照欄位，不漏）
+  // ==================================================
+  const rawItems = [];
 
-  // ✅ 用 fields 為主，反推欄位位置
   for (let i = 0; i < fields.length; i++) {
-    const col = i * 2;
     const name = fields[i];
+    const qty = Number(last[i * 2] || 0);
+    const ratio = Number(last[i * 2 + 1] || 0);
 
-    const qty = Number(last[col] || 0);
-    const ratio = Number(last[col + 1] || 0);
-
-    items.push({
-      name,
-      qty,
-      ratio,
-      isBold:
-        name === "麻油、燒酒鍋" ||
-        name === "冷藏肉比例"
-    });
+    rawItems.push({ name, qty, ratio });
   }
 
-  // =============================
-  // 湯棧：上下段邏輯
-  // =============================
-  if (shop === "湯棧中山") {
-    const hotpot = items.filter(i =>
-      !i.name.includes("冷藏")
-    );
-    const cold = items.filter(i =>
-      i.name.includes("冷藏")
-    );
+  // ==================================================
+  // 2️⃣ 組 UI contents
+  // ==================================================
+  const contents = [];
 
-    return buildShopRatioBubble({
-      shop,
-      date,
-      items: [...hotpot, ...cold]
-    });
-  }
-
-  // =============================
-  // 茶六 / 三山：全部顯示
-  // =============================
-  return buildShopRatioBubble({
-    shop,
-    date,
-    items: items.sort((a, b) => b.qty - a.qty)
+  // 標題
+  contents.push({
+    type: "text",
+    text: `🍱 ${shop}｜銷售佔比`,
+    weight: "bold",
+    size: "xl"
   });
+
+  contents.push({
+    type: "text",
+    text: date,
+    size: "sm",
+    color: "#888888",
+    margin: "md"
+  });
+
+  // ==================================================
+  // 3️⃣ 湯棧專用顯示邏輯
+  // ==================================================
+  if (shop === "湯棧中山") {
+    const hotpot = [];
+    const cold = [];
+    let hotpotTotal = null;
+    let coldTotal = null;
+
+    for (const item of rawItems) {
+      if (item.name === "麻油、燒酒鍋") {
+        hotpotTotal = item;
+      } else if (item.name === "冷藏肉比例") {
+        coldTotal = item;
+      } else if (item.name.includes("冷藏")) {
+        cold.push(item);
+      } else {
+        // 👉 鍋物 + 聖誕海陸雙饌套餐
+        hotpot.push(item);
+      }
+    }
+
+    // ---- 上半段：鍋物＋聖誕（依佔比排序）----
+    hotpot
+      .filter(i => i.qty > 0)
+      .sort((a, b) => b.ratio - a.ratio)
+      .forEach(item => contents.push(buildRow(item)));
+
+    // 👉 麻油、燒酒鍋（粗體）
+    if (hotpotTotal && hotpotTotal.qty > 0) {
+      contents.push(buildRow(hotpotTotal, true));
+    }
+
+    // 分隔線
+    contents.push({
+      type: "separator",
+      margin: "xl"
+    });
+
+    // ---- 下半段：冷藏肉 ----
+    cold
+      .filter(i => i.qty > 0)
+      .sort((a, b) => b.ratio - a.ratio)
+      .forEach(item => contents.push(buildRow(item)));
+
+    // 👉 冷藏肉比例（粗體）
+    if (coldTotal && coldTotal.qty > 0) {
+      contents.push(buildRow(coldTotal, true));
+    }
+
+  } else {
+    // ==================================================
+    // 4️⃣ 茶六 / 三山（全部照銷售排序）
+    // ==================================================
+    rawItems
+      .filter(i => i.qty > 0)
+      .sort((a, b) => b.qty - a.qty)
+      .forEach(item => contents.push(buildRow(item)));
+  }
+
+  // ==================================================
+  // 5️⃣ 回傳完整 bubble
+  // ==================================================
+  return {
+    type: "bubble",
+    body: {
+      type: "box",
+      layout: "vertical",
+      contents
+    }
+  };
 }
-
-
 // ======================================================
 // 每日摘要 API（08:00 推播用｜流檢同款｜只推一則）
 // ======================================================
