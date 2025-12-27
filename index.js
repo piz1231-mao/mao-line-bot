@@ -622,8 +622,10 @@ if (text.startsWith("大哥您好")) {
 });
 
 // ======================================================
-// 每日摘要 API（08:00 推播用｜C1 三店總覽 Flex）
+// 每日摘要 API（08:00 推播用）
 // ======================================================
+const { buildDailySummaryFlex } = require("./services/dailySummary.flex");
+
 app.post("/api/daily-summary", async (req, res) => {
   try {
     const c = await auth.getClient();
@@ -631,43 +633,43 @@ app.post("/api/daily-summary", async (req, res) => {
 
     const shops = [];
 
-    for (const shop of SHOP_LIST) {
+    for (const s of SHOP_LIST) {
       const r = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${shop}!Q:Q`
+        range: `${s}!A:Q`
       });
 
-      const list = r.data.values?.map(v => v[0]).filter(Boolean) || [];
-      if (!list.length) continue;
+      const rows = r.data.values || [];
+      if (rows.length < 2) continue;
 
-      const last = list.at(-1);
-
-      // 從摘要文字中抓數字（⚠️ 沿用你現有摘要格式）
-      const revenue = Number(last.match(/業績：([\d,]+)/)?.[1]?.replace(/,/g, "")) || 0;
-      const hrRate  = Number(last.match(/總計：[\d,]+（([\d.]+)%）/)?.[1]) || 0;
+      const last = rows.at(-1);
 
       shops.push({
-        name: shop,
-        revenue,
-        hrRate
+        name: s,
+        date: last[5]?.slice(5),          // 營業日期 MM-DD
+        revenue: Number(last[6] || 0),
+        qty: Number(last[8] || 0),
+        qtyLabel: s === "湯棧中山" ? "總鍋數" : "套餐數",
+        unit: last[9],
+
+        fp: Number(last[10] || 0),
+        fpRate: Number(last[11] || 0),
+        bp: Number(last[12] || 0),
+        bpRate: Number(last[13] || 0),
+
+        hrTotal: Number(last[14] || 0),
+        hrTotalRate: Number(last[15] || 0)
       });
     }
 
     if (!shops.length) return res.send("no data");
 
-    // ===== C1：三店總覽 Flex（直向）=====
     const flex = buildDailySummaryFlex({
-      date: new Date().toLocaleDateString("zh-TW", {
-        month: "2-digit",
-        day: "2-digit",
-        timeZone: "Asia/Taipei"
-      }),
+      date: shops[0].date,
       shops
     });
 
-    if (process.env.BOSS_USER_ID) {
-      await client.pushMessage(process.env.BOSS_USER_ID, flex);
-    }
+    await client.pushMessage(process.env.BOSS_USER_ID, flex);
 
     res.send("ok");
   } catch (err) {
