@@ -285,41 +285,63 @@ function parseTea6Combos(text) {
 
   return result;
 }
+function parseSanshanCombos(text) {
+  const t = text.replace(/：/g, ":").replace(/％/g, "%");
+  const fields = SHOP_RATIO_FIELDS["三山博愛"];
+  const result = {};
+
+  for (const name of fields) {
+    const reg = new RegExp(
+      `${name}\\s*[:：]?\\s*(\\d+)\\s*(?:套)?[^\\d%]*([\\d.]+)%`
+    );
+    const m = t.match(reg);
+    result[name] = m
+      ? { qty: Number(m[1]), ratio: Number(m[2]) }
+      : { qty: 0, ratio: 0 };
+  }
+
+  return result;
+}
+function parseTangzhanCombos(text) {
+  const t = text.replace(/：/g, ":").replace(/％/g, "%");
+  const fields = SHOP_RATIO_FIELDS["湯棧中山"];
+  const result = {};
+
+  for (const name of fields) {
+    const reg = new RegExp(
+      `${name}\\s*[:：]?\\s*(\\d+)[^\\d%]*([\\d.]+)%`
+    );
+    const m = t.match(reg);
+    result[name] = m
+      ? { qty: Number(m[1]), ratio: Number(m[2]) }
+      : { qty: 0, ratio: 0 };
+  }
+
+  return result;
+}
+
 
 // ======================================================
-// 茶六套餐佔比寫入（B2）
+// 通用：各店套餐 / 鍋型佔比寫入（R 欄）
 // ======================================================
-async function writeTea6Combos(row, comboMap) {
+async function writeShopRatios({ shop, row, comboMap }) {
   const c = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: c });
 
-  // 固定欄位順序（⚠️ 這是定錨，不要動）
-  const FIELDS = [
-    "極品豚肉套餐",
-    "豐禾豚肉套餐",
-    "特級牛肉套餐",
-    "上等牛肉套餐",
-    "真饌和牛套餐",
-    "極炙牛肉套餐",
-    "日本和牛套餐",
-    "三人豚肉套餐",
-    "三人極上套餐",
-    "御。和牛賞套餐",
-    "聖誕歡饗套餐"
-  ];
+  const fields = SHOP_RATIO_FIELDS[shop];
+  if (!fields) return;
 
   const values = [];
 
-  for (const name of FIELDS) {
+  for (const name of fields) {
     const item = comboMap[name] || { qty: 0, ratio: 0 };
     values.push(item.qty);
     values.push(item.ratio);
   }
 
-  // R 欄起（第 18 欄）
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `茶六博愛!R${row}`,
+    range: `${shop}!R${row}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [values] }
   });
@@ -706,16 +728,25 @@ if (text.startsWith("大哥您好")) {
     // 2️⃣ 寫入【定版】主業績資料，並「唯一可信」取得 row
     const row = await writeShop(shop, text, e.source.userId);
 
-    // 3️⃣ 僅茶六博愛：寫入套餐佔比（B2 正式接線）
-    if (shop === "茶六博愛") {
-      const combo = parseTea6Combos(text);
+    if (SHOP_RATIO_FIELDS[shop]) {
+  let comboMap = {};
 
-      // 🔥 關鍵：用「同一個 row」寫入 R 欄後套餐佔比
-      await writeTea6Combos(row, combo);
+  if (shop === "茶六博愛") {
+    comboMap = parseTea6Combos(text);
+  } else if (shop === "三山博愛") {
+    comboMap = parseSanshanCombos(text);
+  } else if (shop === "湯棧中山") {
+    comboMap = parseTangzhanCombos(text);
+  }
 
-      console.log("🍱 茶六套餐佔比已寫入", {
-        shop,
-        row,
+  await writeShopRatios({
+    shop,
+    row,
+    comboMap
+  });
+
+  console.log("🍱 銷售佔比已寫入", shop, row);
+}
         combo
       });
     }
