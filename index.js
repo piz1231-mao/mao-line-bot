@@ -536,7 +536,7 @@ function buildDailySummaryFlex({ date, shops }) {
   };
 }
 // ======================================================
-// C2-1 單店銷售佔比 Bubble（一定要存在）
+// C2-1 單店銷售佔比 Bubble（定版｜不新增資料）
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
@@ -556,76 +556,56 @@ function buildShopRatioBubble({ shop, date, items }) {
     margin: "md"
   });
 
-  // ===============================
-  // 湯棧專用顯示規則
-  // ===============================
-  if (shop === "湯棧中山") {
-    // ---- 分類 ----
-    const hotpot = [];
-    const cold = [];
-    let hotpotTotal = null;
-    let coldTotal = null;
+  let coldSectionStarted = false;
 
-    for (const item of items) {
-      if (item.name === "麻油、燒酒鍋") {
-        hotpotTotal = item;
-      } else if (item.name === "冷藏肉比例") {
-        coldTotal = item;
-      } else if (item.name.includes("冷藏")) {
-        cold.push(item);
-      } else {
-        hotpot.push(item);
-      }
-    }
+  items.forEach(item => {
+    const isOilMix = item.name === "麻油、燒酒鍋";
+    const isColdRatio = item.name === "冷藏肉比例";
+    const isColdItem = item.name.includes("冷藏");
 
-    // ---- 上半段：鍋物（排序）----
-    hotpot
-      .sort((a, b) => b.qty - a.qty)
-      .forEach(item => {
-        contents.push(buildRow(item));
+    // 🔹 鍋 → 冷藏 分隔線（只出現一次）
+    if (!coldSectionStarted && isColdItem) {
+      contents.push({
+        type: "separator",
+        margin: "xl"
       });
-
-    // 👉 加總鍋（只顯示這一筆）
-    if (hotpotTotal) {
-      contents.push(buildRow(hotpotTotal, true));
+      coldSectionStarted = true;
     }
 
-    // ---- 分隔線 ----
     contents.push({
-      type: "separator",
-      margin: "xl"
+      type: "box",
+      layout: "horizontal",
+      margin: (isOilMix || isColdRatio) ? "xl" : "md",
+      contents: [
+        {
+          type: "text",
+          text: item.name,
+          flex: 5,
+          size: "md",
+          wrap: true,
+          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
+        },
+        {
+          type: "text",
+          text: `${item.qty}`,
+          flex: 2,
+          size: "md",
+          align: "end",
+          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
+        },
+        {
+          type: "text",
+          text: item.ratio !== undefined && item.ratio !== ""
+            ? `${item.ratio}%`
+            : "",
+          flex: 2,
+          size: "md",
+          align: "end",
+          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
+        }
+      ]
     });
-
-    // ---- 下半段：冷藏肉 ----
-    cold
-      .sort((a, b) => b.qty - a.qty)
-      .forEach(item => {
-        contents.push(buildRow(item));
-      });
-
-    // 👉 冷藏肉比例（粗體）
-    if (coldTotal) {
-      contents.push(buildRow(coldTotal, true));
-    }
-
-    return {
-      type: "bubble",
-      body: {
-        type: "box",
-        layout: "vertical",
-        contents
-      }
-    };
-  }
-
-  // ===============================
-  // 其他店（維持原本行為）
-  // ===============================
-  items
-    .sort((a, b) => b.qty - a.qty)
-    .forEach(item => {
-      contents.push(buildRow(item));
-    });
+  });
 
   return {
     type: "bubble",
@@ -636,44 +616,6 @@ function buildShopRatioBubble({ shop, date, items }) {
     }
   };
 }
-
-// ------------------------------------------------
-// 共用 row builder
-// ------------------------------------------------
-function buildRow(item, highlight = false) {
-  return {
-    type: "box",
-    layout: "horizontal",
-    margin: highlight ? "xl" : "md",
-    contents: [
-      {
-        type: "text",
-        text: item.name,
-        flex: 5,
-        size: "md",
-        wrap: true,
-        weight: highlight ? "bold" : "regular"
-      },
-      {
-        type: "text",
-        text: `${item.qty}`,
-        flex: 2,
-        size: "md",
-        align: "end",
-        weight: highlight ? "bold" : "regular"
-      },
-      {
-        type: "text",
-        text: item.ratio ? `${item.ratio}%` : "",
-        flex: 2,
-        size: "md",
-        align: "end",
-        weight: highlight ? "bold" : "regular"
-      }
-    ]
-  };
-}
-
 // ======================================================
 // C2-2 三店銷售佔比 Carousel（定版）
 // ======================================================
