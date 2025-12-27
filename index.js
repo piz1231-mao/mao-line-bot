@@ -307,25 +307,24 @@ function parseTangzhanCombos(text) {
   const fields = SHOP_RATIO_FIELDS["湯棧中山"];
   const result = {};
 
-  // escape regex
-  const esc = s => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-
   for (const name of fields) {
     /**
-     * 關鍵修正：
-     * - 名稱只抓「核心關鍵字」
-     * - 套餐 / 空白 / 其他描述全部容錯
+     * 支援三種格式：
+     * 1️⃣ 名稱 qty ratio%
+     * 2️⃣ 名稱 ratio%
+     * 3️⃣ 名稱 qty
      */
-    const core = esc(name.replace("套餐", "").replace("雙饌", ""));
-    
     const reg = new RegExp(
-      `${core}.*?(\\d+)\\s*(?:套)?[^\\d%]*([\\d.]+)%`
+      `${name}\\s*[:：]?\\s*(?:(\\d+)[^\\d%]*)?(?:([\\d.]+)%)*`
     );
 
     const m = t.match(reg);
 
     result[name] = m
-      ? { qty: Number(m[1]), ratio: Number(m[2]) }
+      ? {
+          qty: m[1] ? Number(m[1]) : 0,
+          ratio: m[2] ? Number(m[2]) : 0
+        }
       : { qty: 0, ratio: 0 };
   }
 
@@ -541,26 +540,7 @@ function buildDailySummaryFlex({ date, shops }) {
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
-// ===== 湯棧專用：自動加總 =====
-if (shop === "湯棧中山") {
-  const oil = items.find(i => i.name === "麻油鍋");
-  const wine = items.find(i => i.name === "燒酒鍋");
 
-  if (oil || wine) {
-    const totalQty = (oil?.qty || 0) + (wine?.qty || 0);
-    const totalRatio = Number(
-      ((oil?.ratio || 0) + (wine?.ratio || 0)).toFixed(2)
-    );
-
-    items.unshift({
-      name: "麻油、燒酒鍋",
-      qty: totalQty,
-      ratio: totalRatio,
-      _highlight: true
-    });
-  }
-}
-  
   contents.push({
     type: "text",
     text: `🍱 ${shop}｜銷售佔比`,
@@ -576,56 +556,76 @@ if (shop === "湯棧中山") {
     margin: "md"
   });
 
-  let coldSectionStarted = false;
+  // ===============================
+  // 湯棧專用顯示規則
+  // ===============================
+  if (shop === "湯棧中山") {
+    // ---- 分類 ----
+    const hotpot = [];
+    const cold = [];
+    let hotpotTotal = null;
+    let coldTotal = null;
 
-  items.forEach(item => {
-    const isHighlight =
-      item._highlight ||
-      item.name === "冷藏肉比例";
-
-    const isColdItem = item.name.includes("冷藏");
-
-    // 冷藏區分隔線
-    if (!coldSectionStarted && isColdItem) {
-      contents.push({
-        type: "separator",
-        margin: "xl"
-      });
-      coldSectionStarted = true;
+    for (const item of items) {
+      if (item.name === "麻油、燒酒鍋") {
+        hotpotTotal = item;
+      } else if (item.name === "冷藏肉比例") {
+        coldTotal = item;
+      } else if (item.name.includes("冷藏")) {
+        cold.push(item);
+      } else {
+        hotpot.push(item);
+      }
     }
 
+    // ---- 上半段：鍋物（排序）----
+    hotpot
+      .sort((a, b) => b.qty - a.qty)
+      .forEach(item => {
+        contents.push(buildRow(item));
+      });
+
+    // 👉 加總鍋（只顯示這一筆）
+    if (hotpotTotal) {
+      contents.push(buildRow(hotpotTotal, true));
+    }
+
+    // ---- 分隔線 ----
     contents.push({
-      type: "box",
-      layout: "horizontal",
-      margin: isHighlight ? "xl" : "md",
-      contents: [
-        {
-          type: "text",
-          text: item.name,
-          flex: 5,
-          size: "md",
-          wrap: true,
-          weight: isHighlight ? "bold" : "regular"
-        },
-        {
-          type: "text",
-          text: `${item.qty}`,
-          flex: 2,
-          size: "md",
-          align: "end",
-          weight: isHighlight ? "bold" : "regular"
-        },
-        {
-          type: "text",
-          text: `${item.ratio}%`,
-          flex: 2,
-          size: "md",
-          align: "end",
-          weight: isHighlight ? "bold" : "regular"
-        }
-      ]
+      type: "separator",
+      margin: "xl"
     });
-  });
+
+    // ---- 下半段：冷藏肉 ----
+    cold
+      .sort((a, b) => b.qty - a.qty)
+      .forEach(item => {
+        contents.push(buildRow(item));
+      });
+
+    // 👉 冷藏肉比例（粗體）
+    if (coldTotal) {
+      contents.push(buildRow(coldTotal, true));
+    }
+
+    return {
+      type: "bubble",
+      body: {
+        type: "box",
+        layout: "vertical",
+        contents
+      }
+    };
+  }
+
+  // ===============================
+  // 其他店（維持原本行為）
+  // ===============================
+  items
+    .sort((a, b) => b.qty - a.qty)
+    .forEach(item => {
+      contents.push(buildRow(item));
+    });
 
   return {
     type: "bubble",
@@ -636,6 +636,44 @@ if (shop === "湯棧中山") {
     }
   };
 }
+
+// ------------------------------------------------
+// 共用 row builder
+// ------------------------------------------------
+function buildRow(item, highlight = false) {
+  return {
+    type: "box",
+    layout: "horizontal",
+    margin: highlight ? "xl" : "md",
+    contents: [
+      {
+        type: "text",
+        text: item.name,
+        flex: 5,
+        size: "md",
+        wrap: true,
+        weight: highlight ? "bold" : "regular"
+      },
+      {
+        type: "text",
+        text: `${item.qty}`,
+        flex: 2,
+        size: "md",
+        align: "end",
+        weight: highlight ? "bold" : "regular"
+      },
+      {
+        type: "text",
+        text: item.ratio ? `${item.ratio}%` : "",
+        flex: 2,
+        size: "md",
+        align: "end",
+        weight: highlight ? "bold" : "regular"
+      }
+    ]
+  };
+}
+
 // ======================================================
 // C2-2 三店銷售佔比 Carousel（定版）
 // ======================================================
