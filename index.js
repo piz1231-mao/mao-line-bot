@@ -565,21 +565,17 @@ function buildShopRatioBubble({ shop, date, items }) {
     const isColdItem = item.name.includes("冷藏");
     const isXmasItem = item.name.includes("聖誕");
 
-    // 🔹 鍋 → 冷藏 分隔線
     if (!coldSectionStarted && isColdItem && !isXmasItem) {
-      contents.push({
-        type: "separator",
-        margin: "xl"
-      });
+      contents.push({ type: "separator", margin: "xl" });
       coldSectionStarted = true;
     }
 
+    // 極簡化 Box 結構，移除所有 regular 宣告與重複屬性
     contents.push({
       type: "box",
       layout: "horizontal",
       margin: (isOilMix || isColdRatio) ? "xl" : "md",
       contents: [
-        // 1️⃣ 品項名稱 + Emoji (使用 span 鎖死位置)
         {
           type: "text",
           flex: 5,
@@ -589,33 +585,30 @@ function buildShopRatioBubble({ shop, date, items }) {
             {
               type: "span",
               text: item.name,
-              weight: (isOilMix || isColdRatio || isXmasItem) ? "bold" : "regular"
+              weight: (isOilMix || isColdRatio || isXmasItem) ? "bold" : undefined
             },
             {
               type: "span",
-              // 💡 邏輯：前三名且有銷量，且不是特殊彙總列，才加火
               text: (idx < 3 && item.qty > 0 && !isOilMix && !isColdRatio) ? " 🔥" : ""
             }
           ]
         },
-        // 2️⃣ 份數
         {
           type: "text",
-          text: `${item.qty}`,
+          text: String(item.qty),
           flex: 2,
           size: "md",
           align: "end",
-          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
+          weight: (isOilMix || isColdRatio) ? "bold" : undefined
         },
-        // 3️⃣ % (使用剛調整好的 flex: 3 與 margin: md)
         {
           type: "text",
-          text: item.ratio !== undefined && item.ratio !== "" ? `${item.ratio}%` : "",
+          text: (item.ratio && item.ratio !== 0) ? `${item.ratio}%` : " ",
           flex: 3,
           size: "md",
           align: "end",
           margin: "md",
-          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
+          weight: (isOilMix || isColdRatio) ? "bold" : undefined
         }
       ]
     });
