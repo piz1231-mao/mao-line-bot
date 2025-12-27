@@ -152,7 +152,7 @@ async function readShopRatio({ shop, fields, date }) {
 
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${shop}!R:AO`
+    range: `${shop}!R:AZ`
   });
 
   const last = r.data.values?.at(-1) || [];
@@ -778,7 +778,7 @@ if (text.startsWith("大哥您好")) {
 });
 
 // ======================================================
-// ✅ 定版：讀取各店銷售佔比（不會漏、不吃欄位）
+// ✅ 定版：讀取各店銷售佔比（保證不漏）
 // ======================================================
 async function readShopRatioBubble({ shop, date }) {
   const fields = SHOP_RATIO_FIELDS[shop];
@@ -791,7 +791,7 @@ async function readShopRatioBubble({ shop, date }) {
 
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${shop}!R:AO`
+    range: `${shop}!R:AZ`   // 🔥 一定要 AZ
   });
 
   const last = r.data.values?.at(-1);
@@ -799,11 +799,10 @@ async function readShopRatioBubble({ shop, date }) {
 
   const items = [];
 
-  // ⚠️ 關鍵：用 Sheet 真實欄位數，不用 fields.length
-  for (let col = 0; col < last.length; col += 2) {
-    const index = col / 2;
-    const name = fields[index];
-    if (!name) continue;
+  // ✅ 用 fields 為主，反推欄位位置
+  for (let i = 0; i < fields.length; i++) {
+    const col = i * 2;
+    const name = fields[i];
 
     const qty = Number(last[col] || 0);
     const ratio = Number(last[col + 1] || 0);
@@ -812,19 +811,22 @@ async function readShopRatioBubble({ shop, date }) {
       name,
       qty,
       ratio,
-      // 湯棧粗體規則
       isBold:
         name === "麻油、燒酒鍋" ||
         name === "冷藏肉比例"
     });
   }
 
-  if (!items.length) return null;
-
-  // 湯棧要分上下段，其它店不用
+  // =============================
+  // 湯棧：上下段邏輯
+  // =============================
   if (shop === "湯棧中山") {
-    const hotpot = items.filter(i => !i.name.includes("冷藏"));
-    const cold = items.filter(i => i.name.includes("冷藏"));
+    const hotpot = items.filter(i =>
+      !i.name.includes("冷藏")
+    );
+    const cold = items.filter(i =>
+      i.name.includes("冷藏")
+    );
 
     return buildShopRatioBubble({
       shop,
@@ -833,12 +835,13 @@ async function readShopRatioBubble({ shop, date }) {
     });
   }
 
-  // 三山 / 茶六：全部照數量排序
+  // =============================
+  // 茶六 / 三山：全部顯示
+  // =============================
   return buildShopRatioBubble({
     shop,
     date,
-    items: items
-      .sort((a, b) => b.qty - a.qty)
+    items: items.sort((a, b) => b.qty - a.qty)
   });
 }
 
