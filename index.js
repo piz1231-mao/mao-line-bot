@@ -484,13 +484,13 @@ function buildDailySummaryFlex({ date, shops }) {
 // ======================================================
 // C2-2 三店銷售佔比 Carousel
 // ======================================================
-function buildShopRatioCarousel(flexBubbles) {
+function buildShopRatioCarousel(bubbles) {
   return {
     type: "flex",
     altText: "🍱 三店銷售佔比",
     contents: {
       type: "carousel",
-      contents: flexBubbles
+      contents: bubbles
     }
   };
 }
@@ -668,8 +668,6 @@ if (text.startsWith("大哥您好")) {
 // ======================================================
 // 每日摘要 API（08:00 推播用）
 // ======================================================
-
-
 app.post("/api/daily-summary", async (req, res) => {
   try {
     const c = await auth.getClient();
@@ -717,12 +715,12 @@ app.post("/api/daily-summary", async (req, res) => {
     await client.pushMessage(process.env.BOSS_USER_ID, summaryFlex);
 
     // =========================
-    // C2：三店銷售佔比（先假資料）
+    // C2：三店銷售佔比（假資料版，結構正確）
     // =========================
     const ratioBubbles = [];
 
     ratioBubbles.push(
-      buildShopRatioFlex({
+      buildShopRatioBubble({
         shop: "茶六博愛",
         date: shops[0].date,
         items: [
@@ -734,7 +732,7 @@ app.post("/api/daily-summary", async (req, res) => {
     );
 
     ratioBubbles.push(
-      buildShopRatioFlex({
+      buildShopRatioBubble({
         shop: "三山博愛",
         date: shops[0].date,
         items: [
@@ -745,7 +743,7 @@ app.post("/api/daily-summary", async (req, res) => {
     );
 
     ratioBubbles.push(
-      buildShopRatioFlex({
+      buildShopRatioBubble({
         shop: "湯棧中山",
         date: shops[0].date,
         items: [
@@ -765,7 +763,6 @@ app.post("/api/daily-summary", async (req, res) => {
     res.status(500).send("error");
   }
 });
-
 
 // ======================================================
 const PORT = process.env.PORT || 3000;
