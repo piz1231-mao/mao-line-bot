@@ -861,54 +861,7 @@ async function readShopRatioBubble({ shop, date }) {
       .slice(0, 20)
   });
 }
-  // ==================================================
-  // 🫕 湯棧中山：上下段排序＋彙總列獨立
-  // ==================================================
-  if (shop === "湯棧中山") {
-    // 👉 抓彙總列（不參與排序）
-    const oilMixTotal = items.find(i => i.name === "麻油、燒酒鍋");
-    const coldTotal   = items.find(i => i.name === "冷藏肉比例");
-
-    // ---- 上半段：鍋物＋聖誕（❌ 不含麻油、燒酒鍋）----
-    const hotpot = items
-      .filter(i =>
-        !i.name.includes("冷藏") &&
-        i.name !== "麻油、燒酒鍋"
-      )
-      .sort((a, b) => b.qty - a.qty);
-
-    // ---- 下半段：冷藏肉（❌ 不含冷藏肉比例）----
-    const cold = items
-      .filter(i =>
-        i.name.includes("冷藏") &&
-        i.name !== "冷藏肉比例"
-      )
-      .sort((a, b) => b.qty - a.qty);
-
-    // 👉 最終顯示順序（這裡就是 UI 規格）
-    const finalItems = [
-      ...hotpot,
-      ...(oilMixTotal ? [oilMixTotal] : []),
-      ...cold,
-      ...(coldTotal ? [coldTotal] : [])
-    ];
-
-    return buildShopRatioBubble({
-      shop,
-      date,
-      items: finalItems
-    });
-  }
-
-  // ==================================================
-  // 🍱 茶六 / 三山：全部商品一起依銷量排序
-  // ==================================================
-  return buildShopRatioBubble({
-    shop,
-    date,
-    items: items.sort((a, b) => b.qty - a.qty)
-  });
-
+ 
 
 // ======================================================
 // 每日摘要 API（08:00 推播用｜流檢同款｜只推一則）
