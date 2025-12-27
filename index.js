@@ -147,7 +147,31 @@ const num = v =>
   v !== undefined && v !== null && v !== ""
     ? Number(String(v).replace(/,/g, ""))
     : 0;
+async function readShopRatio({ shop, fields, date }) {
+  const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
 
+  const r = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${shop}!R:AO`
+  });
+
+  const last = r.data.values?.at(-1) || [];
+  const items = [];
+
+  for (let i = 0; i < fields.length; i++) {
+    const qty = Number(last[i * 2] || 0);
+    const ratio = Number(last[i * 2 + 1] || 0);
+    if (qty > 0) {
+      items.push({ name: fields[i], qty, ratio });
+    }
+  }
+
+  return buildShopRatioBubble({
+    shop,
+    date,
+    items: items.sort((a, b) => b.qty - a.qty).slice(0, 8)
+  });
+}
 // ======================================================
 // 天氣解析
 // ======================================================
@@ -385,6 +409,31 @@ async function writeShop(shop, text, userId) {
   // ✅ 關鍵：把 row 回傳出去
   return row;
 }
+
+// ======================================================
+// 各店銷售佔比欄位定版（⚠️ 不可亂動）
+// ======================================================
+const SHOP_RATIO_FIELDS = {
+  "茶六博愛": [
+    "極品豚肉套餐","豐禾豚肉套餐","特級牛肉套餐","上等牛肉套餐",
+    "真饌和牛套餐","極炙牛肉套餐","日本和牛套餐",
+    "三人豚肉套餐","三人極上套餐","御。和牛賞套餐","聖誕歡饗套餐"
+  ],
+
+  "三山博愛": [
+    "豬&豬套餐","頂級豬豬套餐","美國牛肉套餐","美澳牛肉套餐",
+    "日美澳牛肉套餐","美日和牛套餐","日本A5和牛套餐","頂級日本A5和牛套餐",
+    "三人豬&豬套餐","三人頂級豬豬套餐","三人美國牛肉套餐","三人日美澳牛肉套餐",
+    "聖誕特獻雙人套餐"
+  ],
+
+  "湯棧中山": [
+    "麻油鍋","燒酒鍋","剝皮辣椒鍋","魷魚螺肉蒜鍋","昆布鍋","蔬食鍋","麻油、燒酒鍋",
+    "冷藏嫩肩豬肉","冷藏豬腹肉","冷藏頂級嫩肩豬肉",
+    "冷藏極上牛腹肉","冷藏去骨牛小排","冷藏肉比例",
+    "聖誕海陸雙饌套餐"
+  ]
+};
 
 
 // ======================================================
@@ -698,6 +747,52 @@ if (text.startsWith("大哥您好")) {
     res.status(500).end();
   }
 });
+
+// ======================================================
+// 通用：讀取單店銷售佔比 → 回傳 Bubble
+// ======================================================
+async function readShopRatioBubble({ shop, date }) {
+  const fields = SHOP_RATIO_FIELDS[shop];
+  if (!fields) return null;
+
+  const sheets = google.sheets({
+    version: "v4",
+    auth: await auth.getClient()
+  });
+
+  const r = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${shop}!R:AO`
+  });
+
+  const last = r.data.values?.at(-1);
+  if (!last) return null;
+
+  const items = [];
+
+  for (let i = 0; i < fields.length; i++) {
+    const qty = Number(last[i * 2] || 0);
+    const ratio = Number(last[i * 2 + 1] || 0);
+
+    if (qty > 0) {
+      items.push({
+        name: fields[i],
+        qty,
+        ratio
+      });
+    }
+  }
+
+  if (!items.length) return null;
+
+  return buildShopRatioBubble({
+    shop,
+    date,
+    items: items
+      .sort((a, b) => b.qty - a.qty)
+      .slice(0, 8)
+  });
+}
 
 // ======================================================
 // 每日摘要 API（08:00 推播用｜流檢同款｜只推一則）
