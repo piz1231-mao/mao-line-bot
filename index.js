@@ -537,7 +537,7 @@ function buildDailySummaryFlex({ date, shops }) {
   };
 }
 // ======================================================
-// C2-1 單店銷售佔比 Bubble（定版｜不新增資料）
+// C2-1 單店銷售佔比 Bubble（Emoji 穩定嵌入版）
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
@@ -559,13 +559,14 @@ function buildShopRatioBubble({ shop, date, items }) {
 
   let coldSectionStarted = false;
 
-  items.forEach(item => {
+  items.forEach((item, idx) => {
     const isOilMix = item.name === "麻油、燒酒鍋";
     const isColdRatio = item.name === "冷藏肉比例";
     const isColdItem = item.name.includes("冷藏");
+    const isXmasItem = item.name.includes("聖誕");
 
-    // 🔹 鍋 → 冷藏 分隔線（只出現一次）
-    if (!coldSectionStarted && isColdItem) {
+    // 🔹 鍋 → 冷藏 分隔線
+    if (!coldSectionStarted && isColdItem && !isXmasItem) {
       contents.push({
         type: "separator",
         margin: "xl"
@@ -578,14 +579,26 @@ function buildShopRatioBubble({ shop, date, items }) {
       layout: "horizontal",
       margin: (isOilMix || isColdRatio) ? "xl" : "md",
       contents: [
+        // 1️⃣ 品項名稱 + Emoji (使用 span 鎖死位置)
         {
           type: "text",
-          text: item.name,
           flex: 5,
           size: "md",
           wrap: true,
-          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
+          contents: [
+            {
+              type: "span",
+              text: item.name,
+              weight: (isOilMix || isColdRatio || isXmasItem) ? "bold" : "regular"
+            },
+            {
+              type: "span",
+              // 💡 邏輯：前三名且有銷量，且不是特殊彙總列，才加火
+              text: (idx < 3 && item.qty > 0 && !isOilMix && !isColdRatio) ? " 🔥" : ""
+            }
+          ]
         },
+        // 2️⃣ 份數
         {
           type: "text",
           text: `${item.qty}`,
@@ -594,14 +607,14 @@ function buildShopRatioBubble({ shop, date, items }) {
           align: "end",
           weight: (isOilMix || isColdRatio) ? "bold" : "regular"
         },
+        // 3️⃣ % (使用剛調整好的 flex: 3 與 margin: md)
         {
           type: "text",
-          text: item.ratio !== undefined && item.ratio !== ""
-            ? `${item.ratio}%`
-            : "",
+          text: item.ratio !== undefined && item.ratio !== "" ? `${item.ratio}%` : "",
           flex: 3,
           size: "md",
           align: "end",
+          margin: "md",
           weight: (isOilMix || isColdRatio) ? "bold" : "regular"
         }
       ]
