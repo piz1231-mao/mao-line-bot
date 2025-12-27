@@ -542,6 +542,7 @@ function buildDailySummaryFlex({ date, shops }) {
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
 
+  // 標題與日期
   contents.push({
     type: "text",
     text: `🍱 ${shop}｜銷售佔比`,
@@ -557,20 +558,22 @@ function buildShopRatioBubble({ shop, date, items }) {
     margin: "md"
   });
 
-  let coldSectionStarted = false;
+  let coldStarted = false;
 
   items.forEach((item, idx) => {
     const isOilMix = item.name === "麻油、燒酒鍋";
     const isColdRatio = item.name === "冷藏肉比例";
-    const isColdItem = item.name.includes("冷藏");
-    const isXmasItem = item.name.includes("聖誕");
+    const isCold = item.name.includes("冷藏") && !item.name.includes("聖誕");
+    const isXmas = item.name.includes("聖誕");
+    const isBold = isOilMix || isColdRatio || isXmas;
 
-    if (!coldSectionStarted && isColdItem && !isXmasItem) {
+    // 分隔線
+    if (!coldStarted && isCold) {
       contents.push({ type: "separator", margin: "xl" });
-      coldSectionStarted = true;
+      coldStarted = true;
     }
 
-    // 極簡化 Box 結構，移除所有 regular 宣告與重複屬性
+    // 🔥 極致壓縮 Box 結構
     contents.push({
       type: "box",
       layout: "horizontal",
@@ -582,15 +585,8 @@ function buildShopRatioBubble({ shop, date, items }) {
           size: "md",
           wrap: true,
           contents: [
-            {
-              type: "span",
-              text: item.name,
-              weight: (isOilMix || isColdRatio || isXmasItem) ? "bold" : undefined
-            },
-            {
-              type: "span",
-              text: (idx < 3 && item.qty > 0 && !isOilMix && !isColdRatio) ? " 🔥" : ""
-            }
+            { type: "span", text: item.name, weight: isBold ? "bold" : undefined },
+            { type: "span", text: (idx < 3 && item.qty > 0 && !isOilMix && !isColdRatio) ? " 🔥" : "" }
           ]
         },
         {
