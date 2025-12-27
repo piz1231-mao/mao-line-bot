@@ -386,7 +386,7 @@ async function writeShop(shop, text, userId) {
 
 
 // ======================================================
-// 三店總覽 flex
+// 三店總覽 flex（C1 定版）
 // ======================================================
 function buildDailySummaryFlex({ date, shops }) {
   return {
@@ -407,6 +407,13 @@ function buildDailySummaryFlex({ date, shops }) {
           },
 
           ...shops.flatMap((shop, idx) => {
+            // 🔴 各店人事紅線規則（定版）
+            const limit =
+              shop.name === "茶六博愛" ? 22 : 25;
+
+            const hrColor =
+              shop.hrTotalRate > limit ? "#D32F2F" : "#333333";
+
             const block = [
               {
                 type: "box",
@@ -426,15 +433,14 @@ function buildDailySummaryFlex({ date, shops }) {
                   },
                   {
                     type: "text",
-                    text: `👥 人事比：${shop.hrRate}%`,
+                    text: `👥 人事比：${shop.hrTotalRate}%`,
                     size: "sm",
-                    color: shop.hrRate > 25 ? "#D32F2F" : "#333333"
+                    color: hrColor
                   }
                 ]
               }
             ];
 
-            // 不是最後一家才加分隔線
             if (idx < shops.length - 1) {
               block.push({
                 type: "separator",
@@ -449,7 +455,6 @@ function buildDailySummaryFlex({ date, shops }) {
     }
   };
 }
-
 
 // ======================================================
 // LINE Webhook（Router 主流程）
