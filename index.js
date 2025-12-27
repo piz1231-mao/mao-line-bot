@@ -406,49 +406,61 @@ function buildDailySummaryFlex({ date, shops }) {
             size: "lg"
           },
 
-          ...shops.flatMap((shop, idx) => {
-            // 🔴 各店人事紅線規則（定版）
-            const limit =
-              shop.name === "茶六博愛" ? 22 : 25;
+          ...shops.flatMap((s, idx) => {
+            const hrLimit =
+              s.name === "茶六博愛" ? 22 : 25;
 
-            const hrColor =
-              shop.hrTotalRate > limit ? "#D32F2F" : "#333333";
-
-            const block = [
+            const blocks = [
               {
-                type: "box",
-                layout: "vertical",
-                spacing: "xs",
-                contents: [
-                  {
-                    type: "text",
-                    text: shop.name,
-                    weight: "bold",
-                    size: "md"
-                  },
-                  {
-                    type: "text",
-                    text: `💰 業績：${shop.revenue.toLocaleString()}`,
-                    size: "sm"
-                  },
-                  {
-                    type: "text",
-                    text: `👥 人事比：${shop.hrTotalRate}%`,
-                    size: "sm",
-                    color: hrColor
-                  }
-                ]
+                type: "text",
+                text: `【${s.name}】`,
+                weight: "bold",
+                size: "md"
+              },
+              {
+                type: "text",
+                text: `💰 業績：${s.revenue.toLocaleString()}`,
+                size: "sm"
+              },
+              {
+                type: "text",
+                text: `📦 ${s.qtyLabel}：${s.qty}`,
+                size: "sm"
+              },
+              {
+                type: "text",
+                text: `🧾 客單價：${s.unit}`,
+                size: "sm"
+              },
+              {
+                type: "text",
+                text: `👥 外場：${s.fp}（${s.fpRate}%）`,
+                size: "sm"
+              },
+              {
+                type: "text",
+                text: `👥 內場：${s.bp}（${s.bpRate}%）`,
+                size: "sm"
+              },
+              {
+                type: "text",
+                text: `👥 總計：${s.hrTotal}（${s.hrTotalRate}%）`,
+                size: "sm",
+                color:
+                  s.hrTotalRate > hrLimit
+                    ? "#D32F2F"
+                    : "#333333"
               }
             ];
 
             if (idx < shops.length - 1) {
-              block.push({
+              blocks.push({
                 type: "separator",
                 margin: "md"
               });
             }
 
-            return block;
+            return blocks;
           })
         ]
       }
