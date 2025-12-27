@@ -536,7 +536,7 @@ function buildDailySummaryFlex({ date, shops }) {
   };
 }
 // ======================================================
-// C2-1 單店銷售佔比 Bubble（最終定版｜雙區前三🔥）
+// C2-1 單店銷售佔比 Bubble（最終定版｜火在後＋對齊優化）
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
@@ -559,8 +559,6 @@ function buildShopRatioBubble({ shop, date, items }) {
   // ===============================
   // 🔥 前三名計算（分區）
   // ===============================
-
-  // 主區（鍋物 / 燒肉 / 聖誕）
   const hotTop3 = items
     .filter(i =>
       i.qty > 0 &&
@@ -570,7 +568,6 @@ function buildShopRatioBubble({ shop, date, items }) {
     .slice(0, 3)
     .map(i => i.name);
 
-  // 冷藏肉區（排除比例）
   const coldTop3 = items
     .filter(i =>
       i.qty > 0 &&
@@ -588,12 +585,11 @@ function buildShopRatioBubble({ shop, date, items }) {
     const isColdItem  = item.name.includes("冷藏");
     const isXmasItem  = item.name.includes("聖誕");
 
-    const isHotTop3  = hotTop3.includes(item.name);
-    const isColdTop3 = coldTop3.includes(item.name);
+    const showFire =
+      hotTop3.includes(item.name) ||
+      coldTop3.includes(item.name);
 
-    const showFire = isHotTop3 || isColdTop3;
-
-    // 🔹 熱鍋 / 聖誕 → 冷藏 分隔線
+    // 🔹 熱鍋 → 冷藏 分隔線
     if (!coldSectionStarted && isColdItem && !isXmasItem) {
       contents.push({
         type: "separator",
@@ -607,26 +603,31 @@ function buildShopRatioBubble({ shop, date, items }) {
       layout: "horizontal",
       margin: (isOilMix || isColdRatio) ? "xl" : "md",
       contents: [
+        // ===== 品項名稱（🔥 放後面）=====
         {
           type: "text",
-          text: showFire ? `🔥 ${item.name}` : item.name,
-          flex: 5,
+          text: showFire ? `${item.name} 🔥` : item.name,
+          flex: 6,
           size: "md",
           wrap: true,
           weight: (isOilMix || isColdRatio || isXmasItem)
             ? "bold"
             : "regular"
         },
+
+        // ===== 份數（往左靠）=====
         {
           type: "text",
           text: `${item.qty}`,
-          flex: 2,
+          flex: 1,
           size: "md",
           align: "end",
           weight: (isOilMix || isColdRatio)
             ? "bold"
             : "regular"
         },
+
+        // ===== %（拉開距離）=====
         {
           type: "text",
           text:
@@ -636,6 +637,7 @@ function buildShopRatioBubble({ shop, date, items }) {
           flex: 2,
           size: "md",
           align: "end",
+          margin: "md",
           weight: (isOilMix || isColdRatio)
             ? "bold"
             : "regular"
@@ -653,7 +655,6 @@ function buildShopRatioBubble({ shop, date, items }) {
     }
   };
 }
-
 
 // ======================================================
 // C2-2 三店銷售佔比 Carousel（定版）
