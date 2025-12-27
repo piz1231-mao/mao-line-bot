@@ -388,9 +388,6 @@ async function writeShop(shop, text, userId) {
 
 
 // ======================================================
-// 三店總覽 flex（C1 定版）
-// ======================================================
-// ======================================================
 // 三店總覽 Flex（C1｜完整摘要｜字體放大｜業績粗體｜人事條件反紅）
 // ======================================================
 function buildDailySummaryFlex({ date, shops }) {
@@ -422,39 +419,18 @@ function buildDailySummaryFlex({ date, shops }) {
                 layout: "vertical",
                 spacing: "sm",
                 contents: [
-                  {
-                    type: "text",
-                    text: shop.name,
-                    weight: "bold",
-                    size: "lg"
-                  },
+                  { type: "text", text: shop.name, weight: "bold", size: "lg" },
                   {
                     type: "text",
                     text: `💰 業績：${shop.revenue.toLocaleString()}`,
                     size: "md",
                     weight: "bold"
                   },
-                  {
-                    type: "text",
-                    text: `📦 ${shop.qtyLabel}：${shop.qty}`,
-                    size: "md"
-                  },
-                  {
-                    type: "text",
-                    text: `🧾 客單價：${shop.unit}`,
-                    size: "md"
-                  },
+                  { type: "text", text: `📦 ${shop.qtyLabel}：${shop.qty}`, size: "md" },
+                  { type: "text", text: `🧾 客單價：${shop.unit}`, size: "md" },
 
-                  {
-                    type: "text",
-                    text: `👥 外場：${shop.fp.toLocaleString()}（${shop.fpRate}%）`,
-                    size: "md"
-                  },
-                  {
-                    type: "text",
-                    text: `👥 內場：${shop.bp.toLocaleString()}（${shop.bpRate}%）`,
-                    size: "md"
-                  },
+                  { type: "text", text: `👥 外場：${shop.fp.toLocaleString()}（${shop.fpRate}%）`, size: "md" },
+                  { type: "text", text: `👥 內場：${shop.bp.toLocaleString()}（${shop.bpRate}%）`, size: "md" },
                   {
                     type: "text",
                     text: `👥 總人事：${shop.hrTotal.toLocaleString()}（${shop.hrTotalRate}%）`,
@@ -467,10 +443,7 @@ function buildDailySummaryFlex({ date, shops }) {
             ];
 
             if (idx < shops.length - 1) {
-              block.push({
-                type: "separator",
-                margin: "lg"
-              });
+              block.push({ type: "separator", margin: "lg" });
             }
 
             return block;
@@ -482,7 +455,7 @@ function buildDailySummaryFlex({ date, shops }) {
 }
 
 // ======================================================
-// C2-2 三店銷售佔比 Carousel
+// C2-2 三店銷售佔比 Carousel（定版）
 // ======================================================
 function buildShopRatioCarousel(bubbles) {
   return {
@@ -490,7 +463,7 @@ function buildShopRatioCarousel(bubbles) {
     altText: "🍱 三店銷售佔比",
     contents: {
       type: "carousel",
-      contents: bubbles
+      contents: bubbles   // ⚠️ 每一個都必須是 bubble
     }
   };
 }
@@ -715,55 +688,58 @@ app.post("/api/daily-summary", async (req, res) => {
     await client.pushMessage(process.env.BOSS_USER_ID, summaryFlex);
 
     // =========================
-    // C2：三店銷售佔比（假資料版，結構正確）
-    // =========================
-    const ratioBubbles = [];
+// C2：三店銷售佔比（結構正確版）
+// =========================
+const ratioBubbles = [];
 
-    ratioBubbles.push(
-      buildShopRatioBubble({
-        shop: "茶六博愛",
-        date: shops[0].date,
-        items: [
-          { name: "極品豚肉套餐", qty: 19, ratio: 15.02 },
-          { name: "上等牛肉套餐", qty: 34, ratio: 15.96 },
-          { name: "真饌和牛套餐", qty: 34, ratio: 15.96 }
-        ]
-      })
-    );
+// 茶六
+ratioBubbles.push(
+  buildShopRatioBubble({
+    shop: "茶六博愛",
+    date: shops[0].date,
+    items: [
+      { name: "極品豚肉套餐", qty: 19, ratio: 15.02 },
+      { name: "上等牛肉套餐", qty: 34, ratio: 15.96 },
+      { name: "真饌和牛套餐", qty: 34, ratio: 15.96 }
+    ]
+  })
+);
 
-    ratioBubbles.push(
-      buildShopRatioBubble({
-        shop: "三山博愛",
-        date: shops[0].date,
-        items: [
-          { name: "豬&豬套餐", qty: 48, ratio: 18.6 },
-          { name: "美國牛肉套餐", qty: 41, ratio: 15.9 }
-        ]
-      })
-    );
+// 三山
+ratioBubbles.push(
+  buildShopRatioBubble({
+    shop: "三山博愛",
+    date: shops[0].date,
+    items: [
+      { name: "豬&豬套餐", qty: 48, ratio: 18.6 },
+      { name: "美國牛肉套餐", qty: 41, ratio: 15.9 }
+    ]
+  })
+);
 
-    ratioBubbles.push(
-      buildShopRatioBubble({
-        shop: "湯棧中山",
-        date: shops[0].date,
-        items: [
-          { name: "麻油鍋", qty: 112, ratio: 22.8 },
-          { name: "燒酒鍋", qty: 98, ratio: 19.9 }
-        ]
-      })
-    );
+// 湯棧
+ratioBubbles.push(
+  buildShopRatioBubble({
+    shop: "湯棧中山",
+    date: shops[0].date,
+    items: [
+      { name: "麻油鍋", qty: 112, ratio: 22.8 },
+      { name: "燒酒鍋", qty: 98, ratio: 19.9 }
+    ]
+  })
+);
 
-    const ratioCarousel = buildShopRatioCarousel(ratioBubbles);
-
-    await client.pushMessage(process.env.BOSS_USER_ID, ratioCarousel);
-
-    res.send("ok");
-  } catch (err) {
-    console.error("❌ daily-summary error:", err);
-    res.status(500).send("error");
+// ⚠️ carousel 只包 bubble
+const ratioCarousel = {
+  type: "flex",
+  altText: "🍱 三店銷售佔比",
+  contents: {
+    type: "carousel",
+    contents: ratioBubbles
   }
-});
+};
 
+await client.pushMessage(process.env.BOSS_USER_ID, ratioCarousel);
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
