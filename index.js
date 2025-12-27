@@ -467,6 +467,14 @@ function buildShopRatioCarousel(bubbles) {
     }
   };
 }
+// ======================================================
+// C2 輔助：Flex → Bubble（一定要在外層）
+// ======================================================
+function buildShopRatioBubble(payload) {
+  // shopRatio.flex 回傳的是 { type:"flex", contents:{type:"bubble"} }
+  // carousel 只能吃 bubble
+  return buildShopRatioFlex(payload).contents;
+}
 
 // ======================================================
 // LINE Webhook（Router 主流程）
@@ -643,25 +651,18 @@ if (text.startsWith("大哥您好")) {
 // ======================================================
 app.post("/api/daily-summary", async (req, res) => {
   try {
-    const c = await auth.getClient();
-    const sheets = google.sheets({ version: "v4", auth: c });
+    const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
 
-    // =========================
-    // C1：三店總覽
-    // =========================
+    // ---------- C1 ----------
     const shops = [];
-
     for (const s of SHOP_LIST) {
       const r = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
         range: `${s}!A:Q`
       });
-
       const rows = r.data.values || [];
       if (rows.length < 2) continue;
-
       const last = rows.at(-1);
-
       shops.push({
         name: s,
         date: last[5]?.slice(5),
@@ -680,66 +681,64 @@ app.post("/api/daily-summary", async (req, res) => {
 
     if (!shops.length) return res.send("no data");
 
-    const summaryFlex = buildDailySummaryFlex({
-      date: shops[0].date,
-      shops
+    await client.pushMessage(
+      process.env.BOSS_USER_ID,
+      buildDailySummaryFlex({ date: shops[0].date, shops })
+    );
+
+    // ---------- C2 ----------
+    const ratioBubbles = [];
+
+    // 茶六（真實資料）
+    const r2 = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "茶六博愛!R:AO"
+    });
+    const lastCombo = r2.data.values?.at(-1) || [];
+    const FIELDS = [
+      "極品豚肉套餐","豐禾豚肉套餐","特級牛肉套餐","上等牛肉套餐",
+      "真饌和牛套餐","極炙牛肉套餐","日本和牛套餐","三人豚肉套餐",
+      "三人極上套餐","御。和牛賞套餐","聖誕歡饗套餐"
+    ];
+    const items = [];
+    for (let i = 0; i < FIELDS.length; i++) {
+      const qty = Number(lastCombo[i * 2] || 0);
+      const ratio = Number(lastCombo[i * 2 + 1] || 0);
+      if (qty > 0) items.push({ name: FIELDS[i], qty, ratio });
+    }
+    if (items.length) {
+      ratioBubbles.push(
+        buildShopRatioBubble({
+          shop: "茶六博愛",
+          date: shops[0].date,
+          items: items.sort((a,b)=>b.qty-a.qty).slice(0,8)
+        })
+      );
+    }
+
+    // 三山 / 湯棧（暫時假資料）
+    ratioBubbles.push(buildShopRatioBubble({
+      shop:"三山博愛",date:shops[0].date,
+      items:[{name:"豬&豬套餐",qty:48,ratio:18.6}]
+    }));
+    ratioBubbles.push(buildShopRatioBubble({
+      shop:"湯棧中山",date:shops[0].date,
+      items:[{name:"麻油鍋",qty:112,ratio:22.8}]
+    }));
+
+    await client.pushMessage(process.env.BOSS_USER_ID, {
+      type:"flex",
+      altText:"🍱 三店銷售佔比",
+      contents:{ type:"carousel", contents:ratioBubbles }
     });
 
-    await client.pushMessage(process.env.BOSS_USER_ID, summaryFlex);
-
-    // =========================
-// C2：三店銷售佔比（結構正確版）
-// =========================
-const ratioBubbles = [];
-
-// 茶六
-ratioBubbles.push(
-  buildShopRatioBubble({
-    shop: "茶六博愛",
-    date: shops[0].date,
-    items: [
-      { name: "極品豚肉套餐", qty: 19, ratio: 15.02 },
-      { name: "上等牛肉套餐", qty: 34, ratio: 15.96 },
-      { name: "真饌和牛套餐", qty: 34, ratio: 15.96 }
-    ]
-  })
-);
-
-// 三山
-ratioBubbles.push(
-  buildShopRatioBubble({
-    shop: "三山博愛",
-    date: shops[0].date,
-    items: [
-      { name: "豬&豬套餐", qty: 48, ratio: 18.6 },
-      { name: "美國牛肉套餐", qty: 41, ratio: 15.9 }
-    ]
-  })
-);
-
-// 湯棧
-ratioBubbles.push(
-  buildShopRatioBubble({
-    shop: "湯棧中山",
-    date: shops[0].date,
-    items: [
-      { name: "麻油鍋", qty: 112, ratio: 22.8 },
-      { name: "燒酒鍋", qty: 98, ratio: 19.9 }
-    ]
-  })
-);
-
-// ⚠️ carousel 只包 bubble
-const ratioCarousel = {
-  type: "flex",
-  altText: "🍱 三店銷售佔比",
-  contents: {
-    type: "carousel",
-    contents: ratioBubbles
+    res.send("OK");
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("fail");
   }
-};
-
-await client.pushMessage(process.env.BOSS_USER_ID, ratioCarousel);
+});
+    
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
