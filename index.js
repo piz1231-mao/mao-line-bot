@@ -580,6 +580,9 @@ function buildRow(item, highlight = false) {
 // ======================================================
 // C2-1 單店銷售佔比 Bubble（定版｜排序＋聖誕進鍋物）
 // ======================================================
+// ======================================================
+// C2-1 單店銷售佔比 Bubble（定版｜排序＋聖誕修正）
+// ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
 
@@ -598,62 +601,59 @@ function buildShopRatioBubble({ shop, date, items }) {
     margin: "md"
   });
 
-  // ===============================
-  // 分類
-  // ===============================
-  const hotpot = [];        // 鍋物 + 聖誕
-  const cold = [];          // 冷藏
-  let oilMix = null;        // 麻油、燒酒鍋
-  let coldRatio = null;     // 冷藏肉比例
+  let coldSectionStarted = false;
 
   items.forEach(item => {
-    if (item.name === "麻油、燒酒鍋") {
-      oilMix = item;
-    } else if (item.name === "冷藏肉比例") {
-      coldRatio = item;
-    } else if (item.name.includes("冷藏")) {
-      cold.push(item);
-    } else {
-      // ✅ 鍋物 + 聖誕套餐 都進這裡
-      hotpot.push(item);
+    const isOilMix = item.name === "麻油、燒酒鍋";
+    const isColdRatio = item.name === "冷藏肉比例";
+
+    const isColdItem = item.name.includes("冷藏");
+    const isXmasItem = item.name.includes("聖誕");
+
+    // ✅ 只有「冷藏」且「不是聖誕」才進冷藏區
+    if (!coldSectionStarted && isColdItem && !isXmasItem) {
+      contents.push({
+        type: "separator",
+        margin: "xl"
+      });
+      coldSectionStarted = true;
     }
-  });
 
-  // ===============================
-  // 上半段：鍋物＋聖誕（依佔比排序）
-  // ===============================
-  hotpot
-    .sort((a, b) => b.ratio - a.ratio)
-    .forEach(item => {
-      contents.push(buildRow(item));
+    contents.push({
+      type: "box",
+      layout: "horizontal",
+      margin: (isOilMix || isColdRatio) ? "xl" : "md",
+      contents: [
+        {
+          type: "text",
+          text: item.name,
+          flex: 5,
+          size: "md",
+          wrap: true,
+          weight: (isOilMix || isColdRatio || isXmasItem) ? "bold" : "regular"
+        },
+        {
+          type: "text",
+          text: `${item.qty}`,
+          flex: 2,
+          size: "md",
+          align: "end",
+          weight: (isOilMix || isColdRatio || isXmasItem) ? "bold" : "regular"
+        },
+        {
+          type: "text",
+          text:
+            item.ratio !== undefined && item.ratio !== 0
+              ? `${item.ratio}%`
+              : "",
+          flex: 2,
+          size: "md",
+          align: "end",
+          weight: (isOilMix || isColdRatio || isXmasItem) ? "bold" : "regular"
+        }
+      ]
     });
-
-  // 👉 麻油、燒酒鍋（加總，粗體）
-  if (oilMix) {
-    contents.push(buildRow(oilMix, true));
-  }
-
-  // ===============================
-  // 分隔線
-  // ===============================
-  contents.push({
-    type: "separator",
-    margin: "xl"
   });
-
-  // ===============================
-  // 下半段：冷藏肉（依佔比排序）
-  // ===============================
-  cold
-    .sort((a, b) => b.ratio - a.ratio)
-    .forEach(item => {
-      contents.push(buildRow(item));
-    });
-
-  // 👉 冷藏肉比例（加總，粗體）
-  if (coldRatio) {
-    contents.push(buildRow(coldRatio, true));
-  }
 
   return {
     type: "bubble",
