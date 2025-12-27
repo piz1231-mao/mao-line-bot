@@ -599,7 +599,7 @@ function buildShopRatioBubble({ shop, date, items }) {
           text: item.ratio !== undefined && item.ratio !== ""
             ? `${item.ratio}%`
             : "",
-          flex: 2,
+          flex: 3,
           size: "md",
           align: "end",
           weight: (isOilMix || isColdRatio) ? "bold" : "regular"
