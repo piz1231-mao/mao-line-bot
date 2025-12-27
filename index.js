@@ -89,7 +89,7 @@ const handleHSR = require("./handlers/hsr");
 const { buildStockListFlex } = require("./services/stock.list.flex");
 const { buildStockSingleFlex } = require("./services/stock.single.flex");
 
-const { buildShopRatioFlex } = require("./services/shopRatio.flex");
+const buildShopRatioFlex = require("./services/shopRatio.flex");
 
 // 股票
 const { getStockQuote } = require("./services/stock.service");
