@@ -207,18 +207,16 @@ function parseSales(text) {
 }
 
 // ======================================================
-// 茶六套餐解析器（v1.3 穩定版｜行級解析）
+// 茶六套餐解析器（v1.4 定版｜符號容錯）
 // ======================================================
 function parseTea6Combos(text) {
-  const lines = text
+  // ⚠️ 前處理：只統一冒號與 %
+  // 「。」不要在這裡動，交給 regex 處理
+  const t = text
     .replace(/：/g, ":")
-    .replace(/％/g, "%")
-    .replace(/。/g, "。")
-    .split("\n")
-    .map(l => l.trim())
-    .filter(Boolean);
+    .replace(/％/g, "%");
 
-  const ITEMS = [
+  const items = [
     "極品豚肉套餐",
     "豐禾豚肉套餐",
     "特級牛肉套餐",
@@ -232,28 +230,35 @@ function parseTea6Combos(text) {
     "聖誕歡饗套餐"
   ];
 
-  const result = {};
-  for (const name of ITEMS) {
-    result[name] = { qty: 0, ratio: 0 };
+  // regex escape（必要）
+  function escapeRegExp(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
 
-  for (const line of lines) {
-    for (const name of ITEMS) {
-      if (!line.startsWith(name)) continue;
+  const result = {};
 
-      // 抓「X套」
-      const qtyMatch = line.match(/(\d+)\s*套/);
-      // 抓「Y%」
-      const ratioMatch = line.match(/([\d.]+)\s*%/);
+  for (const name of items) {
+    /**
+     * 🔥 關鍵修正：
+     * - 先 escape
+     * - 再把「。」轉成 .?（0 或 1 個任意字元）
+     *   → 可吃：。 . 空白 · 甚至沒符號
+     */
+    const searchPattern = escapeRegExp(name).replace(/。/g, ".?");
 
-      if (qtyMatch) result[name].qty = Number(qtyMatch[1]);
-      if (ratioMatch) result[name].ratio = Number(ratioMatch[1]);
-    }
+    const reg = new RegExp(
+      `${searchPattern}\\s*[:：]?\\s*(\\d+)\\s*套[^\\d%]*([\\d.]+)%`
+    );
+
+    const m = t.match(reg);
+
+    result[name] = m
+      ? { qty: Number(m[1]), ratio: Number(m[2]) }
+      : { qty: 0, ratio: 0 };
   }
 
   return result;
 }
-
 
 // ======================================================
 // 茶六套餐佔比寫入（B2）
