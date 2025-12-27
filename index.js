@@ -536,32 +536,39 @@ function buildDailySummaryFlex({ date, shops }) {
   };
 }
 // ======================================================
-// C2-1 單店銷售佔比 Bubble（🔥鎖位｜體積壓縮終極版）
+// C2-1 單店銷售佔比 Bubble（定版｜不新增資料）
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
 
-  contents.push(
-    { type: "text", text: `🍱 ${shop}｜銷售佔比`, weight: "bold", size: "xl" },
-    { type: "text", text: date, size: "sm", color: "#888888", margin: "md" }
-  );
+  contents.push({
+    type: "text",
+    text: `🍱 ${shop}｜銷售佔比`,
+    weight: "bold",
+    size: "xl"
+  });
 
-  const topNames = items
-    .filter(i => !i.name.includes("比例") && i.name !== "麻油、燒酒鍋")
-    .slice(0, 3)
-    .map(i => i.name);
+  contents.push({
+    type: "text",
+    text: date,
+    size: "sm",
+    color: "#888888",
+    margin: "md"
+  });
 
   let coldSectionStarted = false;
 
   items.forEach(item => {
-    const isOilMix    = item.name === "麻油、燒酒鍋";
+    const isOilMix = item.name === "麻油、燒酒鍋";
     const isColdRatio = item.name === "冷藏肉比例";
-    const isColdItem  = item.name.includes("冷藏");
-    const isXmasItem  = item.name.includes("聖誕");
-    const showFire    = topNames.includes(item.name);
+    const isColdItem = item.name.includes("冷藏");
 
-    if (!coldSectionStarted && isColdItem && !isXmasItem) {
-      contents.push({ type: "separator", margin: "xl" });
+    // 🔹 鍋 → 冷藏 分隔線（只出現一次）
+    if (!coldSectionStarted && isColdItem) {
+      contents.push({
+        type: "separator",
+        margin: "xl"
+      });
       coldSectionStarted = true;
     }
 
@@ -573,16 +580,10 @@ function buildShopRatioBubble({ shop, date, items }) {
         {
           type: "text",
           text: item.name,
-          flex: 4,
+          flex: 5,
           size: "md",
           wrap: true,
-          weight: (isOilMix || isColdRatio || isXmasItem) ? "bold" : undefined
-        },
-        {
-          type: "text",
-          text: showFire ? "🔥" : " ",
-          flex: 0.6,
-          size: "md"
+          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
         },
         {
           type: "text",
@@ -590,15 +591,17 @@ function buildShopRatioBubble({ shop, date, items }) {
           flex: 2,
           size: "md",
           align: "end",
-          weight: (isOilMix || isColdRatio) ? "bold" : undefined
+          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
         },
         {
           type: "text",
-          text: item.ratio ? `${item.ratio}%` : " ",
-          flex: 2.4,
+          text: item.ratio !== undefined && item.ratio !== ""
+            ? `${item.ratio}%`
+            : "",
+          flex: 2,
           size: "md",
           align: "end",
-          weight: (isOilMix || isColdRatio) ? "bold" : undefined
+          weight: (isOilMix || isColdRatio) ? "bold" : "regular"
         }
       ]
     });
@@ -606,10 +609,13 @@ function buildShopRatioBubble({ shop, date, items }) {
 
   return {
     type: "bubble",
-    body: { type: "box", layout: "vertical", contents }
+    body: {
+      type: "box",
+      layout: "vertical",
+      contents
+    }
   };
 }
-
 // ======================================================
 // C2-2 三店銷售佔比 Carousel（定版）
 // ======================================================
@@ -802,13 +808,16 @@ if (text.startsWith("大哥您好")) {
 });
 
 // ======================================================
-// 讀取單店銷售佔比（準全顯示｜安全上限 20）
+// ✅ 定版修正：讀取各店銷售佔比（排序正確＋彙總列不參與）
 // ======================================================
 async function readShopRatioBubble({ shop, date }) {
   const fields = SHOP_RATIO_FIELDS[shop];
   if (!fields) return null;
 
-  const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
+  const sheets = google.sheets({
+    version: "v4",
+    auth: await auth.getClient()
+  });
 
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
@@ -820,48 +829,67 @@ async function readShopRatioBubble({ shop, date }) {
 
   const items = [];
 
+  // 依欄位定錨讀資料
   for (let i = 0; i < fields.length; i++) {
     const col = i * 2;
     const name = fields[i];
     const qty = Number(last[col] || 0);
     const ratio = Number(last[col + 1] || 0);
 
-    if (qty > 0 || name === "冷藏肉比例") {
+    // qty > 0 才顯示，但「彙總列」例外一定要留
+    if (qty > 0 || name === "麻油、燒酒鍋" || name === "冷藏肉比例") {
       items.push({ name, qty, ratio });
     }
   }
 
+  // ==================================================
+  // 🫕 湯棧中山：上下段排序＋彙總列獨立
+  // ==================================================
   if (shop === "湯棧中山") {
+    // 👉 抓彙總列（不參與排序）
+    const oilMixTotal = items.find(i => i.name === "麻油、燒酒鍋");
+    const coldTotal   = items.find(i => i.name === "冷藏肉比例");
+
+    // ---- 上半段：鍋物＋聖誕（❌ 不含麻油、燒酒鍋）----
     const hotpot = items
-      .filter(i => !i.name.includes("冷藏") || i.name.includes("聖誕"))
-      .filter(i => i.name !== "麻油、燒酒鍋")
+      .filter(i =>
+        !i.name.includes("冷藏") &&
+        i.name !== "麻油、燒酒鍋"
+      )
       .sort((a, b) => b.qty - a.qty);
 
+    // ---- 下半段：冷藏肉（❌ 不含冷藏肉比例）----
     const cold = items
-      .filter(i => i.name.includes("冷藏") && !i.name.includes("聖誕"))
-      .sort((a, b) =>
-        a.name === "冷藏肉比例" ? 1 :
-        b.name === "冷藏肉比例" ? -1 :
-        b.qty - a.qty
-      );
+      .filter(i =>
+        i.name.includes("冷藏") &&
+        i.name !== "冷藏肉比例"
+      )
+      .sort((a, b) => b.qty - a.qty);
+
+    // 👉 最終顯示順序（這裡就是 UI 規格）
+    const finalItems = [
+      ...hotpot,
+      ...(oilMixTotal ? [oilMixTotal] : []),
+      ...cold,
+      ...(coldTotal ? [coldTotal] : [])
+    ];
 
     return buildShopRatioBubble({
       shop,
       date,
-      items: [...hotpot, ...cold].slice(0, 20)
+      items: finalItems
     });
   }
 
+  // ==================================================
+  // 🍱 茶六 / 三山：全部商品一起依銷量排序
+  // ==================================================
   return buildShopRatioBubble({
     shop,
     date,
-    items: items
-      .filter(i => i.name !== "麻油、燒酒鍋")
-      .sort((a, b) => b.qty - a.qty)
-      .slice(0, 20)
+    items: items.sort((a, b) => b.qty - a.qty)
   });
 }
- 
 
 // ======================================================
 // 每日摘要 API（08:00 推播用｜流檢同款｜只推一則）
