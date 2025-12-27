@@ -778,7 +778,7 @@ if (text.startsWith("大哥您好")) {
 });
 
 // ======================================================
-// 通用：讀取單店銷售佔比 → 回傳 Bubble
+// ✅ 定版：讀取各店銷售佔比（不會漏、不吃欄位）
 // ======================================================
 async function readShopRatioBubble({ shop, date }) {
   const fields = SHOP_RATIO_FIELDS[shop];
@@ -799,29 +799,49 @@ async function readShopRatioBubble({ shop, date }) {
 
   const items = [];
 
-  for (let i = 0; i < fields.length; i++) {
-    const qty = Number(last[i * 2] || 0);
-    const ratio = Number(last[i * 2 + 1] || 0);
+  // ⚠️ 關鍵：用 Sheet 真實欄位數，不用 fields.length
+  for (let col = 0; col < last.length; col += 2) {
+    const index = col / 2;
+    const name = fields[index];
+    if (!name) continue;
 
-    if (qty > 0) {
-      items.push({
-        name: fields[i],
-        qty,
-        ratio
-      });
-    }
+    const qty = Number(last[col] || 0);
+    const ratio = Number(last[col + 1] || 0);
+
+    items.push({
+      name,
+      qty,
+      ratio,
+      // 湯棧粗體規則
+      isBold:
+        name === "麻油、燒酒鍋" ||
+        name === "冷藏肉比例"
+    });
   }
 
   if (!items.length) return null;
 
+  // 湯棧要分上下段，其它店不用
+  if (shop === "湯棧中山") {
+    const hotpot = items.filter(i => !i.name.includes("冷藏"));
+    const cold = items.filter(i => i.name.includes("冷藏"));
+
+    return buildShopRatioBubble({
+      shop,
+      date,
+      items: [...hotpot, ...cold]
+    });
+  }
+
+  // 三山 / 茶六：全部照數量排序
   return buildShopRatioBubble({
     shop,
     date,
     items: items
       .sort((a, b) => b.qty - a.qty)
-      .slice(0, 8)
   });
 }
+
 
 // ======================================================
 // 每日摘要 API（08:00 推播用｜流檢同款｜只推一則）
