@@ -482,6 +482,20 @@ function buildDailySummaryFlex({ date, shops }) {
 }
 
 // ======================================================
+// C2-2 三店銷售佔比 Carousel
+// ======================================================
+function buildShopRatioCarousel(flexBubbles) {
+  return {
+    type: "flex",
+    altText: "🍱 三店銷售佔比",
+    contents: {
+      type: "carousel",
+      contents: flexBubbles
+    }
+  };
+}
+
+// ======================================================
 // LINE Webhook（Router 主流程）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
@@ -661,22 +675,9 @@ app.post("/api/daily-summary", async (req, res) => {
     const c = await auth.getClient();
     const sheets = google.sheets({ version: "v4", auth: c });
 
-        // ===== C2-1 茶六銷售佔比 Flex（測試用）=====
-    const testFlex = buildShopRatioFlex({
-      shop: "茶六博愛",
-      date: "12-26",
-      items: [
-        { name: "極品豚肉套餐", qty: 19, ratio: 15.02 },
-        { name: "上等牛肉套餐", qty: 34, ratio: 15.96 },
-        { name: "真饌和牛套餐", qty: 34, ratio: 15.96 },
-        { name: "豐禾豚肉套餐", qty: 29, ratio: 13.62 },
-        { name: "三人極上套餐", qty: 22, ratio: 10.33 },
-        { name: "三人豚肉套餐", qty: 17, ratio: 7.98 }
-      ]
-    });
-
-    await client.pushMessage(process.env.BOSS_USER_ID, testFlex);
-
+    // =========================
+    // C1：三店總覽
+    // =========================
     const shops = [];
 
     for (const s of SHOP_LIST) {
@@ -692,17 +693,15 @@ app.post("/api/daily-summary", async (req, res) => {
 
       shops.push({
         name: s,
-        date: last[5]?.slice(5),          // 營業日期 MM-DD
+        date: last[5]?.slice(5),
         revenue: Number(last[6] || 0),
         qty: Number(last[8] || 0),
         qtyLabel: s === "湯棧中山" ? "總鍋數" : "套餐數",
         unit: last[9],
-
         fp: Number(last[10] || 0),
         fpRate: Number(last[11] || 0),
         bp: Number(last[12] || 0),
         bpRate: Number(last[13] || 0),
-
         hrTotal: Number(last[14] || 0),
         hrTotalRate: Number(last[15] || 0)
       });
@@ -710,12 +709,55 @@ app.post("/api/daily-summary", async (req, res) => {
 
     if (!shops.length) return res.send("no data");
 
-    const flex = buildDailySummaryFlex({
+    const summaryFlex = buildDailySummaryFlex({
       date: shops[0].date,
       shops
     });
 
-    await client.pushMessage(process.env.BOSS_USER_ID, flex);
+    await client.pushMessage(process.env.BOSS_USER_ID, summaryFlex);
+
+    // =========================
+    // C2：三店銷售佔比（先假資料）
+    // =========================
+    const ratioBubbles = [];
+
+    ratioBubbles.push(
+      buildShopRatioFlex({
+        shop: "茶六博愛",
+        date: shops[0].date,
+        items: [
+          { name: "極品豚肉套餐", qty: 19, ratio: 15.02 },
+          { name: "上等牛肉套餐", qty: 34, ratio: 15.96 },
+          { name: "真饌和牛套餐", qty: 34, ratio: 15.96 }
+        ]
+      })
+    );
+
+    ratioBubbles.push(
+      buildShopRatioFlex({
+        shop: "三山博愛",
+        date: shops[0].date,
+        items: [
+          { name: "豬&豬套餐", qty: 48, ratio: 18.6 },
+          { name: "美國牛肉套餐", qty: 41, ratio: 15.9 }
+        ]
+      })
+    );
+
+    ratioBubbles.push(
+      buildShopRatioFlex({
+        shop: "湯棧中山",
+        date: shops[0].date,
+        items: [
+          { name: "麻油鍋", qty: 112, ratio: 22.8 },
+          { name: "燒酒鍋", qty: 98, ratio: 19.9 }
+        ]
+      })
+    );
+
+    const ratioCarousel = buildShopRatioCarousel(ratioBubbles);
+
+    await client.pushMessage(process.env.BOSS_USER_ID, ratioCarousel);
 
     res.send("ok");
   } catch (err) {
@@ -723,6 +765,7 @@ app.post("/api/daily-summary", async (req, res) => {
     res.status(500).send("error");
   }
 });
+
 
 // ======================================================
 const PORT = process.env.PORT || 3000;
