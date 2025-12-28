@@ -491,7 +491,13 @@ const SHOP_RATIO_FIELDS = {
 
 
 // ======================================================
-// 三店總覽 Flex（C1｜完整摘要｜字體放大｜業績粗體｜人事條件反紅）
+// C1｜三店總覽 Flex（v1.6.3 定版）
+// - 💵 業績（現金流語意）
+// - 🍱 套餐數（茶六 / 三山）
+// - 🍲 總鍋數（湯棧中山）
+// - 🧾 客單價
+// - 👥 人事（外 / 內 / 總）【⚠️ 鎖死不再調整】
+// - 人事超標條件反紅（行為不變）
 // ======================================================
 function buildDailySummaryFlex({ date, shops }) {
   return {
@@ -516,24 +522,49 @@ function buildDailySummaryFlex({ date, shops }) {
               (shop.name === "茶六博愛" && shop.hrTotalRate > 22) ||
               (shop.name !== "茶六博愛" && shop.hrTotalRate > 25);
 
+            // 🔧 數量欄位 emoji / label 依店別切換
+            const qtyEmoji = shop.name === "湯棧中山" ? "🍲" : "🍱";
+            const qtyLabel = shop.name === "湯棧中山" ? "總鍋數" : "套餐數";
+
             const block = [
               {
                 type: "box",
                 layout: "vertical",
                 spacing: "sm",
                 contents: [
-                  { type: "text", text: shop.name, weight: "bold", size: "lg" },
                   {
                     type: "text",
-                    text: `💰 業績：${shop.revenue.toLocaleString()}`,
+                    text: shop.name,
+                    weight: "bold",
+                    size: "lg"
+                  },
+                  {
+                    type: "text",
+                    text: `💵 業績：${shop.revenue.toLocaleString()}`,
                     size: "md",
                     weight: "bold"
                   },
-                  { type: "text", text: `📦 ${shop.qtyLabel}：${shop.qty}`, size: "md" },
-                  { type: "text", text: `🧾 客單價：${shop.unit}`, size: "md" },
+                  {
+                    type: "text",
+                    text: `${qtyEmoji} ${qtyLabel}：${shop.qty}`,
+                    size: "md"
+                  },
+                  {
+                    type: "text",
+                    text: `🧾 客單價：${shop.unit}`,
+                    size: "md"
+                  },
 
-                  { type: "text", text: `👥 外場：${shop.fp.toLocaleString()}（${shop.fpRate}%）`, size: "md" },
-                  { type: "text", text: `👥 內場：${shop.bp.toLocaleString()}（${shop.bpRate}%）`, size: "md" },
+                  {
+                    type: "text",
+                    text: `👥 外場：${shop.fp.toLocaleString()}（${shop.fpRate}%）`,
+                    size: "md"
+                  },
+                  {
+                    type: "text",
+                    text: `👥 內場：${shop.bp.toLocaleString()}（${shop.bpRate}%）`,
+                    size: "md"
+                  },
                   {
                     type: "text",
                     text: `👥 總人事：${shop.hrTotal.toLocaleString()}（${shop.hrTotalRate}%）`,
@@ -546,7 +577,10 @@ function buildDailySummaryFlex({ date, shops }) {
             ];
 
             if (idx < shops.length - 1) {
-              block.push({ type: "separator", margin: "lg" });
+              block.push({
+                type: "separator",
+                margin: "lg"
+              });
             }
 
             return block;
@@ -556,16 +590,18 @@ function buildDailySummaryFlex({ date, shops }) {
     }
   };
 }
-
 // ======================================================
-// C2-1 單店銷售佔比 Bubble（v1.6.2｜冷藏肉獨立排名）
+// C2-1 單店銷售佔比 Bubble（v1.6.3｜冷藏肉獨立排名＋emoji 規格修正）
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
 
+  // 🔧 表頭 emoji 依店別修正
+  const headerEmoji = shop === "湯棧中山" ? "🍲" : "🍱";
+
   contents.push({
     type: "text",
-    text: `🍱 ${shop}｜銷售佔比`,
+    text: `${headerEmoji} ${shop}｜銷售佔比`,
     weight: "bold",
     size: "xl"
   });
