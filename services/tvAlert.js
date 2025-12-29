@@ -22,7 +22,7 @@ const auth = new GoogleAuth({
 });
 
 // ======================================================
-// 取得 LINE 通知名單（防呆版）
+// 取得 LINE 通知名單（防爆，不會中斷）
 // ======================================================
 async function getNotifyListSafe() {
   try {
@@ -39,12 +39,12 @@ async function getNotifyListSafe() {
       .filter(id => id.startsWith("U") || id.startsWith("C"));
   } catch (err) {
     console.error("❌ Google Sheets 讀取失敗：", err.message);
-    return null;
+    return [];
   }
 }
 
 // ======================================================
-// 工具：字串解析（備援用）
+// 工具：從字串抓參數（備援）
 // ======================================================
 function extract(text, key) {
   if (typeof text !== "string") return null;
@@ -53,25 +53,25 @@ function extract(text, key) {
 }
 
 // ======================================================
-// 🧠 毛怪嘴砲邏輯
+// 毛怪嘴砲（完全不影響送不送）
 // ======================================================
 function maoTalk({ tf, excess }) {
   const e = Number(excess) || 0;
   const isLTF = tf === "3";
 
   if (isLTF) {
-    if (e <= 5)  return "有在動了啦，先看不要急 👀";
-    if (e <= 10) return "這個開始有點樣子了，不看會後悔";
-    return "3 分就這樣了，5 分不出我不信";
+    if (e <= 5)  return "子級有動靜，自己判斷 👀";
+    if (e <= 10) return "子級開始有力道了";
+    return "子級拉起來了，注意";
   } else {
-    if (e <= 5)  return "條件過了，但不是那種一定要衝的";
-    if (e <= 10) return "條件到齊，這種不進說不過去";
-    return "這種你不進，盤後一定怪我";
+    if (e <= 5)  return "主級條件成立";
+    if (e <= 10) return "主級條件完整";
+    return "主級力道很夠";
   }
 }
 
 // ======================================================
-// TradingView → LINE（最終定版）
+// TradingView → LINE（全送、不篩、最終版）
 // ======================================================
 module.exports = async function tvAlert(client, alertContent) {
   console.log("🧪 tvAlert triggered");
@@ -92,29 +92,21 @@ module.exports = async function tvAlert(client, alertContent) {
   console.log("📩 RAW ALERT:", text);
 
   // --------------------------------------------------
-  // 2️⃣ 方向解析（先 JSON，後字串）
+  // 2️⃣ 方向解析（⚠️ 不再作為擋訊號條件）
   // --------------------------------------------------
-  const rawDir =
-    payload.direction ||
-    payload.dir ||
-    extract(text, "direction") ||
-    extract(text, "dir") ||
-    ( /BUY|LONG/i.test(text)  ? "BUY"  :
-      /SELL|SHORT/i.test(text) ? "SELL" :
-      null );
+  let direction = null;
 
-  const direction =
-    /BUY|LONG/i.test(rawDir || "")  ? "買進" :
-    /SELL|SHORT/i.test(rawDir || "") ? "賣出" :
-    null;
+  if (/BUY/i.test(text))  direction = "買進";
+  if (/SELL/i.test(text)) direction = "賣出";
 
+  // 👉 完全解析不到也照送
   if (!direction) {
-    console.warn("⚠️ 無法解析方向，略過推播");
-    return;
+    console.warn("⚠️ 無法解析方向，標記為提醒仍送出");
+    direction = "提醒";
   }
 
   // --------------------------------------------------
-  // 3️⃣ 解析其他欄位（JSON 優先）
+  // 3️⃣ 解析其他欄位（JSON 優先，沒有也不擋）
   // --------------------------------------------------
   const tfRaw  = payload.tf     || extract(text, "tf")     || "";
   const price  = payload.price  || extract(text, "price")  || "—";
@@ -137,16 +129,16 @@ module.exports = async function tvAlert(client, alertContent) {
   });
 
   // --------------------------------------------------
-  // 4️⃣ 取得 LINE 通知名單（不中斷）
+  // 4️⃣ 取得 LINE 通知名單
   // --------------------------------------------------
   const ids = await getNotifyListSafe();
-  if (!ids || !ids.length) {
+  if (!ids.length) {
     console.warn("⚠️ LINE 通知名單為空，略過推播");
     return;
   }
 
   // --------------------------------------------------
-  // 5️⃣ 建立 Flex
+  // 5️⃣ 建立 Flex（永遠嘗試）
   // --------------------------------------------------
   let msg;
   try {
@@ -164,7 +156,7 @@ module.exports = async function tvAlert(client, alertContent) {
   }
 
   // --------------------------------------------------
-  // 6️⃣ 推播 LINE
+  // 6️⃣ 推播 LINE（一定送）
   // --------------------------------------------------
   for (const id of ids) {
     try {
