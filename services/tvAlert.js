@@ -22,7 +22,7 @@ const auth = new GoogleAuth({
 });
 
 // ======================================================
-// 取得 LINE 通知名單（加強版：防爆）
+// 取得 LINE 通知名單（防呆版）
 // ======================================================
 async function getNotifyListSafe() {
   try {
@@ -38,13 +38,13 @@ async function getNotifyListSafe() {
       .map(r => (r[1] || "").trim())
       .filter(id => id.startsWith("U") || id.startsWith("C"));
   } catch (err) {
-    console.error("❌ 讀取 Google Sheets 失敗：", err.message);
-    return null; // 明確回 null，不 throw
+    console.error("❌ Google Sheets 讀取失敗：", err.message);
+    return null;
   }
 }
 
 // ======================================================
-// 工具：字串解析
+// 工具：字串解析（備援用）
 // ======================================================
 function extract(text, key) {
   if (typeof text !== "string") return null;
@@ -71,18 +71,41 @@ function maoTalk({ tf, excess }) {
 }
 
 // ======================================================
-// TradingView → LINE（穩定強化定版）
+// TradingView → LINE（最終定版）
 // ======================================================
 module.exports = async function tvAlert(client, alertContent) {
   console.log("🧪 tvAlert triggered");
 
-  const text = String(alertContent || "");
+  // --------------------------------------------------
+  // 1️⃣ 同時支援 JSON / 字串
+  // --------------------------------------------------
+  let payload = {};
+  let text = "";
+
+  if (typeof alertContent === "string") {
+    text = alertContent;
+  } else if (typeof alertContent === "object" && alertContent !== null) {
+    payload = alertContent;
+    text = JSON.stringify(alertContent);
+  }
+
   console.log("📩 RAW ALERT:", text);
 
-  // ---------- 方向（嚴格） ----------
+  // --------------------------------------------------
+  // 2️⃣ 方向解析（先 JSON，後字串）
+  // --------------------------------------------------
+  const rawDir =
+    payload.direction ||
+    payload.dir ||
+    extract(text, "direction") ||
+    extract(text, "dir") ||
+    ( /BUY|LONG/i.test(text)  ? "BUY"  :
+      /SELL|SHORT/i.test(text) ? "SELL" :
+      null );
+
   const direction =
-    /BUY|LONG/i.test(text)  ? "買進" :
-    /SELL|SHORT/i.test(text) ? "賣出" :
+    /BUY|LONG/i.test(rawDir || "")  ? "買進" :
+    /SELL|SHORT/i.test(rawDir || "") ? "賣出" :
     null;
 
   if (!direction) {
@@ -90,11 +113,13 @@ module.exports = async function tvAlert(client, alertContent) {
     return;
   }
 
-  // ---------- 解析資料 ----------
-  const tfRaw  = extract(text, "tf")     || "";
-  const price  = extract(text, "price")  || "—";
-  const sl     = extract(text, "sl")     || "—";
-  const excess = extract(text, "excess") || "0";
+  // --------------------------------------------------
+  // 3️⃣ 解析其他欄位（JSON 優先）
+  // --------------------------------------------------
+  const tfRaw  = payload.tf     || extract(text, "tf")     || "";
+  const price  = payload.price  || extract(text, "price")  || "—";
+  const sl     = payload.sl     || extract(text, "sl")     || "—";
+  const excess = payload.excess || extract(text, "excess") || "0";
 
   const tfDisplay =
     /^\d+$/.test(tfRaw) ? `${tfRaw} 分 K`
@@ -111,14 +136,18 @@ module.exports = async function tvAlert(client, alertContent) {
     hour12: false
   });
 
-  // ---------- 取得通知名單（防爆） ----------
+  // --------------------------------------------------
+  // 4️⃣ 取得 LINE 通知名單（不中斷）
+  // --------------------------------------------------
   const ids = await getNotifyListSafe();
   if (!ids || !ids.length) {
     console.warn("⚠️ LINE 通知名單為空，略過推播");
     return;
   }
 
-  // ---------- Flex ----------
+  // --------------------------------------------------
+  // 5️⃣ 建立 Flex
+  // --------------------------------------------------
   let msg;
   try {
     msg = buildTVFlex({
@@ -134,7 +163,9 @@ module.exports = async function tvAlert(client, alertContent) {
     return;
   }
 
-  // ---------- 推播 ----------
+  // --------------------------------------------------
+  // 6️⃣ 推播 LINE
+  // --------------------------------------------------
   for (const id of ids) {
     try {
       await client.pushMessage(id, msg);
