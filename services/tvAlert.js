@@ -22,20 +22,25 @@ const auth = new GoogleAuth({
 });
 
 // ======================================================
-// 取得 LINE 通知名單
+// 取得 LINE 通知名單（加強版：防爆）
 // ======================================================
-async function getNotifyList() {
-  const c = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: c });
+async function getNotifyListSafe() {
+  try {
+    const c = await auth.getClient();
+    const sheets = google.sheets({ version: "v4", auth: c });
 
-  const rows = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${SHEET_NAME}!A2:B999`
-  });
+    const rows = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${SHEET_NAME}!A2:B999`
+    });
 
-  return (rows.data.values || [])
-    .map(r => (r[1] || "").trim())
-    .filter(id => id.startsWith("U") || id.startsWith("C"));
+    return (rows.data.values || [])
+      .map(r => (r[1] || "").trim())
+      .filter(id => id.startsWith("U") || id.startsWith("C"));
+  } catch (err) {
+    console.error("❌ 讀取 Google Sheets 失敗：", err.message);
+    return null; // 明確回 null，不 throw
+  }
 }
 
 // ======================================================
@@ -48,11 +53,11 @@ function extract(text, key) {
 }
 
 // ======================================================
-// 🧠 毛怪嘴砲邏輯（依 excess + 週期）
+// 🧠 毛怪嘴砲邏輯
 // ======================================================
 function maoTalk({ tf, excess }) {
   const e = Number(excess) || 0;
-  const isLTF = tf === "3"; // 3 分 K 視為子級
+  const isLTF = tf === "3";
 
   if (isLTF) {
     if (e <= 5)  return "有在動了啦，先看不要急 👀";
@@ -66,55 +71,68 @@ function maoTalk({ tf, excess }) {
 }
 
 // ======================================================
-// TradingView → LINE（定版）
+// TradingView → LINE（穩定強化定版）
 // ======================================================
 module.exports = async function tvAlert(client, alertContent) {
   console.log("🧪 tvAlert triggered");
 
-  const ids = await getNotifyList();
-  if (!ids.length) return;
-
   const text = String(alertContent || "");
+  console.log("📩 RAW ALERT:", text);
 
-  // ---------- 方向 ----------
+  // ---------- 方向（嚴格） ----------
   const direction =
-    /BUY/i.test(text) ? "買進" :
-    /SELL/i.test(text) ? "賣出" :
-    "—";
+    /BUY|LONG/i.test(text)  ? "買進" :
+    /SELL|SHORT/i.test(text) ? "賣出" :
+    null;
 
-  // ---------- 解析 TV 傳來的資料 ----------
-  const tfRaw   = extract(text, "tf")     || "";
-  const price   = extract(text, "price")  || "—";
-  const sl      = extract(text, "sl")     || "—";
-  const excess  = extract(text, "excess") || "0";
+  if (!direction) {
+    console.warn("⚠️ 無法解析方向，略過推播");
+    return;
+  }
 
-  // ---------- 週期顯示 ----------
+  // ---------- 解析資料 ----------
+  const tfRaw  = extract(text, "tf")     || "";
+  const price  = extract(text, "price")  || "—";
+  const sl     = extract(text, "sl")     || "—";
+  const excess = extract(text, "excess") || "0";
+
   const tfDisplay =
     /^\d+$/.test(tfRaw) ? `${tfRaw} 分 K`
     : tfRaw === "D"     ? "日 K"
     : tfRaw === "W"     ? "週 K"
     : "未指定";
 
-  // ---------- 毛怪嘴砲 ----------
   const talk = maoTalk({ tf: tfRaw, excess });
 
-  // ---------- 時間（即時看到算你快） ----------
- const timeText = new Date().toLocaleTimeString("zh-TW", {
-  timeZone: "Asia/Taipei",
-  hour: "2-digit",
-  minute: "2-digit",
-  hour12: false
-});
+  const timeText = new Date().toLocaleTimeString("zh-TW", {
+    timeZone: "Asia/Taipei",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  });
+
+  // ---------- 取得通知名單（防爆） ----------
+  const ids = await getNotifyListSafe();
+  if (!ids || !ids.length) {
+    console.warn("⚠️ LINE 通知名單為空，略過推播");
+    return;
+  }
 
   // ---------- Flex ----------
-  const msg = buildTVFlex({
-    timeframe: tfDisplay,
-    direction,
-    talk,
-    price,
-    stopLoss: sl,
-    timeText
-  });
+  let msg;
+  try {
+    msg = buildTVFlex({
+      timeframe: tfDisplay,
+      direction,
+      talk,
+      price,
+      stopLoss: sl,
+      timeText
+    });
+  } catch (err) {
+    console.error("❌ Flex 建立失敗：", err.message);
+    return;
+  }
 
   // ---------- 推播 ----------
   for (const id of ids) {
@@ -122,7 +140,9 @@ module.exports = async function tvAlert(client, alertContent) {
       await client.pushMessage(id, msg);
       console.log("✅ TV 推播成功：", id);
     } catch (err) {
-      console.error("❌ TV 推播失敗：", id, err.message);
+      console.error("❌ TV 推播失敗：", id);
+      console.error("❌ LINE ERROR：", err.message);
+      console.error("❌ PAYLOAD：", JSON.stringify(msg));
     }
   }
 };
