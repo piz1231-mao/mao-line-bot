@@ -981,10 +981,10 @@ const c1Flex = buildDailySummaryFlex({
 });
 const c1Contents = c1Flex.contents.body.contents;
 
-// 🔥 單店專用標題
+// 🔥 單店專用標題（含日期）
 const singleShopHeader = {
   type: "text",
-  text: `${shop.name}｜營運總覽`,
+  text: `${shop.name}｜營運總覽（${shop.date}）`,
   weight: "bold",
   size: "xl",
   margin: "md"
@@ -1008,17 +1008,16 @@ const mergedContents = [
     type: "separator",
     margin: "lg"
   },
-  ...c1Contents.slice(1) // 移除原本「每日營運總覽」
+  ...c1Contents.slice(2) // ✅ 同時拿掉「每日總覽」＋「店名」
 ];
 
 if (c2Contents.length) {
   mergedContents.push({
     type: "separator",
-    margin: "xxl" // ⬅️ 關鍵：拉開距離
+    margin: "xxl"
   });
   mergedContents.push(...c2Contents);
 }
-
 // --- 回傳單一 Bubble ---
 await client.replyMessage(e.replyToken, {
   type: "flex",
