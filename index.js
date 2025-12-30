@@ -1019,6 +1019,7 @@ await client.replyMessage(e.replyToken, {
 });
 
 continue;
+  }
 
 // ===== 模式 A：不指定店名（共用引擎）=====
 if (text === "查業績") {
