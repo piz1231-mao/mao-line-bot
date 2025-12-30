@@ -1063,15 +1063,7 @@ if (text === "查業績") {
   await client.replyMessage(e.replyToken, flex);
   continue;
 }
-  // ✅ 關鍵：直接用共用引擎
-  const flex = await buildDailyReportCarousel({
-    date: shops[0].date,
-    shops
-  });
-
-  await client.replyMessage(e.replyToken, flex);
-  continue;
-}
+  
       
 // ===== 業績回報（只寫不回｜定版）=====
 if (text.startsWith("大哥您好")) {
