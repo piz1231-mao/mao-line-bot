@@ -974,43 +974,51 @@ if (text.startsWith("查業績 ")) {
     hrTotalRate: Number(last[15] || 0)
   };
 
-  // --- C1（單店）---
-  const c1Flex = buildDailySummaryFlex({
-    date: shop.date,
-    shops: [shop]
+ // --- C1（單店）---
+const c1Flex = buildDailySummaryFlex({
+  date: shop.date,
+  shops: [shop]
+});
+const c1Contents = c1Flex.contents.body.contents;
+
+// --- C2（單店銷售佔比）---
+const ratioBubble = await readShopRatioBubble({
+  shop: shopName,
+  date: shop.date
+});
+
+// ⚠️ 只取「品項列表」，砍掉 header + date
+const c2Contents = ratioBubble
+  ? ratioBubble.body.contents.slice(2)
+  : [];
+
+// --- 合併 ---
+const mergedContents = [...c1Contents];
+
+if (c2Contents.length) {
+  mergedContents.push({
+    type: "separator",
+    margin: "xl"
   });
-  const c1Contents = c1Flex.contents.body.contents;
-
-  // --- C2（單店佔比）---
-  const ratioBubble = await readShopRatioBubble({
-    shop: shopName,
-    date: shop.date
-  });
-  const c2Contents = ratioBubble ? ratioBubble.body.contents : [];
-
-  // --- 合併 ---
-  const mergedContents = [...c1Contents];
-  if (c2Contents.length) {
-    mergedContents.push({ type: "separator", margin: "xxl" });
-    mergedContents.push(...c2Contents);
-  }
-
-  await client.replyMessage(e.replyToken, {
-    type: "flex",
-    altText: `📊 ${shopName} 營運報表`,
-    contents: {
-      type: "bubble",
-      size: "mega",
-      body: {
-        type: "box",
-        layout: "vertical",
-        contents: mergedContents
-      }
-    }
-  });
-
-  continue;
+  mergedContents.push(...c2Contents);
 }
+
+// --- 回傳單一 Bubble ---
+await client.replyMessage(e.replyToken, {
+  type: "flex",
+  altText: `📊 ${shopName} 營運報表`,
+  contents: {
+    type: "bubble",
+    size: "mega",
+    body: {
+      type: "box",
+      layout: "vertical",
+      contents: mergedContents
+    }
+  }
+});
+
+continue;
 
 // ===== 模式 A：不指定店名（共用引擎）=====
 if (text === "查業績") {
