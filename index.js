@@ -964,6 +964,94 @@ await client.replyMessage(e.replyToken, flex);
     });
     continue;
   }
+       if (text.startsWith("查業績 ")) {
+  const shopName = text.replace("查業績", "").trim();
+  if (!SHOP_LIST.includes(shopName)) {
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: `❌ 找不到店名「${shopName}」`
+    });
+    continue;
+  }
+
+  const sheets = google.sheets({
+    version: "v4",
+    auth: await auth.getClient()
+  });
+
+  // ===== 讀取該店最新一筆（C1）=====
+  const r = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${shopName}!A:Q`
+  });
+
+  const rows = r.data.values || [];
+  if (rows.length < 2) {
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "目前沒有資料"
+    });
+    continue;
+  }
+
+  const last = rows.at(-1);
+  const shop = {
+    name: shopName,
+    date: last[5]?.slice(5),
+    revenue: Number(last[6] || 0),
+    qty: Number(last[8] || 0),
+    unit: last[9],
+    fp: Number(last[10] || 0),
+    fpRate: Number(last[11] || 0),
+    bp: Number(last[12] || 0),
+    bpRate: Number(last[13] || 0),
+    hrTotal: Number(last[14] || 0),
+    hrTotalRate: Number(last[15] || 0)
+  };
+
+  // ===== C1：只用一間店 =====
+  const c1Flex = buildDailySummaryFlex({
+    date: shop.date,
+    shops: [shop]
+  });
+
+  const c1Contents = c1Flex.contents.body.contents;
+
+  // ===== C2：該店銷售佔比 =====
+  const ratioBubble = await readShopRatioBubble({
+    shop: shopName,
+    date: shop.date
+  });
+
+  const c2Contents = ratioBubble ? ratioBubble.body.contents : [];
+
+  // ===== 合併成單一 Bubble =====
+  const mergedContents = [...c1Contents];
+
+  if (c2Contents.length) {
+    mergedContents.push({
+      type: "separator",
+      margin: "xxl"
+    });
+    mergedContents.push(...c2Contents);
+  }
+
+  await client.replyMessage(e.replyToken, {
+    type: "flex",
+    altText: `📊 ${shopName} 營運報表`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        contents: mergedContents
+      }
+    }
+  });
+
+  continue;
+}
 
   // ✅ 關鍵：直接用共用引擎
   const flex = await buildDailyReportCarousel({
