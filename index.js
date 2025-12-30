@@ -974,12 +974,21 @@ if (text.startsWith("查業績 ")) {
     hrTotalRate: Number(last[15] || 0)
   };
 
- // --- C1（單店）---
+// --- C1（單店）---
 const c1Flex = buildDailySummaryFlex({
   date: shop.date,
   shops: [shop]
 });
 const c1Contents = c1Flex.contents.body.contents;
+
+// 🔥 單店專用標題
+const singleShopHeader = {
+  type: "text",
+  text: `${shop.name}｜營運總覽`,
+  weight: "bold",
+  size: "xl",
+  margin: "md"
+};
 
 // --- C2（單店銷售佔比）---
 const ratioBubble = await readShopRatioBubble({
@@ -987,18 +996,25 @@ const ratioBubble = await readShopRatioBubble({
   date: shop.date
 });
 
-// ⚠️ 只取「品項列表」，砍掉 header + date
+// 只取品項（砍掉 C2 header + date）
 const c2Contents = ratioBubble
   ? ratioBubble.body.contents.slice(2)
   : [];
 
 // --- 合併 ---
-const mergedContents = [...c1Contents];
+const mergedContents = [
+  singleShopHeader,
+  {
+    type: "separator",
+    margin: "lg"
+  },
+  ...c1Contents.slice(1) // 移除原本「每日營運總覽」
+];
 
 if (c2Contents.length) {
   mergedContents.push({
     type: "separator",
-    margin: "xl"
+    margin: "xxl" // ⬅️ 關鍵：拉開距離
   });
   mergedContents.push(...c2Contents);
 }
