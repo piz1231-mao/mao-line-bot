@@ -923,16 +923,15 @@ await client.replyMessage(e.replyToken, flex);
         continue;
       }
 
-      if (text.startsWith("查業績")) {
-  const arg = text.split(" ")[1]; // 可指定店名
-  const c = await auth.getClient();
-  const sheets = google.sheets({ version: "v4", auth: c });
+     if (text === "查業績") {
+  const sheets = google.sheets({
+    version: "v4",
+    auth: await auth.getClient()
+  });
 
   const shops = [];
 
   for (const s of SHOP_LIST) {
-    if (arg && s !== arg) continue;
-
     const r = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
       range: `${s}!A:Q`
@@ -966,17 +965,13 @@ await client.replyMessage(e.replyToken, flex);
     continue;
   }
 
-  const bubbles = shops.map(buildShopQuickFlex);
-
-  await client.replyMessage(e.replyToken, {
-    type: "flex",
-    altText: "📊 查業績",
-    contents: {
-      type: "carousel",
-      contents: bubbles
-    }
+  // ✅ 關鍵：直接用共用引擎
+  const flex = await buildDailyReportCarousel({
+    date: shops[0].date,
+    shops
   });
 
+  await client.replyMessage(e.replyToken, flex);
   continue;
 }
       
