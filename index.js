@@ -740,6 +740,63 @@ function buildShopRatioCarousel(bubbles) {
 }
 
 // ======================================================
+// 單店｜查業績用「快速 Flex」（B 類）
+// ======================================================
+function buildShopQuickFlex(shop) {
+  const qtyEmoji = shop.name === "湯棧中山" ? "🍲" : "🍱";
+  const qtyLabel = shop.name === "湯棧中山" ? "總鍋數" : "套餐數";
+
+  return {
+    type: "bubble",
+    body: {
+      type: "box",
+      layout: "vertical",
+      spacing: "sm",
+      contents: [
+        {
+          type: "text",
+          text: `【${shop.name}｜${shop.date}】`,
+          weight: "bold",
+          size: "lg"
+        },
+        {
+          type: "text",
+          text: `💵 業績：${shop.revenue.toLocaleString()}`,
+          weight: "bold",
+          size: "md"
+        },
+        {
+          type: "text",
+          text: `${qtyEmoji} ${qtyLabel}：${shop.qty}`,
+          size: "md"
+        },
+        {
+          type: "text",
+          text: `🧾 客單價：${shop.unit}`,
+          size: "md"
+        },
+        {
+          type: "text",
+          text: `👥 外場：${shop.fp.toLocaleString()}（${shop.fpRate}%）`,
+          size: "md"
+        },
+        {
+          type: "text",
+          text: `👥 內場：${shop.bp.toLocaleString()}（${shop.bpRate}%）`,
+          size: "md"
+        },
+        {
+          type: "text",
+          text: `👥 總計：${shop.hrTotal.toLocaleString()}（${shop.hrTotalRate}%）`,
+          size: "md",
+          weight: "bold"
+        }
+      ]
+    }
+  };
+}
+
+// ======================================================
 // LINE Webhook（Router 主流程）
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
@@ -832,28 +889,63 @@ await client.replyMessage(e.replyToken, flex);
         continue;
       }
 
-      // 查業績
       if (text.startsWith("查業績")) {
-        const arg = text.split(" ")[1];
-        const c = await auth.getClient();
-        const sheets = google.sheets({ version:"v4", auth:c });
-        let out = [];
-        for (const s of SHOP_LIST) {
-          if (arg && s !== arg) continue;
-          const r = await sheets.spreadsheets.values.get({
-            spreadsheetId:SPREADSHEET_ID,
-            range:`${s}!Q:Q`
-          });
-          const list = r.data.values?.map(v=>v[0]).filter(Boolean) || [];
-          if (list.length) out.push(list.at(-1));
-        }
-        await client.replyMessage(e.replyToken, {
-          type:"text",
-          text: out.length ? out.join("\n\n━━━━━━━━━━━\n\n") : "目前沒有資料"
-        });
-        continue;
-      }
+  const arg = text.split(" ")[1]; // 可指定店名
+  const c = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: c });
 
+  const shops = [];
+
+  for (const s of SHOP_LIST) {
+    if (arg && s !== arg) continue;
+
+    const r = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `${s}!A:Q`
+    });
+
+    const rows = r.data.values || [];
+    if (rows.length < 2) continue;
+
+    const last = rows.at(-1);
+
+    shops.push({
+      name: s,
+      date: last[5]?.slice(5),
+      revenue: Number(last[6] || 0),
+      qty: Number(last[8] || 0),
+      unit: last[9],
+      fp: Number(last[10] || 0),
+      fpRate: Number(last[11] || 0),
+      bp: Number(last[12] || 0),
+      bpRate: Number(last[13] || 0),
+      hrTotal: Number(last[14] || 0),
+      hrTotalRate: Number(last[15] || 0)
+    });
+  }
+
+  if (!shops.length) {
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "目前沒有資料"
+    });
+    continue;
+  }
+
+  const bubbles = shops.map(buildShopQuickFlex);
+
+  await client.replyMessage(e.replyToken, {
+    type: "flex",
+    altText: "📊 查業績",
+    contents: {
+      type: "carousel",
+      contents: bubbles
+    }
+  });
+
+  continue;
+}
+      
 // ===== 業績回報（只寫不回｜定版）=====
 if (text.startsWith("大哥您好")) {
   const shop =
