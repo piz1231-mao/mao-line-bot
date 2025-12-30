@@ -944,7 +944,7 @@ if (text.startsWith("查業績 ")) {
     auth: await auth.getClient()
   });
 
-  // --- 讀單店最新一筆（C1）---
+  // === 讀單店最新一筆 ===
   const r = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: `${shopName}!A:Q`
@@ -974,68 +974,72 @@ if (text.startsWith("查業績 ")) {
     hrTotalRate: Number(last[15] || 0)
   };
 
-// --- C1（單店）---
-const c1Flex = buildDailySummaryFlex({
-  date: shop.date,
-  shops: [shop]
-});
-const c1Contents = c1Flex.contents.body.contents;
-
-// 🔥 單店專用標題（含日期）
-const singleShopHeader = {
-  type: "text",
-  text: `${shop.name}｜營運總覽（${shop.date}）`,
-  weight: "bold",
-  size: "xl",
-  margin: "md"
-};
-
-// --- C2（單店銷售佔比）---
-const ratioBubble = await readShopRatioBubble({
-  shop: shopName,
-  date: shop.date
-});
-
-// 只取品項（砍掉 C2 header + date）
-const c2Contents = ratioBubble
-  ? ratioBubble.body.contents.slice(2)
-  : [];
-
-// --- 合併 ---
-const mergedContents = [
-  singleShopHeader,
-  {
-    type: "separator",
-    margin: "lg"
-  },
-  ...c1Contents.slice(1) // ✅ 同時拿掉「每日總覽」
-];
-
-if (c2Contents.length) {
-  mergedContents.push({
-    type: "separator",
-    margin: "xxl"
+  // === 產生 C1（只拿內容，不用標題）===
+  const c1Flex = buildDailySummaryFlex({
+    date: shop.date,
+    shops: [shop]
   });
-  mergedContents.push(...c2Contents);
-}
-// --- 回傳單一 Bubble ---
-await client.replyMessage(e.replyToken, {
-  type: "flex",
-  altText: `📊 ${shopName} 營運報表`,
-  contents: {
-    type: "bubble",
-    size: "mega",
-    body: {
-      type: "box",
-      layout: "vertical",
-      contents: mergedContents
+  const c1Contents = c1Flex.contents.body.contents;
+
+  // === 單店標題（最上面）===
+  const singleShopHeader = {
+    type: "text",
+    text: `${shop.name}｜${shop.date}`,
+    weight: "bold",
+    size: "xl",
+    margin: "md"
+  };
+
+  // === C1 主體（行距調成跟 C2 一樣）===
+  const c1BodyItems = c1Contents[1].contents
+    .slice(1) // 拿掉 C1 內部的店名
+    .map(item => ({
+      ...item,
+      margin: "md"
+    }));
+
+  // === C2（單店銷售佔比）===
+  const ratioBubble = await readShopRatioBubble({
+    shop: shopName,
+    date: shop.date
+  });
+
+  // 只拿品項（砍掉「銷售佔比標題＋日期」）
+  const c2Contents = ratioBubble
+    ? ratioBubble.body.contents.slice(2)
+    : [];
+
+  // === 合併成單一 Bubble ===
+  const mergedContents = [
+    singleShopHeader,
+    { type: "separator", margin: "xl" },
+    ...c1BodyItems
+  ];
+
+  if (c2Contents.length) {
+    mergedContents.push(
+      { type: "separator", margin: "xl" },
+      ...c2Contents
+    );
+  }
+
+  await client.replyMessage(e.replyToken, {
+    type: "flex",
+    altText: `📊 ${shopName} 營運報表`,
+    contents: {
+      type: "bubble",
+      size: "mega",
+      body: {
+        type: "box",
+        layout: "vertical",
+        contents: mergedContents
+      }
     }
-  }
-});
+  });
 
-continue;
-  }
-
+  continue;
+}
+      
 // ===== 模式 A：不指定店名（共用引擎）=====
 if (text === "查業績") {
   const sheets = google.sheets({
