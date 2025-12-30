@@ -1008,7 +1008,7 @@ const mergedContents = [
     type: "separator",
     margin: "lg"
   },
-  ...c1Contents.slice(2) // ✅ 同時拿掉「每日總覽」＋「店名」
+  ...c1Contents.slice(1) // ✅ 同時拿掉「每日總覽」
 ];
 
 if (c2Contents.length) {
