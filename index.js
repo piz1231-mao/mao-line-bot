@@ -502,6 +502,40 @@ const SHOP_RATIO_FIELDS = {
   ]
 };
 
+// ======================================================
+// ✅ 共用｜每日營運報表引擎（C1 + C2｜已定版）
+// - 08:00 推播、查業績 都只呼叫這裡
+// ======================================================
+async function buildDailyReportCarousel({ date, shops }) {
+  const bubbles = [];
+
+  // 第一頁：C1 總覽
+  bubbles.push(
+    buildDailySummaryFlex({
+      date,
+      shops
+    }).contents   // ⚠️ 只取 bubble
+  );
+
+  // 後面頁：C2 各店銷售佔比
+  for (const s of SHOP_LIST) {
+    const bubble = await readShopRatioBubble({
+      shop: s,
+      date
+    });
+    if (bubble) bubbles.push(bubble);
+  }
+
+  return {
+    type: "flex",
+    altText: `每日營運總覽 ${date}`,
+    contents: {
+      type: "carousel",
+      contents: bubbles
+    }
+  };
+}
+
 
 // ======================================================
 // C1｜三店總覽 Flex（v1.6.3 定版）
@@ -1138,46 +1172,15 @@ app.post("/api/daily-summary", async (req, res) => {
       return res.send("no data");
     }
 
-   // ==================================================
-// C2｜三店銷售佔比（全部走同一套讀取）
 // ==================================================
-const ratioBubbles = [];
+// ✅ 改用共用營運報表引擎（畫面不變）
+// ==================================================
+const flex = await buildDailyReportCarousel({
+  date: shops[0].date,
+  shops
+});
 
-for (const s of SHOP_LIST) {
-  const bubble = await readShopRatioBubble({
-    shop: s,
-    date: shops[0].date
-  });
-  if (bubble) ratioBubbles.push(bubble);
-}
-
-    // ==================================================
-    // ✅【關鍵】C1 + C2 合併成「一個 Carousel」
-    // ==================================================
-    const bubbles = [];
-
-    // 第一頁：總覽（C1）
-    bubbles.push(
-      buildDailySummaryFlex({
-        date: shops[0].date,
-        shops
-      }).contents   // ⚠️ 只取 bubble
-    );
-
-    // 後面頁：各店佔比（C2）
-    bubbles.push(...ratioBubbles);
-
-    // ==================================================
-    // ✅ 只 push 一次（流檢同款行為）
-    // ==================================================
-    await client.pushMessage(process.env.BOSS_USER_ID, {
-      type: "flex",
-      altText: `每日營運總覽 ${shops[0].date}`,
-      contents: {
-        type: "carousel",
-        contents: bubbles
-      }
-    });
+await client.pushMessage(process.env.BOSS_USER_ID, flex);
 
     res.send("OK");
   } catch (err) {
