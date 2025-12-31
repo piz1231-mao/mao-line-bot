@@ -223,6 +223,85 @@ async function readShopRatio({ shop, fields, date }) {
     items: items.sort((a, b) => b.qty - a.qty).slice(0, 8)
   });
 }
+
+// ======================================================
+// 📈 趨勢工具（B 模式｜7 / 30 天）
+// ======================================================
+function calcTrend(aAvg, bAvg) {
+  if (!bAvg || bAvg === 0) return "—";
+
+  const diff = ((aAvg - bAvg) / bAvg) * 100;
+
+  if (diff >= 3) return "↑";
+  if (diff <= -3) return "↓";
+  return "→";
+}
+
+function avg(arr) {
+  if (!arr.length) return 0;
+  return arr.reduce((a, b) => a + b, 0) / arr.length;
+}
+
+// ======================================================
+// 📈 趨勢資料工具（STEP 2｜只撈資料不顯示）
+// - 用於 7 / 30 天趨勢
+// - 回傳平均值（給 calcTrend 用）
+// ======================================================
+async function getShopTrendAverages({ shop, days }) {
+  const sheets = google.sheets({
+    version: "v4",
+    auth: await auth.getClient()
+  });
+
+  // 讀整張表（A:Q，跟你現有邏輯一致）
+  const r = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `${shop}!A:Q`
+  });
+
+  const rows = r.data.values || [];
+  if (rows.length < 2) {
+    return {
+      avgA: 0,
+      avgB: 0
+    };
+  }
+
+  // 去掉 header
+  const dataRows = rows.slice(1);
+
+  /**
+   * 我們要做的事情：
+   * - 取最後 days * 2 筆
+   * - 切成 A（最近 days）與 B（再前 days）
+   */
+  const need = days * 2;
+  const sliced = dataRows.slice(-need);
+
+  const partA = sliced.slice(-days);
+  const partB = sliced.slice(0, sliced.length - days);
+
+  // 欄位定錨（⚠️ 跟你 C1 完全一致）
+  // last[6] = revenue
+  // last[14] = hrTotal
+  const revenueA = partA.map(r => Number(r[6] || 0));
+  const revenueB = partB.map(r => Number(r[6] || 0));
+
+  const hrA = partA.map(r => Number(r[14] || 0));
+  const hrB = partB.map(r => Number(r[14] || 0));
+
+  return {
+    revenue: {
+      avgA: avg(revenueA),
+      avgB: avg(revenueB)
+    },
+    hr: {
+      avgA: avg(hrA),
+      avgB: avg(hrB)
+    }
+  };
+}
+
 // ======================================================
 // 天氣解析
 // ======================================================
@@ -940,7 +1019,7 @@ await client.replyMessage(e.replyToken, flex);
         continue;
       }
 
-     // ======================================================
+// ======================================================
 // 📈 業績查詢（Router 定版）
 // ======================================================
 
@@ -991,54 +1070,101 @@ if (text.startsWith("查業績 ")) {
     hrTotalRate: Number(last[15] || 0)
   };
 
-  // === 產生 C1（只拿內容，不用標題）===
-  const c1Flex = buildDailySummaryFlex({
-    date: shop.date,
-    shops: [shop]
-  });
-  const c1Contents = c1Flex.contents.body.contents;
+// --- C1（單店）---
+const c1Flex = buildDailySummaryFlex({
+  date: shop.date,
+  shops: [shop]
+});
+const c1Contents = c1Flex.contents.body.contents;
 
-  // === 單店標題（最上面）===
-  const singleShopHeader = {
-    type: "text",
-    text: `${shop.name}｜${shop.date}`,
-    weight: "bold",
-    size: "xl",
-    margin: "md"
-  };
+// ==================================================
+// 📈 STEP 3｜趨勢計算（7 天）
+// ==================================================
+const trend7 = await getShopTrendAverages({
+  shop: shopName,
+  days: 7
+});
 
-  // === C1 主體（行距調成跟 C2 一樣）===
-  const c1BodyItems = c1Contents[1].contents
-    .slice(1) // 拿掉 C1 內部的店名
-    .map(item => ({
+const revenueTrend = calcTrend(
+  trend7.revenue.avgA,
+  trend7.revenue.avgB
+);
+
+const hrTrend = calcTrend(
+  trend7.hr.avgA,
+  trend7.hr.avgB
+);
+
+// 🔥 單店專用標題（店名 + 日期）
+const singleShopHeader = {
+  type: "text",
+  text: `${shop.name}｜${shop.date}`,
+  weight: "bold",
+  size: "xl",
+  margin: "md"
+};
+
+// ==================================================
+// 🔧 C1 內容重組（加趨勢箭頭）
+// ==================================================
+const c1BodyItems = c1Contents[1].contents
+  .slice(1) // 拿掉 C1 原本的店名
+  .map(item => {
+    // 💵 業績
+    if (item.text?.startsWith("💵")) {
+      return {
+        ...item,
+        text: `${item.text} ${revenueTrend}`,
+        margin: "md"
+      };
+    }
+
+    // 👥 總人事
+    if (item.text?.startsWith("👥 總人事")) {
+      return {
+        ...item,
+        text: `${item.text} ${hrTrend}`,
+        margin: "md"
+      };
+    }
+
+    // 其他欄位只調整間距
+    return {
       ...item,
       margin: "md"
-    }));
-
-  // === C2（單店銷售佔比）===
-  const ratioBubble = await readShopRatioBubble({
-    shop: shopName,
-    date: shop.date
+    };
   });
 
-  // 只拿品項（砍掉「銷售佔比標題＋日期」）
-  const c2Contents = ratioBubble
-    ? ratioBubble.body.contents.slice(2)
-    : [];
+// --- C2（單店銷售佔比）---
+const ratioBubble = await readShopRatioBubble({
+  shop: shopName,
+  date: shop.date
+});
 
-  // === 合併成單一 Bubble ===
-  const mergedContents = [
-    singleShopHeader,
-    { type: "separator", margin: "xl" },
-    ...c1BodyItems
-  ];
+// 只取品項（砍掉 C2 header + date）
+const c2Contents = ratioBubble
+  ? ratioBubble.body.contents.slice(2)
+  : [];
 
-  if (c2Contents.length) {
-    mergedContents.push(
-      { type: "separator", margin: "xl" },
-      ...c2Contents
-    );
-  }
+// ==================================================
+// 🔗 合併 C1 + C2
+// ==================================================
+const mergedContents = [
+  singleShopHeader,
+  {
+    type: "separator",
+    margin: "lg"
+  },
+  ...c1BodyItems
+];
+
+if (c2Contents.length) {
+  mergedContents.push({
+    type: "separator",
+    margin: "xxl"
+  });
+  mergedContents.push(...c2Contents);
+}
 
   await client.replyMessage(e.replyToken, {
     type: "flex",
