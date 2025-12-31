@@ -145,13 +145,26 @@ const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const TEMPLATE_SHEET = "茶六博愛";
 const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山"];
 
-const credentials = JSON.parse(
-  fs.readFileSync("/etc/secrets/google-credentials.json", "utf8")
-);
-const auth = new GoogleAuth({
-  credentials,
-  scopes: ["https://www.googleapis.com/auth/spreadsheets"]
-});
+// ======================================================
+// Google Auth（Render / 本機通用｜定版）
+// ======================================================
+function getGoogleAuth() {
+  // Render / 雲端
+  if (process.env.GOOGLE_CREDENTIALS_JSON) {
+    return new GoogleAuth({
+      credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON),
+      scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+    });
+  }
+
+  // 本機開發
+  return new GoogleAuth({
+    keyFile: "./google-credentials.json",
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+  });
+}
+
+const auth = getGoogleAuth();
 
 // ======================================================
 // TradingView Webhook（鎖死）
