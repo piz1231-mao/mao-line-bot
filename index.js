@@ -149,15 +149,19 @@ const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山"];
 // Google Auth（Render / 本機通用｜定版）
 // ======================================================
 function getGoogleAuth() {
-  // Render / 雲端
-  if (process.env.GOOGLE_CREDENTIALS_JSON) {
+  // ✅ Render / 雲端（base64）
+  if (process.env.GOOGLE_CREDENTIALS_B64) {
+    const json = Buffer
+      .from(process.env.GOOGLE_CREDENTIALS_B64, "base64")
+      .toString("utf8");
+
     return new GoogleAuth({
-      credentials: JSON.parse(process.env.GOOGLE_CREDENTIALS_JSON),
+      credentials: JSON.parse(json),
       scopes: ["https://www.googleapis.com/auth/spreadsheets"]
     });
   }
 
-  // 本機開發
+  // ✅ 本機開發（只有你電腦才會用到）
   return new GoogleAuth({
     keyFile: "./google-credentials.json",
     scopes: ["https://www.googleapis.com/auth/spreadsheets"]
