@@ -859,18 +859,7 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
 
   const userId = e.source.userId;
 
-  // ================================
-// 🖼 圖片翻譯處理（一定最優先｜定版）
 // ================================
-if (e.message?.type === "image") {
-
-  // 沒有啟動「翻譯圖片」→ 完全不處理
-  if (!imageTranslateSessions.has(userId)) {
-    continue;
-  }
-
-  try {
-   // ================================
 // 🖼 圖片翻譯處理（最終定版）
 // ================================
 if (e.message?.type === "image") {
@@ -883,7 +872,6 @@ if (e.message?.type === "image") {
   try {
     const result = await translateImage(e.message.id);
 
-    // ✅ 關鍵防呆（這就是你一直出問題的地方）
     if (
       !result ||
       !Array.isArray(result.items) ||
@@ -898,7 +886,6 @@ if (e.message?.type === "image") {
 
     let replyText = "";
 
-    // 🅱️ 高信心菜單
     if (result.mode === "menu_high") {
       replyText += "📋 菜單翻譯（對應版）\n━━━━━━━━━━━\n";
       result.items.forEach(item => {
@@ -907,26 +894,19 @@ if (e.message?.type === "image") {
         if (item.price) replyText += `💰 ${item.price}\n`;
         replyText += `👉 ${item.translation}\n`;
       });
-    }
-
-    // 🅱️ 低信心菜單
-    else if (result.mode === "menu_low") {
+    } else if (result.mode === "menu_low") {
       replyText += "📋 菜單翻譯（分段理解）\n━━━━━━━━━━━\n";
       result.items.forEach(item => {
         if (!item.translation) return;
         replyText += `\n• ${item.translation}\n`;
       });
-    }
-
-    // 📝 一般圖片文字
-    else {
+    } else {
       replyText = result.items
         .map(i => i.translation)
         .filter(Boolean)
         .join("\n");
     }
 
-    // ✅ LINE 不允許空字串（最後一道保險）
     replyText = replyText.trim();
     if (!replyText) {
       replyText = "⚠️ 圖片中未偵測到可翻譯文字";
@@ -944,7 +924,6 @@ if (e.message?.type === "image") {
       text: "⚠️ 圖片翻譯失敗"
     });
   } finally {
-    // ✅ 一次性狀態，用完就清
     imageTranslateSessions.delete(userId);
   }
 
