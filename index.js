@@ -856,6 +856,29 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
       if (e.message?.type !== "text") continue;
       const text = e.message.text.trim();
 
+// ================================
+// 📘 翻譯功能
+// ================================
+if (text.startsWith("翻譯")) {
+  const content = text.replace("翻譯", "").trim();
+
+  if (!content) {
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "請在『翻譯』後面輸入內容 🙂"
+    });
+    continue; // 👈 很重要
+  }
+
+  const result = await translateText(content);
+
+  await client.replyMessage(e.replyToken, {
+    type: "text",
+    text: result
+  });
+  continue; // 👈 翻譯完就不往下跑其他指令
+}
+
       // ===== Tier 1：即時指令 =====
 
       // 股票 / 指數 / 期貨（市場自動判斷）
@@ -1318,6 +1341,49 @@ await client.pushMessage(process.env.BOSS_USER_ID, flex);
     res.status(500).send("fail");
   }
 });
+
+// ================================
+// 🤖 AI 翻譯（餐飲 / 日常優化）
+// ================================
+async function translateText(text) {
+  const prompt = `
+你是一位餐飲現場英文助理。
+請把下列內容翻成「自然、服務業會用的英文」。
+如果是中文→英文，請用服務業口吻。
+如果是英文→中文，請翻成自然中文。
+
+內容：
+${text}
+
+請用以下格式回覆：
+
+📘 翻譯完成
+
+【原文】
+${text}
+
+【翻譯】
+（翻譯結果）
+
+🧠 用法小提醒：（若有）
+`;
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: "gpt-4.1-mini",
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.3
+    })
+  });
+
+  const data = await response.json();
+  return data.choices[0].message.content;
+}
     
 // ======================================================
 const PORT = process.env.PORT || 3000;
