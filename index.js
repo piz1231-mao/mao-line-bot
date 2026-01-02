@@ -842,7 +842,7 @@ function buildDailyEnglishFlex(items) {
 }
 
 // ======================================================
-// 🖼 圖片翻譯（菜單智慧模式｜v1.6.6 修正版）
+// 🖼 圖片翻譯（台灣語感強化版｜v1.6.7 定版）
 // ======================================================
 async function translateImage(messageId) {
   try {
@@ -851,7 +851,6 @@ async function translateImage(messageId) {
     for await (const chunk of stream) chunks.push(chunk);
     const base64Image = Buffer.concat(chunks).toString("base64");
 
-    // 🔥 修正 Prompt：明確告訴 AI，如果是 text mode，要把文字塞進 items
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -860,35 +859,52 @@ async function translateImage(messageId) {
       },
       body: JSON.stringify({
         model: "gpt-4o-mini",
-        temperature: 0.2,
+        temperature: 0.15,
         messages: [
           {
             role: "system",
             content: `
-你是一位圖片文字翻譯助手。
+你是一位「台灣在地翻譯與餐飲語感助理」。
 
-【任務】
-1. 分析圖片內容。
-2. 判斷是否為「菜單」(有品項與價格)。
-3. 翻譯內容為「繁體中文」。
+【核心原則】
+1. 翻譯結果必須是「台灣人實際會使用、會覺得順」的繁體中文。
+2. 不得逐字直譯，可依語意重組、拆句、刪除冗詞。
+3. 禁止中國用語、翻譯腔、公文直譯風。
 
-【輸出模式判斷】
-- 若是菜單且清晰：mode = "menu_high"
-- 若是菜單但模糊/無價格：mode = "menu_low"
-- 若不是菜單（一般路牌、文章、對話、截圖）：mode = "text"
+【文件類型處理】
+- 若為正式信件／公告／通知：
+  • 使用台灣常見書面語
+  • 專有名詞需在地化，例如：
+    - pre-settlement → 交屋前
+    - handover → 交屋
+    - rectification → 改善／修繕
+  • 英文長句請拆句重寫
 
-【重要規則】
-- 若 mode="text"，請將圖片內所有可辨識文字的翻譯結果，全部放入 items[0].translation 中。
-- 不要回傳空陣列。
+【菜單翻譯規則（非常重要）】
+- 不可照字翻品名
+- 請翻成「台灣餐廳實際會用的名稱」
+- 可依內容意譯（份量、組合、做法）
+- 價格保留原幣別
 
-【輸出格式 (JSON Only)】
+【輸出模式】
+- 菜單清楚 → mode="menu_high"
+- 菜單模糊／無價格 → mode="menu_low"
+- 非菜單（信件、文章、截圖） → mode="text"
+
+【輸出規則（嚴格）】
+- mode="text" 時：
+  • 必須將所有可辨識文字整理成「順讀的中文段落」
+  • 全部放在 items[0].translation
+- items 不得為空陣列
+
+【輸出格式（JSON Only）】
 {
   "mode": "...",
   "items": [
     {
-      "name": "原文(非菜單留空)",
-      "price": "價格(非菜單留空)",
-      "translation": "中文翻譯(❗注意：若 mode="text"，請將圖片中的所有文字翻譯結果放在這裡)"
+      "name": "",
+      "price": "",
+      "translation": "翻譯後的繁體中文內容"
     }
   ]
 }
@@ -898,7 +914,12 @@ async function translateImage(messageId) {
             role: "user",
             content: [
               { type: "text", text: "請分析並翻譯這張圖片。" },
-              { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64Image}`
+                }
+              }
             ]
           }
         ]
@@ -912,12 +933,14 @@ async function translateImage(messageId) {
 
     const data = await response.json();
     const raw = data?.choices?.[0]?.message?.content;
-    
-    // Debug 用：印出 AI 回傳內容
-    console.log("🚀 OpenAI Raw Response:", raw);
+
+    // 🔍 Debug（你之後可關）
+    console.log("🧠 OpenAI Image Translation Raw:", raw);
 
     const parsed = safeParseJSON(raw);
-    if (!parsed || !parsed.mode) return null;
+    if (!parsed || !parsed.mode || !Array.isArray(parsed.items)) {
+      return null;
+    }
 
     return parsed;
 
