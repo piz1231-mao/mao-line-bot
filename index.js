@@ -781,21 +781,37 @@ const TAIWAN_REWRITE_SYSTEM_PROMPT = `
 - 請直接輸出「整理後、可直接使用的完整中文內容」
 - 不要解釋、不加註解、不說你怎麼翻
 `;
+// ======================================================
+// 🧠 共用｜台灣代筆核心（文字 / 圖片 共用）
+// ======================================================
+async function rewriteToTaiwanese({
+  content,
+  temperature = 0.2
+}) {
+  if (!content || !content.trim()) return "";
 
-// ======================================================
-// 🤖 文字翻譯（台灣代筆統一版｜FINAL）
-// ======================================================
-async function translateText(text) {
   try {
     return await callOpenAIChat({
       systemPrompt: TAIWAN_REWRITE_SYSTEM_PROMPT,
-      userPrompt: text,
-      temperature: 0.2
+      userPrompt: content,
+      temperature
     });
   } catch (err) {
-    console.error("❌ translateText error:", err);
-    return "⚠️ 翻譯暫時無法使用";
+    console.error("❌ rewriteToTaiwanese error:", err);
+    return "";
   }
+}
+
+// ======================================================
+// 🤖 文字翻譯（台灣代筆｜共用核心版）
+// ======================================================
+async function translateText(text) {
+  const rewritten = await rewriteToTaiwanese({
+    content: text,
+    temperature: 0.2
+  });
+
+  return rewritten || "⚠️ 翻譯失敗，請稍後再試";
 }
 
 // ======================================================
