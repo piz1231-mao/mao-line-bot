@@ -1450,7 +1450,7 @@ ${text}
 }
 
 // ======================================================
-// 🤖 每日英文產生器(餐飲 / 日常）
+// 🤖 每日英文產生器（生活 / 服務 / 餐飲｜定版）
 // ======================================================
 async function generateDailyEnglish() {
   const prompt = `
@@ -1460,13 +1460,14 @@ async function generateDailyEnglish() {
 
 【內容原則】
 - 生活英文為主（不是教科書）
-- 餐飲 / 服務現場自然會用到
-- 請避免非常基礎、每天容易重複的單字（如 hello, thank you）
+- 服務、餐飲現場自然會用到
+- 避免非常基礎、每天容易重複的單字（如 hello, thank you）
 
 【每一筆資料請提供以下欄位（全部都要）】
 - word：英文單字或片語
 - meaning：自然中文意思
-- pronounce_phonetic：英文拼音式唸法（Respelling，例如 GAR-nish）
+- pronounce_phonetic：英文拼音式唸法（例如 GAR-nish）
+- pronounce_zh：台式中文輔助唸法（例如 嘎・你許）
 - kk：KK 音標（例如 /ˈɡɑːrnɪʃ/）
 - example：生活或服務現場會用的簡短英文例句
 
@@ -1477,11 +1478,12 @@ async function generateDailyEnglish() {
     "word": "garnish",
     "meaning": "裝飾",
     "pronounce_phonetic": "GAR-nish",
+    "pronounce_zh": "嘎・你許",
     "kk": "/ˈɡɑːrnɪʃ/",
     "example": "The dish is garnished with herbs."
   }
 ]
-`;  // 👈 👈 👈 這一行非常關鍵：反引號 + 分號
+`;
 
   try {
     const raw = await callOpenAIChat({
@@ -1495,8 +1497,9 @@ async function generateDailyEnglish() {
     return null;
   }
 }
+
 // ================================
-// 📘 今日英文 Flex（定版）
+// 📘 今日英文 Flex（定版｜字體放大＋台味唸法）
 // ================================
 function buildDailyEnglishFlex(items) {
   return {
@@ -1520,7 +1523,7 @@ function buildDailyEnglishFlex(items) {
               type: "text",
               text: item.word,
               weight: "bold",
-              size: "lg",
+              size: "xl",
               margin: "md"
             },
             {
@@ -1529,19 +1532,23 @@ function buildDailyEnglishFlex(items) {
               size: "md",
               color: "#555555"
             },
-            // ✅ 新增：KK 音標
             {
               type: "text",
-              text: `🔊 KK：${item.kk}`,
-              size: "sm",
-              color: "#777777"
-            },
-            // ✅ 中文輔助唸法（台味）
-            {
-              type: "text",
-              text: `🗣 中文唸法：${item.pronounce}`,
+              text: `🔤 ${item.pronounce_phonetic}`,
               size: "md",
               color: "#333333"
+            },
+            {
+              type: "text",
+              text: `🗣 ${item.pronounce_zh}`,
+              size: "md",
+              color: "#333333"
+            },
+            {
+              type: "text",
+              text: `📖 KK：${item.kk}`,
+              size: "sm",
+              color: "#777777"
             },
             {
               type: "text",
