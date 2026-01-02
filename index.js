@@ -802,6 +802,28 @@ async function rewriteToTaiwanese({
     return "";
   }
 }
+// ======================================================
+// 🧠 判斷是否需要再走一次台灣代筆
+// ======================================================
+function shouldRewriteToTaiwanese(text) {
+  if (!text || typeof text !== "string") return false;
+
+  const t = text.trim();
+
+  // 太短的不用重寫
+  if (t.length < 20) return false;
+
+  // 已經是繁體中文比例高，就不用再寫
+  const chineseRatio = (t.match(/[\u4e00-\u9fff]/g) || []).length / t.length;
+  if (chineseRatio > 0.6) return false;
+
+  // 明顯是英文 / 日文 / 韓文 → 需要代筆
+  if (/[a-zA-Z]/.test(t)) return true;          // 英文
+  if (/[\u3040-\u30ff]/.test(t)) return true;   // 日文假名
+  if (/[\uac00-\ud7af]/.test(t)) return true;   // 韓文
+
+  return false;
+}
 
 // ======================================================
 // 🤖 文字翻譯（台灣代筆｜共用核心版）
