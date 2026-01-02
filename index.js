@@ -1343,7 +1343,7 @@ await client.pushMessage(process.env.BOSS_USER_ID, flex);
 });
 
 // ================================
-// 🤖 AI 翻譯（餐飲 / 日常優化）
+// 🤖 AI 翻譯（餐飲 / 日常優化｜安全版）
 // ================================
 async function translateText(text) {
   const prompt = `
@@ -1368,21 +1368,41 @@ ${text}
 🧠 用法小提醒：（若有）
 `;
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: "gpt-4.1-mini",
-      messages: [{ role: "user", content: prompt }],
-      temperature: 0.3
-    })
-  });
+  try {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini", // 🔥 改成穩定可用
+        messages: [{ role: "user", content: prompt }],
+        temperature: 0.3
+      })
+    });
 
-  const data = await response.json();
-  return data.choices[0].message.content;
+    // ❌ OpenAI 回 error（沒有 choices）
+    if (!response.ok) {
+      const errText = await response.text();
+      console.error("❌ OpenAI API Error:", errText);
+      return "⚠️ 翻譯服務暫時無法使用（API 錯誤）";
+    }
+
+    const data = await response.json();
+
+    // ❌ 沒有 choices 或空陣列
+    if (!data.choices || !data.choices.length) {
+      console.error("❌ OpenAI response malformed:", data);
+      return "⚠️ 翻譯服務回傳異常，請稍後再試";
+    }
+
+    return data.choices[0].message.content;
+
+  } catch (err) {
+    console.error("❌ translateText exception:", err);
+    return "⚠️ 翻譯服務發生例外錯誤";
+  }
 }
     
 // ======================================================
