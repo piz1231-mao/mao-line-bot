@@ -939,7 +939,24 @@ async function translateImage(messageId) {
     console.log("🧠 OpenAI Image Translation Raw:", raw);
 
     // ③ 安全解析 JSON
-    const parsed = safeParseJSON(raw);
+    let parsed = safeParseJSON(raw);
+
+// 🔧 相容修正：處理舊版 / 簡化版 Vision 回傳
+if (
+  parsed &&
+  parsed.mode === "text" &&
+  !parsed.items &&
+  parsed.content
+) {
+  parsed = {
+    mode: "text",
+    items: [
+      {
+        translation: parsed.content
+      }
+    ]
+  };
+}
 
     // ④ 最終防線（避免 LINE 回傳空字串 400）
     if (
