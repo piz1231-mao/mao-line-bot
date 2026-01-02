@@ -1016,41 +1016,41 @@ if (e.message?.type === "image") {
   try {
     const result = await translateImage(e.message.id);
 
-    if (!result || !Array.isArray(result.items) || result.items.length === 0) {
-      await client.replyMessage(e.replyToken, {
-        type: "text",
-        text: "⚠️ 圖片中未偵測到可翻譯文字"
-      });
-    } else {
-      let replyText = "";
+    let replyText = "";
 
+    if (!result || !Array.isArray(result.items) || result.items.length === 0) {
+      replyText = "⚠️ 圖片中未偵測到可翻譯文字";
+    } else {
       if (result.mode === "menu_high") {
-        replyText += "📋 菜單翻譯（對應版）\n━━━━━━━━━━━\n";
+        replyText += "📋 菜單翻譯\n━━━━━━━━━━━\n";
         result.items.forEach(i => {
           if (i.translation) {
-            replyText += `\n🍽 ${i.name || ""}\n💰 ${i.price || ""}\n👉 ${i.translation}\n`;
+            replyText += `\n${i.translation}\n`;
           }
         });
       } else if (result.mode === "menu_low") {
-        replyText += "📋 菜單翻譯（分段理解）\n━━━━━━━━━━━\n";
         result.items.forEach(i => {
-          if (i.translation) replyText += `\n• ${i.translation}\n`;
+          if (i.translation) {
+            replyText += `\n${i.translation}\n`;
+          }
         });
       } else {
-        // mode = text（一般文字）
-replyText = result.items
-  .map(i => String(i.translation || "").trim())
-  .filter(t => t.length > 0)
-  .join("\n");
-
-// 🧹 統一出口清潔（唯一允許）
-replyText = sanitizeTranslationOutput(replyText);
-
-      await client.replyMessage(e.replyToken, {
-        type: "text",
-        text: replyText || "⚠️ 翻譯結果為空"
-      });
+        // 一般文字
+        replyText = result.items
+          .map(i => String(i.translation || "").trim())
+          .filter(t => t.length > 0)
+          .join("\n");
+      }
     }
+
+    // 🧹 統一出口清潔
+    replyText = sanitizeTranslationOutput(replyText);
+
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: replyText || "⚠️ 翻譯結果為空"
+    });
+
   } catch (err) {
     console.error("❌ image translate error:", err);
     await client.replyMessage(e.replyToken, {
