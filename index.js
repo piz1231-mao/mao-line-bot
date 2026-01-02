@@ -1531,40 +1531,47 @@ function buildDailyEnglishFlex(items) {
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "lg",
+        spacing: "md",
         contents: [
           {
             type: "text",
             text: "📘 今日英文",
             weight: "bold",
-            size: "xxl"
+            size: "xl"
           },
           ...items.flatMap(item => ([
             {
               type: "text",
               text: item.word,
               weight: "bold",
-              size: "xl",
+              size: "lg",
               margin: "md"
             },
             {
               type: "text",
               text: `🇹🇼 ${item.meaning}`,
               size: "md",
-              color: "#444444"
+              color: "#555555"
             },
+            // ✅ 新增：KK 音標
             {
               type: "text",
-              text: `🔊 ${item.pronounce}`,
+              text: `🔊 KK：${item.kk}`,
+              size: "sm",
+              color: "#777777"
+            },
+            // ✅ 中文輔助唸法（台味）
+            {
+              type: "text",
+              text: `🗣 中文唸法：${item.pronounce}`,
               size: "md",
-              color: "#666666"
+              color: "#333333"
             },
             {
               type: "text",
               text: `💬 ${item.example}`,
               size: "sm",
-              wrap: true,
-              color: "#333333"
+              wrap: true
             }
           ]))
         ]
