@@ -103,6 +103,7 @@
 // ======================================================
 
 require("dotenv").config();
+const fetch = require("node-fetch");
 const express = require("express");
 const line = require("@line/bot-sdk");
 const fs = require("fs");
@@ -114,6 +115,11 @@ const { google } = require("googleapis");
 // ======================================================
 const recentEnglishPool = new Set();
 const MAX_RECENT = 40; // 記住最近用過的單字數量
+
+// ======================================================
+// 🖼 圖片翻譯狀態（一次性）
+// ======================================================
+const imageTranslateSessions = new Set();
 
 const app = express();
 
@@ -204,31 +210,7 @@ const num = v =>
   v !== undefined && v !== null && v !== ""
     ? Number(String(v).replace(/,/g, ""))
     : 0;
-async function readShopRatio({ shop, fields, date }) {
-  const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
 
-  const r = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${shop}!R:AZ`
-  });
-
-  const last = r.data.values?.at(-1) || [];
-  const items = [];
-
-  for (let i = 0; i < fields.length; i++) {
-    const qty = Number(last[i * 2] || 0);
-    const ratio = Number(last[i * 2 + 1] || 0);
-    if (qty > 0) {
-      items.push({ name: fields[i], qty, ratio });
-    }
-  }
-
-  return buildShopRatioBubble({
-    shop,
-    date,
-    items: items.sort((a, b) => b.qty - a.qty).slice(0, 8)
-  });
-}
 // ======================================================
 // 天氣解析
 // ======================================================
@@ -859,8 +841,52 @@ function buildShopQuickFlex(shop) {
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
     for (const e of req.body.events || []) {
+// ================================
+// 🖼 圖片翻譯處理（需先啟動指令）
+// ================================
+if (e.message?.type === "image") {
+  const userId = e.source.userId;
+
+  // 沒有啟動「翻譯圖片」→ 不處理
+  if (!imageTranslateSessions.has(userId)) {
+    continue;
+  }
+
+  try {
+    const translated = await translateImage(e.message.id);
+
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: translated || "⚠️ 圖片中未偵測到可翻譯文字"
+    });
+  } catch (err) {
+    console.error("❌ image translate error:", err);
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "⚠️ 圖片翻譯失敗"
+    });
+  } finally {
+    // ✅ 用完就清掉（一次性）
+    imageTranslateSessions.delete(userId);
+  }
+
+  continue;
+}
       if (e.message?.type !== "text") continue;
       const text = e.message.text.trim();
+// ================================
+// 🖼 圖片翻譯啟動指令（一定要在翻譯文字前）
+// ================================
+if (text === "翻譯圖片") {
+  imageTranslateSessions.add(e.source.userId);
+
+  await client.replyMessage(e.replyToken, {
+    type: "text",
+    text: "📸 好，請傳一張要翻譯的圖片"
+  });
+
+  continue;
+}
 
 /// ================================
 // 📘 翻譯功能（需明確指令）
@@ -1605,6 +1631,76 @@ function buildDailyEnglishFlex(items) {
       }
     }
   };
+}
+// ======================================================
+// 🖼 圖片翻譯（OpenAI Vision｜一次性）
+// ======================================================
+async function translateImage(messageId) {
+  try {
+    // 1️⃣ 向 LINE 下載圖片
+    const stream = await client.getMessageContent(messageId);
+    const chunks = [];
+
+    for await (const chunk of stream) {
+      chunks.push(chunk);
+    }
+
+    const imageBuffer = Buffer.concat(chunks);
+    const base64Image = imageBuffer.toString("base64");
+
+    // 2️⃣ 呼叫 OpenAI Vision
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        messages: [
+          {
+            role: "system",
+            content: "你是一個圖片文字翻譯助手，只做翻譯，不要多說話。"
+          },
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `
+請判斷圖片中的文字語言，並翻譯成「自然的繁體中文」。
+- 只輸出翻譯結果
+- 不要加任何說明
+- 若圖片中沒有可辨識文字，請回傳空字串
+`
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64Image}`
+                }
+              }
+            ]
+          }
+        ]
+      })
+    });
+
+    if (!response.ok) {
+      console.error("❌ OpenAI Vision API error");
+      return null;
+    }
+
+    const data = await response.json();
+    const text = data?.choices?.[0]?.message?.content?.trim();
+
+    return text || null;
+
+  } catch (err) {
+    console.error("❌ translateImage exception:", err);
+    return null;
+  }
 }
 
 // ======================================================
