@@ -1343,7 +1343,7 @@ await client.pushMessage(process.env.BOSS_USER_ID, flex);
 });
 
 // ======================================================
-// 🤖 OpenAI 共用呼叫器（集中管理）
+// 🤖 OpenAI 共用呼叫器（集中管理｜安全版）
 // ======================================================
 async function callOpenAIChat({
   systemPrompt = "",
@@ -1359,22 +1359,27 @@ async function callOpenAIChat({
 
   messages.push({ role: "user", content: userPrompt });
 
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
-    },
-    body: JSON.stringify({
-      model,
-      messages,
-      temperature
-    })
-  });
+  let response;
+  try {
+    response = await fetch("https://api.openai.com/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+      },
+      body: JSON.stringify({
+        model,
+        messages,
+        temperature
+      })
+    });
+  } catch (err) {
+    throw new Error("OpenAI fetch failed");
+  }
 
-  if (!response.ok) {
-    const err = await response.text();
-    throw new Error(err);
+  if (!response || !response.ok) {
+    // ⚠️ 這裡不再用 await response.text()
+    throw new Error("OpenAI API response not OK");
   }
 
   const data = await response.json();
