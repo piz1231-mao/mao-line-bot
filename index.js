@@ -934,9 +934,8 @@ async function translateImage(messageId) {
   ・翻成台灣餐廳實際會用的說法
   ・價格照原圖保留
 
-- 若不是菜單（例如信件、公告、截圖），
-  請將圖片中「所有可辨識文字」
-  整理成一段可直接轉貼、順順看的繁體中文內容。
+若不是菜單（例如信件、公告、截圖），
+請依照 system 指示處理文字內容。
 
 請務必回傳 system 指定的 JSON 格式。
 `
@@ -1028,19 +1027,22 @@ async function translateImage(messageId) {
       return null;
     }
 
-    // ======================================================
-    // ✨ 只有 fallback 才再走一次台灣代筆
-    // ======================================================
-    if (parsed.mode === "text" && parsed._from === "fallback") {
-      const rewritten = await rewriteToTaiwanese({
-        content: parsed.items[0].translation,
-        temperature: 0.2
-      });
+// ✨ 非菜單才重寫
+if (
+  parsed.mode === "text" &&
+  shouldRewriteToTaiwanese(parsed.items[0].translation)
+) {
+  const rewritten = await rewriteToTaiwanese({
+    content: parsed.items[0].translation,
+    temperature: 0.2
+  });
 
-      if (rewritten && rewritten.trim()) {
-        parsed.items[0].translation = rewritten.trim();
-      }
-    }
+  if (rewritten && rewritten.trim()) {
+    parsed.items[0].translation = rewritten.trim();
+  }
+}
+
+
 
     // ======================================================
     // 🧹 最終清潔
@@ -1102,13 +1104,17 @@ if (e.message?.type === "image") {
       // ======================================================
       // 📤 組回傳文字
       // ======================================================
-      if (result.mode === "menu_high") {
-        replyText += "📋 菜單翻譯\n━━━━━━━━━━━\n";
-        result.items.forEach(i => {
-          if (i.translation) {
-            replyText += `\n${i.translation}\n`;
-          }
-        });
+if (result.mode === "menu_high") {
+  replyText += "📋 菜單翻譯\n━━━━━━━━━━━\n";
+
+  result.items.forEach(i => {
+    const name  = i.name ? `🍽 ${i.name}` : "";
+    const price = i.price ? `💰 ${i.price}` : "";
+    const desc  = i.translation ? `👉 ${i.translation}` : "";
+
+    replyText += `\n${name}\n${price}\n${desc}\n`;
+  });
+}
       } else if (result.mode === "menu_low") {
         result.items.forEach(i => {
           if (i.translation) {
