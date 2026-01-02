@@ -838,6 +838,32 @@ async function translateText(text) {
 }
 
 // ======================================================
+// 🍽 菜單文字輕量潤飾器（只修用語，不重翻）
+// ======================================================
+function polishMenuTranslation(text) {
+  if (!text || typeof text !== "string") return "";
+
+  let t = text;
+
+  // 份量用語修正
+  t = t.replace(/餃子\s*2個/g, "餃子兩份");
+  t = t.replace(/餃子\s*1個/g, "餃子一份");
+
+  // 湯的說法
+  t = t.replace(/湯/g, "一碗湯");
+
+  // 補「包含」語感（如果本來就有就不動）
+  if (!/包含/.test(t)) {
+    t = t.replace(/^(.+?)（/, "$1（包含");
+  }
+
+  // 清掉多餘句點
+  t = t.replace(/。$/g, "");
+
+  return t.trim();
+}
+
+// ======================================================
 // 🤖 每日英文產生器（隨機主題＋防重複定版）
 // ======================================================
 async function generateDailyEnglish() {
@@ -1049,11 +1075,8 @@ async function translateImage(messageId) {
       return null;
     }
 
-// ✨ 非菜單才重寫
-if (
-  parsed.mode === "text" &&
-  shouldRewriteToTaiwanese(parsed.items[0].translation)
-) {
+// ✨ 非菜單 → 才走台灣代筆
+if (parsed.mode === "text") {
   const rewritten = await rewriteToTaiwanese({
     content: parsed.items[0].translation,
     temperature: 0.2
@@ -1064,6 +1087,17 @@ if (
   }
 }
 
+// 🍽 菜單 → 只做輕量潤飾（不重翻）
+if (parsed.mode === "menu_high" || parsed.mode === "menu_low") {
+  parsed.items = parsed.items.map(item => {
+    if (!item.translation) return item;
+
+    return {
+      ...item,
+      translation: polishMenuTranslation(item.translation)
+    };
+  });
+}
 
 
     // ======================================================
