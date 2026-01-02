@@ -988,61 +988,63 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
     for (const e of req.body.events || []) {
       const userId = e.source.userId;
 
-      // ================================
-      // 🖼 圖片處理 (唯一入口)
-      // ================================
-      if (e.message?.type === "image") {
-        if (!imageTranslateSessions.has(userId)) continue;
+// ================================
+// 🖼 圖片處理 (唯一入口)
+// ================================
+if (e.message?.type === "image") {
+  if (!imageTranslateSessions.has(userId)) continue;
 
-        try {
-          const result = await translateImage(e.message.id);
+  try {
+    const result = await translateImage(e.message.id);
 
-          // ⚠️ 只要有結果就回傳，不論是不是菜單
-          if (!result || !Array.isArray(result.items) || result.items.length === 0) {
-            await client.replyMessage(e.replyToken, {
-              type: "text",
-              text: "⚠️ 圖片中未偵測到可翻譯文字"
-            });
-          } else {
-            let replyText = "";
+    if (!result || !Array.isArray(result.items) || result.items.length === 0) {
+      await client.replyMessage(e.replyToken, {
+        type: "text",
+        text: "⚠️ 圖片中未偵測到可翻譯文字"
+      });
+    } else {
+      let replyText = "";
 
-            if (result.mode === "menu_high") {
-              replyText += "📋 菜單翻譯（對應版）\n━━━━━━━━━━━\n";
-              result.items.forEach(i => {
-                if (i.translation) replyText += `\n🍽 ${i.name||""}\n💰 ${i.price||""}\n👉 ${i.translation}\n`;
-              });
-            } else if (result.mode === "menu_low") {
-              replyText += "📋 菜單翻譯（分段理解）\n━━━━━━━━━━━\n";
-              result.items.forEach(i => {
-                if (i.translation) replyText += `\n• ${i.translation}\n`;
-              });
-            } else {
-  // mode = text（一般文字）
-  // ⚠️ 嚴格只允許 parsed.items 的 translation
-  replyText = result.items
-    .map(i => String(i.translation || "").trim())
-    .filter(t => t.length > 0)
-    .join("\n");
-}
-// 🧹 最後清潔：避免任何殘留 JSON 字樣
-replyText = replyText
-  .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
-  .trim();
-            await client.replyMessage(e.replyToken, {
-              type: "text",
-              text: replyText.trim() || "⚠️ 翻譯結果為空"
-            });
+      if (result.mode === "menu_high") {
+        replyText += "📋 菜單翻譯（對應版）\n━━━━━━━━━━━\n";
+        result.items.forEach(i => {
+          if (i.translation) {
+            replyText += `\n🍽 ${i.name || ""}\n💰 ${i.price || ""}\n👉 ${i.translation}\n`;
           }
-        } catch (err) {
-          console.error("❌ image translate error:", err);
-          await client.replyMessage(e.replyToken, { type: "text", text: "⚠️ 圖片翻譯失敗" });
-        finally {
-  // ❌ 不在這裡結束狀態
-  // imageTranslateSessions.delete(userId);
-}
-        continue;
+        });
+      } else if (result.mode === "menu_low") {
+        replyText += "📋 菜單翻譯（分段理解）\n━━━━━━━━━━━\n";
+        result.items.forEach(i => {
+          if (i.translation) replyText += `\n• ${i.translation}\n`;
+        });
+      } else {
+        // mode = text（一般文字）
+        replyText = result.items
+          .map(i => String(i.translation || "").trim())
+          .filter(t => t.length > 0)
+          .join("\n");
       }
 
+      // 🧹 最後清潔：避免任何殘留 JSON 字樣
+      replyText = replyText
+        .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
+        .trim();
+
+      await client.replyMessage(e.replyToken, {
+        type: "text",
+        text: replyText || "⚠️ 翻譯結果為空"
+      });
+    }
+  } catch (err) {
+    console.error("❌ image translate error:", err);
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "⚠️ 圖片翻譯失敗"
+    });
+  }
+
+  continue;
+}
       // ================================
       // 🚫 非文字事件一律跳過
       // ================================
