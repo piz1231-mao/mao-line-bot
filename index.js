@@ -855,77 +855,121 @@ function buildShopQuickFlex(shop) {
 // ======================================================
 app.post("/webhook", line.middleware(config), async (req, res) => {
   try {
-    for (const e of req.body.events || []) {
-// ================================
-// 🖼 圖片翻譯處理（需先啟動指令）
-// ================================
-if (e.message?.type === "image") {
+   for (const e of req.body.events || []) {
+
   const userId = e.source.userId;
 
-  // 沒有啟動「翻譯圖片」→ 不處理
-  if (!imageTranslateSessions.has(userId)) {
+  // ================================
+  // 🖼 圖片翻譯處理（一定最優先）
+  // ================================
+  if (e.message?.type === "image") {
+
+    // 沒有啟動「翻譯圖片」就完全不理
+    if (!imageTranslateSessions.has(userId)) {
+      continue;
+    }
+
+    try {
+      const result = await translateImage(e.message.id);
+
+      if (!result || !Array.isArray(result.items)) {
+        await client.replyMessage(e.replyToken, {
+          type: "text",
+          text: "⚠️ 圖片中未偵測到可翻譯內容"
+        });
+        continue;
+      }
+
+      let replyText = "";
+
+      if (result.mode === "menu_high") {
+        replyText += "📋 菜單翻譯（對應版）\n━━━━━━━━━━━\n";
+        result.items.forEach(item => {
+          replyText += `\n🍽 ${item.name || ""}\n`;
+          if (item.price) replyText += `💰 ${item.price}\n`;
+          replyText += `👉 ${item.translation}\n`;
+        });
+      }
+      else if (result.mode === "menu_low") {
+        replyText += "📋 菜單翻譯（分段理解）\n━━━━━━━━━━━\n";
+        result.items.forEach(item => {
+          replyText += `\n• ${item.translation}\n`;
+        });
+      }
+      else {
+        replyText = result.items.map(i => i.translation).join("\n");
+      }
+
+      await client.replyMessage(e.replyToken, {
+        type: "text",
+        text: replyText.trim()
+      });
+
+    } catch (err) {
+      console.error("❌ image translate error:", err);
+      await client.replyMessage(e.replyToken, {
+        type: "text",
+        text: "⚠️ 圖片翻譯失敗"
+      });
+    } finally {
+      imageTranslateSessions.delete(userId);
+    }
+
+    continue; // ❗圖片事件到此結束
+  }
+
+  // ================================
+  // 🚫 非文字事件一律跳過
+  // ================================
+  if (e.message?.type !== "text") {
     continue;
   }
 
-  try {
-    const translated = await translateImage(e.message.id);
+  // ================================
+  // ✏️ 從這裡開始，一定是文字
+  // ================================
+  const text = e.message.text.trim();
+
+  // ================================
+  // 🖼 啟動圖片翻譯
+  // ================================
+  if (text === "翻譯圖片") {
+    imageTranslateSessions.add(userId);
 
     await client.replyMessage(e.replyToken, {
       type: "text",
-      text: translated || "⚠️ 圖片中未偵測到可翻譯文字"
+      text: "📸 好，請傳一張要翻譯的圖片"
     });
-  } catch (err) {
-    console.error("❌ image translate error:", err);
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "⚠️ 圖片翻譯失敗"
-    });
-  } finally {
-    // ✅ 用完就清掉（一次性）
-    imageTranslateSessions.delete(userId);
-  }
 
-  continue;
-}
-      if (e.message?.type !== "text") continue;
-      const text = e.message.text.trim();
-// ================================
-// 🖼 圖片翻譯啟動指令（一定要在翻譯文字前）
-// ================================
-if (text === "翻譯圖片") {
-  imageTranslateSessions.add(e.source.userId);
-
-  await client.replyMessage(e.replyToken, {
-    type: "text",
-    text: "📸 好，請傳一張要翻譯的圖片"
-  });
-
-  continue;
-}
-
-/// ================================
-// 📘 翻譯功能（需明確指令）
-// ================================
-if (text.startsWith("翻譯 ")) {
-  const content = text.slice(3).trim(); // 拿掉「翻譯」
-
-  if (!content) {
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "請在「翻譯」後面輸入內容 🙂"
-    });
     continue;
   }
 
-  const result = await translateText(content);
+  // ================================
+  // 📘 文字翻譯
+  // ================================
+  if (text.startsWith("翻譯 ")) {
+    const content = text.slice(3).trim();
 
-  await client.replyMessage(e.replyToken, {
-    type: "text",
-    text: result
-  });
-  continue;
-}
+    if (!content) {
+      await client.replyMessage(e.replyToken, {
+        type: "text",
+        text: "請在「翻譯」後面輸入內容 🙂"
+      });
+      continue;
+    }
 
+    const result = await translateText(content);
+
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: result
+    });
+
+    continue;
+  }
+
+  // ⬇️ 下面才是你原本的股票、天氣、業績…（完全不用動）
+     
       // ===== Tier 1：即時指令 =====
 
 
@@ -1648,22 +1692,19 @@ function buildDailyEnglishFlex(items) {
   };
 }
 // ======================================================
-// 🖼 圖片翻譯（OpenAI Vision｜一次性）
+// 🖼 圖片翻譯（菜單智慧模式｜B 定版）
 // ======================================================
 async function translateImage(messageId) {
   try {
     // 1️⃣ 向 LINE 下載圖片
     const stream = await client.getMessageContent(messageId);
     const chunks = [];
-
-    for await (const chunk of stream) {
-      chunks.push(chunk);
-    }
+    for await (const chunk of stream) chunks.push(chunk);
 
     const imageBuffer = Buffer.concat(chunks);
     const base64Image = imageBuffer.toString("base64");
 
-    // 2️⃣ 呼叫 OpenAI Vision
+    // 2️⃣ 呼叫 OpenAI Vision（菜單理解版）
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -1676,19 +1717,42 @@ async function translateImage(messageId) {
         messages: [
           {
             role: "system",
-            content: "你是一個圖片文字翻譯助手，只做翻譯，不要多說話。"
+            content: `
+你是一位餐飲圖片翻譯與菜單理解助手。
+
+【任務】
+1. 先判斷圖片是否為「菜單」
+2. 若是菜單，判斷是否能清楚對應「品項 ↔ 價格」
+
+【輸出模式】
+- 高信心可對應 → mode = "menu_high"
+- 無法清楚對應 → mode = "menu_low"
+- 非菜單 → mode = "text"
+
+【重要規則】
+- 不可臆測不存在的品項或價格
+- 僅依圖片可辨識內容翻譯
+- 翻譯為「自然的繁體中文」
+
+【輸出格式（嚴格 JSON，不要任何說明）】
+{
+  "mode": "menu_high | menu_low | text",
+  "items": [
+    {
+      "name": "原文品項（若無可留空）",
+      "price": "價格（若無可留空）",
+      "translation": "中文翻譯"
+    }
+  ]
+}
+`
           },
           {
             role: "user",
             content: [
               {
                 type: "text",
-                text: `
-請判斷圖片中的文字語言，並翻譯成「自然的繁體中文」。
-- 只輸出翻譯結果
-- 不要加任何說明
-- 若圖片中沒有可辨識文字，請回傳空字串
-`
+                text: "請依規則分析並翻譯下列圖片內容"
               },
               {
                 type: "image_url",
@@ -1708,9 +1772,12 @@ async function translateImage(messageId) {
     }
 
     const data = await response.json();
-    const text = data?.choices?.[0]?.message?.content?.trim();
+    const raw = data?.choices?.[0]?.message?.content;
+    const parsed = safeParseJSON(raw);
 
-    return text || null;
+    if (!parsed || !parsed.mode) return null;
+
+    return parsed;
 
   } catch (err) {
     console.error("❌ translateImage exception:", err);
