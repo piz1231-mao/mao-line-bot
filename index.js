@@ -106,6 +106,33 @@ require("dotenv").config();
 const express = require("express");
 const line = require("@line/bot-sdk");
 const fs = require("fs");
+// ======================================================
+// 📘 Daily English 防重複工具（檔案版）
+// ======================================================
+const DAILY_ENGLISH_PATH = "./data/daily_english_used.json";
+
+function loadUsedEnglish() {
+  try {
+    if (!fs.existsSync(DAILY_ENGLISH_PATH)) return [];
+    const raw = fs.readFileSync(DAILY_ENGLISH_PATH, "utf8");
+    return JSON.parse(raw || "[]");
+  } catch (err) {
+    console.error("❌ loadUsedEnglish error:", err);
+    return [];
+  }
+}
+
+function saveUsedEnglish(words) {
+  try {
+    fs.writeFileSync(
+      DAILY_ENGLISH_PATH,
+      JSON.stringify(words, null, 2),
+      "utf8"
+    );
+  } catch (err) {
+    console.error("❌ saveUsedEnglish error:", err);
+  }
+}
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
 
@@ -1450,35 +1477,39 @@ ${text}
 }
 
 // ======================================================
-// 🤖 每日英文產生器（生活 / 服務 / 餐飲｜定版）
+// 🤖 每日英文產生器（防重複版｜生活 / 餐飲）
 // ======================================================
 async function generateDailyEnglish() {
+  const used = loadUsedEnglish(); // 已用過的單字（英文）
+
   const prompt = `
 你是一個 API，只能回傳 JSON，不要加任何說明文字。
 
-請產生 10 個「生活常用為主、服務與餐飲現場也常會用到」的英文單字或片語。
+請產生 20 個「生活常用為主、服務與餐飲現場也常會用到」的英文單字或片語，
+並且【避免使用以下已出現過的單字】：
+
+${used.join(", ") || "（目前沒有）"}
 
 【內容原則】
 - 生活英文為主（不是教科書）
-- 服務、餐飲現場自然會用到
-- 避免非常基礎、每天容易重複的單字（如 hello, thank you）
+- 餐飲 / 服務現場自然會用到
+- 請避免非常基礎、每天容易重複的單字
 
 【每一筆資料請提供以下欄位（全部都要）】
-- word：英文單字或片語
-- meaning：自然中文意思
-- pronounce_phonetic：英文拼音式唸法（例如 GAR-nish）
-- pronounce_zh：台式中文輔助唸法（例如 嘎・你許）
-- kk：KK 音標（例如 /ˈɡɑːrnɪʃ/）
-- example：生活或服務現場會用的簡短英文例句
+- word
+- meaning
+- pronounce_phonetic（英文拼音唸法，例如 GAR-nish）
+- kk（KK 音標）
+- example
 
-【只允許回傳 JSON array，格式必須完全如下】
+【只允許回傳 JSON array】
 
+格式範例：
 [
   {
     "word": "garnish",
     "meaning": "裝飾",
     "pronounce_phonetic": "GAR-nish",
-    "pronounce_zh": "嘎・你許",
     "kk": "/ˈɡɑːrnɪʃ/",
     "example": "The dish is garnished with herbs."
   }
@@ -1491,7 +1522,20 @@ async function generateDailyEnglish() {
       temperature: 0.4
     });
 
-    return JSON.parse(raw);
+    const list = JSON.parse(raw);
+
+    // 只取前 10 個
+    const today = list.slice(0, 10);
+
+    // 記錄今天用過的單字
+    const newUsed = [
+      ...used,
+      ...today.map(i => i.word)
+    ];
+
+    saveUsedEnglish(newUsed);
+
+    return today;
   } catch (err) {
     console.error("❌ generateDailyEnglish error:", err);
     return null;
