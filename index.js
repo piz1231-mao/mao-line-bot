@@ -965,35 +965,59 @@ async function translateImage(messageId) {
     // 🔍 Debug（穩定後可關）
     console.log("🧠 OpenAI Image Translation Raw:", raw);
 
+    // ======================================================
     // ③ 安全解析 JSON
-let parsed = safeParseJSON(raw);
+    // ======================================================
+    let parsed = safeParseJSON(raw);
 
-// 🧠【關鍵修正】
-// 若 AI 只回 { mode: "text" }，但前面有大量文字，
-// 則「raw 中 JSON 之前的內容」才是真正的翻譯結果
-if (
-  parsed &&
-  parsed.mode === "text" &&
-  !parsed.items
-) {
-  // 把 JSON 區塊拿掉，只留下前面的文字
-  const textOnly = raw
-    .replace(/```json[\s\S]*$/i, "")
-    .replace(/```/g, "")
-    .trim();
+    // 🧠【關鍵修正 #1】
+    // AI 只回 { mode: "text" }，但文字在 JSON 前面
+    if (
+      parsed &&
+      parsed.mode === "text" &&
+      !parsed.items
+    ) {
+      const textOnly = raw
+        .replace(/```json[\s\S]*$/i, "")
+        .replace(/```/g, "")
+        .trim();
 
-  if (textOnly) {
-    parsed = {
-      mode: "text",
-      items: [
-        {
-          translation: textOnly
+      if (textOnly) {
+        parsed = {
+          mode: "text",
+          items: [
+            { translation: textOnly }
+          ]
+        };
+      }
+    }
+
+    // 🛡️【關鍵修正 #2】
+    // Vision 完全沒給 JSON，但有文字
+    if (!parsed) {
+      const cleaned = raw
+        ?.replace(/```[\s\S]*?```/g, "")
+        ?.trim();
+
+      if (cleaned) {
+        console.warn("⚠️ Vision 未回 JSON，啟用純文字代筆 fallback");
+
+        const rewritten = await translateText(cleaned);
+
+        if (rewritten && rewritten.trim()) {
+          parsed = {
+            mode: "text",
+            items: [
+              { translation: rewritten }
+            ]
+          };
         }
-      ]
-    };
-  }
-}
+      }
+    }
+
+    // ======================================================
     // ④ 最終防線（避免 LINE 回傳空字串 400）
+    // ======================================================
     if (
       !parsed ||
       !parsed.mode ||
