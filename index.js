@@ -1420,6 +1420,22 @@ async function callOpenAIChat({
   return data.choices[0].message.content;
 }
 
+function safeParseJSON(raw) {
+  if (!raw) return null;
+
+  const cleaned = raw
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
+
+  try {
+    return JSON.parse(cleaned);
+  } catch (err) {
+    console.error("❌ JSON parse failed:", cleaned);
+    return null;
+  }
+}
+
 // ======================================================
 // 🤖 AI 翻譯（精簡回覆版｜餐飲 / 日常）
 // ======================================================
@@ -1460,24 +1476,13 @@ ${text}
 // ======================================================
 async function generateDailyEnglish() {
 
-  // ===== 主題池（只當語感引導，不是死規則）=====
   const themes = [
-    "生活日常",
-    "餐廳服務",
-    "點餐與用餐",
-    "朋友對話",
-    "工作場合",
-    "臨時狀況",
-    "情緒與反應",
-    "抱怨與處理問題",
-    "禮貌與應對",
-    "外出與交通"
+    "生活日常", "餐廳服務", "點餐與用餐", "朋友對話", "工作場合",
+    "臨時狀況", "情緒與反應", "抱怨與處理問題", "禮貌與應對", "外出與交通"
   ];
 
-  const pickedTheme =
-    themes[Math.floor(Math.random() * themes.length)];
+  const pickedTheme = themes[Math.floor(Math.random() * themes.length)];
 
-  // ===== 把最近用過的字丟給 AI 當「黑名單」=====
   const bannedWords =
     recentEnglishPool.size
       ? Array.from(recentEnglishPool).join(", ")
@@ -1487,24 +1492,20 @@ async function generateDailyEnglish() {
 這次的英文主題是：「${pickedTheme}」。
 
 請產生 10 個英文單字或片語。
-不需要全部嚴格符合主題，但請以此作為主要語感。
 
-【重要防重複規則】
+【防重複規則】
 - 請避免使用下列近期已出現過的單字或片語：
 ${bannedWords}
 
-- 請避免教科書、過度常見的安全字
-- 即使同一主題，也請選擇不同面向、不同情境
-
-【每一筆資料請提供以下欄位（缺一不可）】
+【每一筆請提供以下欄位】
 - word
 - meaning（自然中文）
-- pronounce_phonetic（英文拼音式唸法，例如 GAR-nish）
-- pronounce_zh（台式中文輔助唸法，例如 嘎・你許）
+- pronounce_phonetic（英文拼音式，例如 GAR-nish）
+- pronounce_zh（台式中文唸法，例如 嘎・你許）
 - kk（KK 音標）
-- example（生活或服務情境英文例句）
+- example（生活或服務情境例句）
 
-【只允許回傳 JSON array，不要任何說明文字】
+【只允許回傳 JSON array，不要任何說明】
 `;
 
   try {
@@ -1513,22 +1514,25 @@ ${bannedWords}
       temperature: 0.7
     });
 
-    const items = JSON.parse(raw);
+    const items = safeParseJSON(raw);
 
-    // ===== 更新記憶體防重複池 =====
+    if (!items || !Array.isArray(items)) {
+      throw new Error("JSON format invalid");
+    }
+
+    // ===== 寫入防重複池 =====
     items.forEach(item => {
       if (item.word) {
         recentEnglishPool.add(item.word.toLowerCase());
       }
     });
 
-    // 控制記憶體大小（避免無限長）
+    // ===== 控制池大小 =====
     if (recentEnglishPool.size > MAX_RECENT) {
-      const overflow =
-        recentEnglishPool.size - MAX_RECENT;
-      const toDelete =
-        Array.from(recentEnglishPool).slice(0, overflow);
-      toDelete.forEach(w => recentEnglishPool.delete(w));
+      const overflow = recentEnglishPool.size - MAX_RECENT;
+      Array.from(recentEnglishPool)
+        .slice(0, overflow)
+        .forEach(w => recentEnglishPool.delete(w));
     }
 
     return items;
