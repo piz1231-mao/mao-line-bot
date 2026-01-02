@@ -1,8 +1,7 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// Router 穩定定版 v1.6.9
-// （修復語法錯誤｜圖片翻譯 JSON 暴力救援機制）
-// ======================================================
+// Router 穩定定版 v1.6.8
+// （圖片翻譯靜默優化｜台灣代筆語感定版）
 //
 // 【架構定位（定版，不再調整）】
 // ------------------------------------------------------
@@ -52,8 +51,6 @@
 // - 穩定：圖片、文字、菜單翻譯語感統一為台灣代筆
 //
 // ======================================================
-
-
 
 require("dotenv").config();
 const fetch = require("node-fetch");
@@ -109,7 +106,7 @@ const TEMPLATE_SHEET = "茶六博愛";
 const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山"];
 
 // ======================================================
-// Google Auth（Render / 本機通用｜定版）
+// Google Auth（Render / 本機通用｜定版｜v1.6.6 防呆修正）
 // ======================================================
 function getGoogleAuth() {
   // ✅ Render / 雲端（base64）
@@ -675,72 +672,90 @@ async function callOpenAIChat({
 // ✅ 增加安全解析 JSON 的工具（v1.6.6 新增）
 function safeParseJSON(raw) {
   if (!raw) return null;
+
+  // 1️⃣ 移除 markdown code block
   const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+
+  // 2️⃣ 嘗試抓「最後一個 JSON 物件」
   const jsonMatch = cleaned.match(/\{[\s\S]*\}$/);
-  if (!jsonMatch) return null;
+
+  if (!jsonMatch) {
+    console.error("❌ JSON not found in response:", cleaned);
+    return null;
+  }
+
   try {
     return JSON.parse(jsonMatch[0]);
   } catch (err) {
+    console.error("❌ JSON parse failed:", jsonMatch[0]);
     return null;
   }
 }
-
-// 1️⃣ 純文字翻譯用的 System Prompt（台灣代筆）
 const TAIWAN_REWRITE_SYSTEM_PROMPT = `
 你不是翻譯工具。
+你不是在「整理內容」，也不是在「說明翻譯結果」。
 
-你的角色是：
-「台灣人會直接使用、直接轉寄、直接貼出去的代筆者」。
+你的任務只有一個：
+把提供的文字，改寫成「台灣人會直接使用、可以直接轉貼的繁體中文內容」。
+
+【角色定位】
+你是代筆者，不是解說員，也不是教學工具。
+輸出的內容必須看起來像「原本就是中文寫的」。
 
 【最高原則（不可違反）】
-1. 請使用「台灣常用的繁體中文」
+1. 請使用台灣常用的繁體中文
 2. 絕對禁止簡體字、中國用語、翻譯腔
 3. 不需要逐句翻譯，可自由重寫、拆句、合併
 4. 只要照原文翻會怪，就直接改寫
+5. 輸出的文字必須自然、口語、不官腔
+6. 禁止出現任何說明性語句，例如：
+   - 整理後的內容如下
+   - 以下為翻譯結果
+   - 本文說明
+7. 禁止使用分隔線或標題（---、=== 等）
 
-【語氣規則】
-- 書信／通知：台灣常見商務書信語氣（自然、不官腔）
-- 一般說明：白話、好讀
-- 菜單：台灣餐廳實際會用的菜名，不照字翻
+【重要輸出規則】
+- 只輸出「最終可用的中文內容」
+- 不要輸出 JSON
+- 不要提到模式、規則、翻譯行為
+- 不要加前言或結語
 
-【專有名詞在地化】
+【在地化用語】
 - pre-settlement → 交屋前
 - settlement / handover → 交屋
 - rectification → 修繕 / 改善
 - body corporate → 管委會
+`;
 
 【輸出要求】
 - 請直接輸出「整理後、可直接使用的完整中文內容」
 - 不要解釋、不加註解、不說你怎麼翻
 `;
-
-// 2️⃣ 圖片翻譯用的 System Prompt（強制 JSON）
-const VISION_SYSTEM_PROMPT = `
-你是一位圖片文字提取與翻譯助手。
+// ======================================================
+// 🍽 菜單專用 System Prompt（只給圖片翻譯用）
+// ======================================================
+const MENU_VISION_SYSTEM_PROMPT = `
+你是一位「台灣餐廳菜單整理助手」。
 
 【任務】
-1. 識別圖片中的文字。
-2. 判斷圖片類型（菜單 或 其他）。
-3. 將內容翻譯/重寫為「台灣繁體中文」，風格需自然、在地化。
+1. 辨識圖片中的菜單文字
+2. 用台灣餐廳實際會用的菜名重寫（不要直翻）
+3. 價格照原圖，有就留，沒有就空
 
-【輸出格式 (JSON ONLY)】
-請務必回傳 JSON 格式，不要包含任何 markdown 標記（如 \`\`\`json）。
-
+【輸出格式（只能是 JSON，不要任何說明）】
 {
-  "mode": "menu_high" | "menu_low" | "text",
+  "mode": "menu_high" | "menu_low",
   "items": [
     {
-      "name": "原文品項 (非菜單留空)",
-      "price": "價格 (非菜單留空)",
-      "translation": "翻譯後的中文內容"
+      "translation": "一道菜一行，已整理好的中文"
     }
   ]
 }
 
 【規則】
-- 若 mode="text"，請將所有翻譯後的內容整合成一段通順的文字，放入 items[0].translation。
-- 若 mode="menu_high/low"，請逐項列出。
-- 不要回傳空陣列。
+- 不要前言、不加標題
+- 不要出現「整理如下」
+- items 不可為空
 `;
 
 // ======================================================
@@ -750,27 +765,48 @@ function sanitizeTranslationOutput(text) {
   if (!text || typeof text !== "string") return "";
 
   return text
+    // 移除整包 JSON（最狠的）
     .replace(/\{\s*"mode"\s*:\s*"text"\s*,[\s\S]*?\}/gi, "")
+    // 移除單獨的 mode
     .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
+    // 移除 content key
     .replace(/"content"\s*:\s*/gi, "")
+    // 移除 code block
     .replace(/```[\s\S]*?```/g, "")
     .trim();
 }
 
 // ======================================================
-// 🤖 文字翻譯（台灣代筆統一版｜FINAL）
+// 🧠 共用｜台灣代筆核心（文字 / 圖片 共用）
 // ======================================================
-async function translateText(text) {
+async function rewriteToTaiwanese({
+  content,
+  temperature = 0.2
+}) {
+  if (!content || !content.trim()) return "";
+
   try {
     return await callOpenAIChat({
       systemPrompt: TAIWAN_REWRITE_SYSTEM_PROMPT,
-      userPrompt: text,
-      temperature: 0.2
+      userPrompt: content,
+      temperature
     });
   } catch (err) {
-    console.error("❌ translateText error:", err);
-    return "⚠️ 翻譯暫時無法使用";
+    console.error("❌ rewriteToTaiwanese error:", err);
+    return "";
   }
+}
+
+// ======================================================
+// 🤖 文字翻譯（台灣代筆｜共用核心版）
+// ======================================================
+async function translateText(text) {
+  const rewritten = await rewriteToTaiwanese({
+    content: text,
+    temperature: 0.2
+  });
+
+  return rewritten || "⚠️ 翻譯失敗，請稍後再試";
 }
 
 // ======================================================
@@ -850,7 +886,7 @@ function buildDailyEnglishFlex(items) {
 }
 
 // ======================================================
-// 🖼 圖片翻譯（JSON 暴力救援版）
+// 🖼 圖片翻譯（台灣代筆統一版｜v1.6.8 FINAL｜FIXED）
 // ======================================================
 async function translateImage(messageId) {
   try {
@@ -860,37 +896,51 @@ async function translateImage(messageId) {
     for await (const chunk of stream) chunks.push(chunk);
     const base64Image = Buffer.concat(chunks).toString("base64");
 
-    // ② 呼叫 OpenAI Vision (使用專屬的 Vision System Prompt)
+    // ② 呼叫 OpenAI Vision
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+  },
+  body: JSON.stringify({
+    model: "gpt-4o-mini",
+    temperature: 0.2,
+    messages: [
+      {
+        role: "system",
+        content: MENU_VISION_SYSTEM_PROMPT
       },
-      body: JSON.stringify({
-        model: "gpt-4o-mini",
-        temperature: 0.2,
-        messages: [
-          { role: "system", content: VISION_SYSTEM_PROMPT },
+      {
+        role: "user",
+        content: [
           {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text: "請分析並翻譯這張圖片，務必回傳 JSON。"
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${base64Image}`
-                }
-              }
-            ]
+            type: "text",
+            text: `
+請判斷這張圖片是否為菜單：
+- 有清楚品項與價格 → menu_high
+- 有品項但價格模糊或沒有 → menu_low
+
+若不是菜單，請回：
+{
+  "mode": "text",
+  "items": [
+    { "translation": "請用台灣自然中文整理後輸出" }
+  ]
+}
+`
+          },
+          {
+            type: "image_url",
+            image_url: {
+              url: `data:image/jpeg;base64,${base64Image}`
+            }
           }
         ]
-      })
-    });
-
+      }
+    ]
+  })
+});
     if (!response.ok) {
       console.error("❌ OpenAI Vision API error:", response.status);
       return null;
@@ -899,64 +949,125 @@ async function translateImage(messageId) {
     const data = await response.json();
     const raw = data?.choices?.[0]?.message?.content;
 
-    // 🔍 Debug
+    // 🔍 Debug（穩定後可關）
     console.log("🧠 OpenAI Image Translation Raw:", raw);
 
-    // ③ 安全解析 JSON
-    let parsed = safeParseJSON(raw);
+// ======================================================
+// ③ 安全解析 JSON（最終定版）
+// ======================================================
+let parsed = safeParseJSON(raw);
 
-    // 🔥 救援機制 A：Vision 回傳 JSON，但把翻譯放在 content 欄位
-    if (
-      parsed &&
-      parsed.mode === "text" &&
-      !parsed.items &&
-      typeof parsed.content === "string"
-    ) {
-      parsed = {
-        mode: "text",
-        items: [
-          { translation: parsed.content.trim() }
-        ]
-      };
-    }
+/**
+ * 🧠 情況 A
+ * Vision 回傳的是：
+ * { mode: "text", content: "翻譯後內容..." }
+ */
+if (
+  parsed &&
+  parsed.mode === "text" &&
+  !parsed.items &&
+  typeof parsed.content === "string"
+) {
+  parsed = {
+    mode: "text",
+    items: [
+      { translation: parsed.content.trim() }
+    ]
+  };
+}
 
-    // 🔥 救援機制 B：Vision 完全不回 JSON，直接回了一大段話
-    if (!parsed && raw && raw.length > 0) {
-      console.warn("⚠️ Vision 未回 JSON，啟用純文字 fallback");
-      parsed = {
-        mode: "text",
-        items: [
-          { translation: raw }
-        ]
-      };
-    }
+/**
+ * 🧠 情況 B
+ * AI 回了 JSON，但真正的翻譯文字在 JSON 前面
+ * 例如：
+ * 「親愛的xxx...」
+ * ```json
+ * { "mode": "text" }
+ * ```
+ */
+if (
+  parsed &&
+  parsed.mode === "text" &&
+  !parsed.items
+) {
+  const textOnly = raw
+    .replace(/```json[\s\S]*$/i, "")
+    .replace(/```/g, "")
+    .trim();
 
-    // ④ 最終防線
-    if (
-      !parsed ||
-      !parsed.items ||
-      parsed.items.length === 0
-    ) {
-      return null;
-    }
+  if (textOnly) {
+    parsed = {
+      mode: "text",
+      items: [
+        { translation: textOnly }
+      ]
+    };
+  }
+}
 
-    // 🧹 最後一次清潔（防止任何殘留 JSON 字樣）
-    if (parsed.items[0] && parsed.items[0].translation) {
-        parsed.items[0].translation = parsed.items[0].translation
-          .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
-          .replace(/整理後的內容如下[:：]?/gi, "")
-          .replace(/^-{3,}$/gm, "")
-          .trim();
-    }
+/**
+ * 🛡️ 情況 C
+ * Vision 完全沒回 JSON，只回一大段文字
+ */
+if (!parsed) {
+  const cleaned = raw
+    ?.replace(/```[\s\S]*?```/g, "")
+    ?.trim();
 
-    return parsed;
+  if (cleaned) {
+    console.warn("⚠️ Vision 未回 JSON，啟用純文字 fallback");
 
+    parsed = {
+      mode: "text",
+      items: [
+        { translation: cleaned }
+      ]
+    };
+  }
+}
+
+// ======================================================
+// ④ 最終防線（只允許乾淨文字通過）
+// ======================================================
+if (
+  !parsed ||
+  !parsed.mode ||
+  !Array.isArray(parsed.items) ||
+  parsed.items.length === 0 ||
+  typeof parsed.items[0].translation !== "string"
+) {
+  return null;
+}
+    // ✨ 非菜單文字，再走一次台灣代筆潤飾
+if (parsed.mode === "text") {
+  const rewritten = await rewriteToTaiwanese({
+    content: parsed.items[0].translation,
+    temperature: 0.2
+  });
+
+  if (rewritten && rewritten.trim()) {
+    parsed.items[0].translation = rewritten.trim();
+  }
+}
+
+// 🧹 最後一次清潔（防止任何殘留 JSON 字樣）
+parsed.items[0].translation = parsed.items[0].translation
+  .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
+  .replace(/整理後的內容如下[:：]?/gi, "")
+  .replace(/^-{3,}$/gm, "")
+  .trim();
+
+if (!parsed.items[0].translation) {
+  return null;
+}
+
+return parsed;
   } catch (err) {
     console.error("❌ translateImage exception:", err);
     return null;
   }
 }
-
+    
 // ======================================================
 // LINE Webhook（Router 主流程｜v1.6.6 結構清洗版）
 // ======================================================
@@ -965,59 +1076,60 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
     for (const e of req.body.events || []) {
       const userId = e.source.userId;
 
-      // ================================
-      // 🖼 圖片處理 (唯一入口)
-      // ================================
-      if (e.message?.type === "image") {
-        if (!imageTranslateSessions.has(userId)) continue;
+// ================================
+// 🖼 圖片處理 (唯一入口)
+// ================================
+if (e.message?.type === "image") {
+  if (!imageTranslateSessions.has(userId)) continue;
 
-        try {
-          const result = await translateImage(e.message.id);
+  try {
+    const result = await translateImage(e.message.id);
 
-          // ⚠️ 只要有結果就回傳
-          if (!result || !Array.isArray(result.items) || result.items.length === 0) {
-            await client.replyMessage(e.replyToken, {
-              type: "text",
-              text: "⚠️ 圖片中未偵測到可翻譯文字"
-            });
-          } else {
-            let replyText = "";
+    let replyText = "";
 
-            if (result.mode === "menu_high") {
-              replyText += "📋 菜單翻譯（對應版）\n━━━━━━━━━━━\n";
-              result.items.forEach(i => {
-                if (i.translation) replyText += `\n🍽 ${i.name||""}\n💰 ${i.price||""}\n👉 ${i.translation}\n`;
-              });
-            } else if (result.mode === "menu_low") {
-              replyText += "📋 菜單翻譯（分段理解）\n━━━━━━━━━━━\n";
-              result.items.forEach(i => {
-                if (i.translation) replyText += `\n• ${i.translation}\n`;
-              });
-            } else {
-              // mode = text (一般文字)
-              replyText = result.items
-                .map(i => i.translation)
-                .filter(Boolean)
-                .join("\n");
-            }
-
-            // 🧹 統一出口清潔
-            replyText = sanitizeTranslationOutput(replyText);
-
-            await client.replyMessage(e.replyToken, {
-              type: "text",
-              text: replyText || "⚠️ 翻譯結果為空"
-            });
+    if (!result || !Array.isArray(result.items) || result.items.length === 0) {
+      replyText = "⚠️ 圖片中未偵測到可翻譯文字";
+    } else {
+      if (result.mode === "menu_high") {
+        replyText += "📋 菜單翻譯\n━━━━━━━━━━━\n";
+        result.items.forEach(i => {
+          if (i.translation) {
+            replyText += `\n${i.translation}\n`;
           }
-        } catch (err) {
-          console.error("❌ image translate error:", err);
-          await client.replyMessage(e.replyToken, { type: "text", text: "⚠️ 圖片翻譯失敗" });
-        } finally {
-          imageTranslateSessions.delete(userId);
-        }
-        continue;
+        });
+      } else if (result.mode === "menu_low") {
+        result.items.forEach(i => {
+          if (i.translation) {
+            replyText += `\n${i.translation}\n`;
+          }
+        });
+      } else {
+        // 一般文字
+        replyText = result.items
+          .map(i => String(i.translation || "").trim())
+          .filter(t => t.length > 0)
+          .join("\n");
       }
+    }
 
+    // 🧹 統一出口清潔
+    replyText = sanitizeTranslationOutput(replyText);
+
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: replyText || "⚠️ 翻譯結果為空"
+    });
+
+  } catch (err) {
+    console.error("❌ image translate error:", err);
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "⚠️ 圖片翻譯失敗"
+    });
+  }
+
+  continue;
+}
       // ================================
       // 🚫 非文字事件一律跳過
       // ================================
@@ -1028,32 +1140,45 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
       // 🖼 啟動圖片翻譯
       // ================================
       if (text === "翻譯圖片") {
-        imageTranslateSessions.add(userId);
-        await client.replyMessage(e.replyToken, { type: "text", text: "📸 好，請傳一張要翻譯的圖片" });
-        continue;
-      }
+  imageTranslateSessions.add(userId);
+  // ❌ 不回任何訊息
+  continue;
+}
       
-      // ================================
-      // 🛑 結束圖片翻譯（安靜模式）
-      // ================================
-      if (text === "結束翻譯") {
-        imageTranslateSessions.delete(userId);
-        continue;
-      }
+// ================================
+// 🛑 結束圖片翻譯（安靜模式）
+// ================================
+if (text === "結束翻譯") {
+  // 不管有沒有在翻譯狀態，一律清掉
+  imageTranslateSessions.delete(userId);
 
-      // ================================
-      // 📘 文字翻譯（支援換行）
-      // ================================
-      if (text.startsWith("翻譯 ")) {
-        const content = text.slice(3).trim();
-        if (!content) {
-          await client.replyMessage(e.replyToken, { type: "text", text: "請在「翻譯」後面輸入內容 🙂" });
-        } else {
-          const result = await translateText(content);
-          await client.replyMessage(e.replyToken, { type: "text", text: result });
-        }
-        continue;
-      }
+  // ❌ 不回任何訊息
+  continue;
+}
+
+      
+// ================================
+// 📘 文字翻譯（支援換行）
+// ================================
+if (text === "翻譯" || text.startsWith("翻譯\n") || text.startsWith("翻譯 ")) {
+  const content = text
+    .replace(/^翻譯[\s\n]*/g, "")
+    .trim();
+
+  if (!content) {
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "請在「翻譯」後面貼上要翻的內容 🙂"
+    });
+  } else {
+    const result = await translateText(content);
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: result
+    });
+  }
+  continue;
+}
 
       // ================================
       // 📘 今日英文
