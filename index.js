@@ -1080,13 +1080,17 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
                 if (i.translation) replyText += `\n• ${i.translation}\n`;
               });
             } else {
-              // mode = text (一般文字)
-              replyText = result.items
-                .map(i => i.translation)
-                .filter(Boolean)
-                .join("\n");
-            }
-
+  // mode = text（一般文字）
+  // ⚠️ 嚴格只允許 parsed.items 的 translation
+  replyText = result.items
+    .map(i => String(i.translation || "").trim())
+    .filter(t => t.length > 0)
+    .join("\n");
+}
+// 🧹 最後清潔：避免任何殘留 JSON 字樣
+replyText = replyText
+  .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
+  .trim();
             await client.replyMessage(e.replyToken, {
               type: "text",
               text: replyText.trim() || "⚠️ 翻譯結果為空"
