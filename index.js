@@ -725,6 +725,25 @@ const TAIWAN_REWRITE_SYSTEM_PROMPT = `
 - 請直接輸出「整理後、可直接使用的完整中文內容」
 - 不要解釋、不加註解、不說你怎麼翻
 `;
+
+// ======================================================
+// 🧹 翻譯輸出總清潔器（防止 JSON / mode / content 外洩）
+// ======================================================
+function sanitizeTranslationOutput(text) {
+  if (!text || typeof text !== "string") return "";
+
+  return text
+    // 移除整包 JSON（最狠的）
+    .replace(/\{\s*"mode"\s*:\s*"text"\s*,[\s\S]*?\}/gi, "")
+    // 移除單獨的 mode
+    .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
+    // 移除 content key
+    .replace(/"content"\s*:\s*/gi, "")
+    // 移除 code block
+    .replace(/```[\s\S]*?```/g, "")
+    .trim();
+}
+
 // ======================================================
 // 🧠 共用｜台灣代筆核心（文字 / 圖片 共用）
 // ======================================================
@@ -1019,16 +1038,13 @@ if (e.message?.type === "image") {
         });
       } else {
         // mode = text（一般文字）
-        replyText = result.items
-          .map(i => String(i.translation || "").trim())
-          .filter(t => t.length > 0)
-          .join("\n");
-      }
+replyText = result.items
+  .map(i => String(i.translation || "").trim())
+  .filter(t => t.length > 0)
+  .join("\n");
 
-      // 🧹 最後清潔：避免任何殘留 JSON 字樣
-      replyText = replyText
-        .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
-        .trim();
+// 🧹 統一出口清潔（唯一允許）
+replyText = sanitizeTranslationOutput(replyText);
 
       await client.replyMessage(e.replyToken, {
         type: "text",
