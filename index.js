@@ -950,25 +950,33 @@ async function translateImage(messageId) {
     console.log("🧠 OpenAI Image Translation Raw:", raw);
 
     // ③ 安全解析 JSON
-    let parsed = safeParseJSON(raw);
+let parsed = safeParseJSON(raw);
 
-// 🔧 相容修正：處理舊版 / 簡化版 Vision 回傳
+// 🧠【關鍵修正】
+// 若 AI 只回 { mode: "text" }，但前面有大量文字，
+// 則「raw 中 JSON 之前的內容」才是真正的翻譯結果
 if (
   parsed &&
   parsed.mode === "text" &&
-  !parsed.items &&
-  parsed.content
+  !parsed.items
 ) {
-  parsed = {
-    mode: "text",
-    items: [
-      {
-        translation: parsed.content
-      }
-    ]
-  };
-}
+  // 把 JSON 區塊拿掉，只留下前面的文字
+  const textOnly = raw
+    .replace(/```json[\s\S]*$/i, "")
+    .replace(/```/g, "")
+    .trim();
 
+  if (textOnly) {
+    parsed = {
+      mode: "text",
+      items: [
+        {
+          translation: textOnly
+        }
+      ]
+    };
+  }
+}
     // ④ 最終防線（避免 LINE 回傳空字串 400）
     if (
       !parsed ||
