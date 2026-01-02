@@ -626,6 +626,11 @@ function buildShopRatioBubble({ shop, date, items }) {
   };
 }
 
+function isMostlyChinese(text) {
+  const chineseChars = text.match(/[\u4e00-\u9fff]/g) || [];
+  return chineseChars.length / text.length > 0.4;
+}
+
 // ======================================================
 // 🤖 OpenAI 共用呼叫器（集中管理｜安全版｜唯一入口）
 // ======================================================
@@ -1132,11 +1137,18 @@ if (parsed.mode === "menu_high" || parsed.mode === "menu_low") {
     // ======================================================
     // 🧹 最終清潔
     // ======================================================
-    parsed.items[0].translation = parsed.items[0].translation
+    parsed.items = parsed.items.map(item => {
+  if (!item.translation) return item;
+
+  return {
+    ...item,
+    translation: item.translation
       .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
       .replace(/整理後的內容如下[:：]?/gi, "")
       .replace(/^-{3,}$/gm, "")
-      .trim();
+      .trim()
+  };
+});
 
     if (!parsed.items[0].translation) {
       return null;
@@ -1241,7 +1253,7 @@ if (text === "結束翻譯") {
 
       
 // ================================
-// 📘 文字翻譯（支援換行）
+// 📘 文字翻譯（智慧分流｜定版）
 // ================================
 if (text === "翻譯" || text.startsWith("翻譯\n") || text.startsWith("翻譯 ")) {
   const content = text
@@ -1253,39 +1265,29 @@ if (text === "翻譯" || text.startsWith("翻譯\n") || text.startsWith("翻譯 
       type: "text",
       text: "請在「翻譯」後面貼上要翻的內容 🙂"
     });
-  } else {
-    const result = await translateText(content);
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: result
-    });
-  }
-  continue;
-}
-      
-// ======================================================
-// 📘 翻譯文字（中 → 英，需明確指令）
-// ======================================================
-if (text.startsWith("翻譯 ")) {
-  const content = text.replace(/^翻譯\s*/, "").trim();
-
-  if (!content) {
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "要翻譯什麼？可以直接打：翻譯 這句話"
-    });
     continue;
   }
 
-  const translated = await translateChineseToEnglish(content);
+  let result = "";
+
+  // 🇹🇼 中文 → 英文（忠實翻譯）
+  if (isMostlyChinese(content)) {
+    result = await translateChineseToEnglish(content);
+  }
+  // 🌍 外文 → 台灣中文代筆
+  else {
+    result = await translateText(content);
+  }
 
   await client.replyMessage(e.replyToken, {
     type: "text",
-    text: translated || "⚠️ 翻譯失敗，請稍後再試"
+    text: result || "⚠️ 翻譯失敗，請稍後再試"
   });
 
   continue;
 }
+      
+
 
       // ================================
       // 📘 今日英文
