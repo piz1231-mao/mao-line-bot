@@ -860,114 +860,131 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
   const userId = e.source.userId;
 
   // ================================
-  // 🖼 圖片翻譯處理（一定最優先）
-  // ================================
-  if (e.message?.type === "image") {
+// 🖼 圖片翻譯處理（一定最優先｜定版）
+// ================================
+if (e.message?.type === "image") {
 
-    // 沒有啟動「翻譯圖片」就完全不理
-    if (!imageTranslateSessions.has(userId)) {
-      continue;
-    }
-
-    try {
-      const result = await translateImage(e.message.id);
-
-      if (!result || !Array.isArray(result.items)) {
-        await client.replyMessage(e.replyToken, {
-          type: "text",
-          text: "⚠️ 圖片中未偵測到可翻譯內容"
-        });
-        continue;
-      }
-
-      let replyText = "";
-
-      if (result.mode === "menu_high") {
-        replyText += "📋 菜單翻譯（對應版）\n━━━━━━━━━━━\n";
-        result.items.forEach(item => {
-          replyText += `\n🍽 ${item.name || ""}\n`;
-          if (item.price) replyText += `💰 ${item.price}\n`;
-          replyText += `👉 ${item.translation}\n`;
-        });
-      }
-      else if (result.mode === "menu_low") {
-        replyText += "📋 菜單翻譯（分段理解）\n━━━━━━━━━━━\n";
-        result.items.forEach(item => {
-          replyText += `\n• ${item.translation}\n`;
-        });
-      }
-      else {
-        replyText = result.items.map(i => i.translation).join("\n");
-      }
-
-      await client.replyMessage(e.replyToken, {
-        type: "text",
-        text: replyText.trim()
-      });
-
-    } catch (err) {
-      console.error("❌ image translate error:", err);
-      await client.replyMessage(e.replyToken, {
-        type: "text",
-        text: "⚠️ 圖片翻譯失敗"
-      });
-    } finally {
-      imageTranslateSessions.delete(userId);
-    }
-
-    continue; // ❗圖片事件到此結束
-  }
-
-  // ================================
-  // 🚫 非文字事件一律跳過
-  // ================================
-  if (e.message?.type !== "text") {
+  // 沒有啟動「翻譯圖片」→ 完全不處理
+  if (!imageTranslateSessions.has(userId)) {
     continue;
   }
 
-  // ================================
-  // ✏️ 從這裡開始，一定是文字
-  // ================================
-  const text = e.message.text.trim();
+  try {
+    const result = await translateImage(e.message.id);
 
-  // ================================
-  // 🖼 啟動圖片翻譯
-  // ================================
-  if (text === "翻譯圖片") {
-    imageTranslateSessions.add(userId);
-
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "📸 好，請傳一張要翻譯的圖片"
-    });
-
-    continue;
-  }
-
-  // ================================
-  // 📘 文字翻譯
-  // ================================
-  if (text.startsWith("翻譯 ")) {
-    const content = text.slice(3).trim();
-
-    if (!content) {
+    // 防呆：結果異常
+    if (!result || !Array.isArray(result.items)) {
       await client.replyMessage(e.replyToken, {
         type: "text",
-        text: "請在「翻譯」後面輸入內容 🙂"
+        text: "⚠️ 圖片中未偵測到可翻譯內容"
       });
       continue;
     }
 
-    const result = await translateText(content);
+    let replyText = "";
+
+    // 🅱️ 高信心菜單
+    if (result.mode === "menu_high") {
+      replyText += "📋 菜單翻譯（對應版）\n━━━━━━━━━━━\n";
+      result.items.forEach(item => {
+        if (!item.translation) return;
+        replyText += `\n🍽 ${item.name || ""}\n`;
+        if (item.price) replyText += `💰 ${item.price}\n`;
+        replyText += `👉 ${item.translation}\n`;
+      });
+    }
+
+    // 🅱️ 低信心菜單
+    else if (result.mode === "menu_low") {
+      replyText += "📋 菜單翻譯（分段理解）\n━━━━━━━━━━━\n";
+      result.items.forEach(item => {
+        if (!item.translation) return;
+        replyText += `\n• ${item.translation}\n`;
+      });
+    }
+
+    // 📝 一般圖片文字
+    else {
+      replyText = result.items
+        .map(i => i.translation)
+        .filter(Boolean)
+        .join("\n");
+    }
+
+    // ⚠️ LINE 不允許空字串（關鍵修正）
+    replyText = replyText.trim();
+    if (!replyText) {
+      replyText = "⚠️ 圖片中未偵測到可翻譯文字";
+    }
 
     await client.replyMessage(e.replyToken, {
       type: "text",
-      text: result
+      text: replyText
     });
 
+  } catch (err) {
+    console.error("❌ image translate error:", err);
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "⚠️ 圖片翻譯失敗"
+    });
+  } finally {
+    // ✅ 一次性狀態，用完就清
+    imageTranslateSessions.delete(userId);
+  }
+
+  continue; // ❗圖片事件到此結束
+}
+
+// ================================
+// 🚫 非文字事件一律跳過
+// ================================
+if (e.message?.type !== "text") {
+  continue;
+}
+
+// ================================
+// ✏️ 從這裡開始，一定是文字
+// ================================
+const text = e.message.text.trim();
+
+// ================================
+// 🖼 啟動圖片翻譯
+// ================================
+if (text === "翻譯圖片") {
+  imageTranslateSessions.add(userId);
+
+  await client.replyMessage(e.replyToken, {
+    type: "text",
+    text: "📸 好，請傳一張要翻譯的圖片"
+  });
+
+  continue;
+}
+
+// ================================
+// 📘 文字翻譯
+// ================================
+if (text.startsWith("翻譯 ")) {
+  const content = text.slice(3).trim();
+
+  if (!content) {
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "請在「翻譯」後面輸入內容 🙂"
+    });
     continue;
   }
 
+  const result = await translateText(content);
+
+  await client.replyMessage(e.replyToken, {
+    type: "text",
+    text: result
+  });
+
+  continue;
+}
   // ⬇️ 下面才是你原本的股票、天氣、業績…（完全不用動）
      
       // ===== Tier 1：即時指令 =====
