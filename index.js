@@ -1457,9 +1457,18 @@ async function generateDailyEnglish() {
   const prompt = `
 你是一個 API，只能回傳 JSON，不要說任何多餘的話。
 
-請產生 10 個「餐飲 / 日常服務」常用英文單字或片語。
+請產生 10 個「生活中常用、服務情境也常出現」的英文單字或片語。
+- 生活英文為主
+- 餐飲、服務場景也會自然用到
+- 請避免非常基礎、每天都會重複的單字（如 hello, thank you）
 
-格式必須完全符合以下 JSON，不能有任何註解、說明、markdown：
+每一個請提供：
+- word：英文
+- meaning：自然中文意思
+- pronounce：用「中文方式」提示唸法（不要 KK 音標）
+- example：生活或服務現場會用的簡短英文例句
+
+請只回傳 JSON array，格式必須完全如下：
 
 [
   {
@@ -1474,15 +1483,15 @@ async function generateDailyEnglish() {
   try {
     const raw = await callOpenAIChat({
       userPrompt: prompt,
-      temperature: 0.2 // 🔒 降低亂跑機率
+      temperature: 0.35
     });
 
-    // ✅ 第一層：直接 parse（最快、最乾淨）
+    // 第一層：直接 parse
     try {
       return JSON.parse(raw);
     } catch {}
 
-    // ✅ 第二層保底：移除 ```json ``` 後再 parse
+    // 第二層：移除 markdown 再 parse
     const cleaned = raw
       .replace(/```json/g, "")
       .replace(/```/g, "")
@@ -1495,51 +1504,53 @@ async function generateDailyEnglish() {
     return null;
   }
 }
+
 // ================================
 // 📘 今日英文 Flex（定版）
 // ================================
 function buildDailyEnglishFlex(items) {
   return {
     type: "flex",
-    altText: "📘 今日餐飲英文",
+    altText: "📘 今日英文",
     contents: {
       type: "bubble",
       body: {
         type: "box",
         layout: "vertical",
-        spacing: "md",
+        spacing: "lg",
         contents: [
           {
             type: "text",
-            text: "📘 今日餐飲英文",
+            text: "📘 今日英文",
             weight: "bold",
-            size: "xl"
+            size: "xxl"
           },
           ...items.flatMap(item => ([
             {
               type: "text",
               text: item.word,
               weight: "bold",
-              size: "lg",
+              size: "xl",
               margin: "md"
             },
             {
               type: "text",
               text: `🇹🇼 ${item.meaning}`,
-              size: "sm",
-              color: "#555555"
+              size: "md",
+              color: "#444444"
             },
             {
               type: "text",
               text: `🔊 ${item.pronounce}`,
-              size: "sm",
-              color: "#888888"
+              size: "md",
+              color: "#666666"
             },
             {
               type: "text",
               text: `💬 ${item.example}`,
               size: "sm",
-              wrap: true
+              wrap: true,
+              color: "#333333"
             }
           ]))
         ]
