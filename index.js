@@ -1452,7 +1452,6 @@ ${text}
 // ======================================================
 // 🤖 每日英文產生器(餐飲 / 日常）
 // ======================================================
-
 async function generateDailyEnglish() {
   const prompt = `
 你是一個 API，只能回傳 JSON，不要加任何說明文字。
@@ -1467,23 +1466,8 @@ async function generateDailyEnglish() {
 【每一筆資料請提供以下欄位（全部都要）】
 - word：英文單字或片語
 - meaning：自然中文意思
-
-- pronounce_phonetic：英文「拼音式唸法（Respelling）」
-  說明：
-  - 用英文字母與連字號呈現
-  - 讓「不會 KK 音標的人」也能標準唸出來
-  - 重音可用大寫表示
-  例如：
-  garnish → GAR-nish
-  complimentary → kom-pli-MEN-tuh-ree
-  venue → VEN-yoo
-  feedback → FEED-back
-
-- kk：KK 音標（IPA，例如 /ˈɡɑːrnɪʃ/）
-  說明：
-  - 作為輔助資訊
-  - 保持標準、不簡化
-
+- pronounce_phonetic：英文拼音式唸法（Respelling，例如 GAR-nish）
+- kk：KK 音標（例如 /ˈɡɑːrnɪʃ/）
 - example：生活或服務現場會用的簡短英文例句
 
 【只允許回傳 JSON array，格式必須完全如下】
@@ -1497,8 +1481,20 @@ async function generateDailyEnglish() {
     "example": "The dish is garnished with herbs."
   }
 ]
-`;
-  
+`;  // 👈 👈 👈 這一行非常關鍵：反引號 + 分號
+
+  try {
+    const raw = await callOpenAIChat({
+      userPrompt: prompt,
+      temperature: 0.4
+    });
+
+    return JSON.parse(raw);
+  } catch (err) {
+    console.error("❌ generateDailyEnglish error:", err);
+    return null;
+  }
+}
 // ================================
 // 📘 今日英文 Flex（定版）
 // ================================
