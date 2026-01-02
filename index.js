@@ -1343,7 +1343,7 @@ await client.pushMessage(process.env.BOSS_USER_ID, flex);
 });
 
 // ======================================================
-// 🤖 OpenAI 共用呼叫器（集中管理｜安全版）
+// 🤖 OpenAI 共用呼叫器（集中管理｜安全版｜唯一入口）
 // ======================================================
 async function callOpenAIChat({
   systemPrompt = "",
@@ -1374,26 +1374,28 @@ async function callOpenAIChat({
       })
     });
   } catch (err) {
+    console.error("❌ OpenAI fetch failed:", err);
     throw new Error("OpenAI fetch failed");
   }
 
   if (!response || !response.ok) {
-    // ⚠️ 這裡不再用 await response.text()
+    console.error("❌ OpenAI API response not OK");
     throw new Error("OpenAI API response not OK");
   }
 
   const data = await response.json();
 
   if (!data.choices || !data.choices.length) {
+    console.error("❌ OpenAI response malformed:", data);
     throw new Error("OpenAI response malformed");
   }
 
   return data.choices[0].message.content;
 }
 
-// ================================
+// ======================================================
 // 🤖 AI 翻譯（餐飲 / 日常優化｜共用引擎版）
-// ================================
+// ======================================================
 async function translateText(text) {
   const prompt = `
 你是一位餐飲現場英文助理。
@@ -1429,29 +1431,7 @@ ${text}
   }
 }
 
-    // ❌ OpenAI 回 error（沒有 choices）
-    if (!response.ok) {
-      const errText = await response.text();
-      console.error("❌ OpenAI API Error:", errText);
-      return "⚠️ 翻譯服務暫時無法使用（API 錯誤）";
-    }
 
-    const data = await response.json();
-
-    // ❌ 沒有 choices 或空陣列
-    if (!data.choices || !data.choices.length) {
-      console.error("❌ OpenAI response malformed:", data);
-      return "⚠️ 翻譯服務回傳異常，請稍後再試";
-    }
-
-    return data.choices[0].message.content;
-
-  } catch (err) {
-    console.error("❌ translateText exception:", err);
-    return "⚠️ 翻譯服務發生例外錯誤";
-  }
-}
-    
 // ======================================================
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
