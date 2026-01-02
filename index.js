@@ -734,29 +734,36 @@ const TAIWAN_REWRITE_SYSTEM_PROMPT = `
 // 🍽 菜單專用 System Prompt（只給圖片翻譯用）
 // ======================================================
 const MENU_VISION_SYSTEM_PROMPT = `
-你是一位「台灣餐廳菜單整理助手」。
+你是一個圖片內容分析器。
 
-【任務】
-1. 辨識圖片中的菜單文字
-2. 用台灣餐廳實際會用的菜名重寫（不要直翻）
-3. 價格照原圖，有就留，沒有就空
+任務只有三件事：
+1. 辨識圖片中的所有可讀文字
+2. 判斷圖片是否為「菜單」
+3. 依照規則回傳 JSON（不可加任何說明）
 
-【輸出格式（只能是 JSON，不要任何說明）】
+【菜單判斷】
+- 有多個品項 + 價格 → menu_high
+- 菜單但模糊 → menu_low
+- 其他（信件、公告、截圖）→ text
+
+【輸出規則】
+- 必須回傳 JSON
+- items 不得為空
+- mode=text 時，items[0].translation 只能放「原始可辨識文字整理結果」
+- 不要代筆、不重寫、不美化
+
+【JSON 格式】
 {
-  "mode": "menu_high" | "menu_low",
+  "mode": "menu_high | menu_low | text",
   "items": [
     {
-      "translation": "一道菜一行，已整理好的中文"
+      "name": "",
+      "price": "",
+      "translation": ""
     }
   ]
 }
-
-【規則】
-- 不要前言、不加標題
-- 不要出現「整理如下」
-- items 不可為空
 `;
-
 // ======================================================
 // 🧹 翻譯輸出總清潔器（防止 JSON / mode / content 外洩）
 // ======================================================
@@ -885,61 +892,66 @@ function buildDailyEnglishFlex(items) {
 }
 
 // ======================================================
-// 🖼 圖片翻譯（台灣代筆統一版｜v1.6.8 FINAL｜FIXED）
+// 🖼 圖片翻譯（台灣代筆統一版｜v1.6.8 FINAL｜CLEAN）
 // ======================================================
 async function translateImage(messageId) {
   try {
+    // ======================================================
     // ① 讀取 LINE 圖片
+    // ======================================================
     const stream = await client.getMessageContent(messageId);
     const chunks = [];
     for await (const chunk of stream) chunks.push(chunk);
     const base64Image = Buffer.concat(chunks).toString("base64");
 
+    // ======================================================
     // ② 呼叫 OpenAI Vision
+    // ======================================================
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
-  method: "POST",
-  headers: {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
-  },
-  body: JSON.stringify({
-    model: "gpt-4o-mini",
-    temperature: 0.2,
-    messages: [
-      {
-        role: "system",
-        content: MENU_VISION_SYSTEM_PROMPT
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
       },
-      {
-        role: "user",
-        content: [
+      body: JSON.stringify({
+        model: "gpt-4o-mini",
+        temperature: 0.2,
+        messages: [
           {
-            type: "text",
-            text: `
-請判斷這張圖片是否為菜單：
-- 有清楚品項與價格 → menu_high
-- 有品項但價格模糊或沒有 → menu_low
-
-若不是菜單，請回：
-{
-  "mode": "text",
-  "items": [
-    { "translation": "請用台灣自然中文整理後輸出" }
-  ]
-}
-`
+            role: "system",
+            content: MENU_VISION_SYSTEM_PROMPT
           },
           {
-            type: "image_url",
-            image_url: {
-              url: `data:image/jpeg;base64,${base64Image}`
-            }
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `
+請判斷這張圖片是否為菜單：
+
+- 有清楚品項與價格 → mode="menu_high"
+- 有品項但價格模糊或沒有 → mode="menu_low"
+- 不是菜單（信件、文件、截圖） → mode="text"
+
+⚠️ 若為 mode="text"：
+- 請將圖片中「所有可辨識文字」
+- 直接整理成一段「可直接使用的台灣繁體中文」
+- 全部放在 items[0].translation
+- 不要輸出任何提示語或說明
+`
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:image/jpeg;base64,${base64Image}`
+                }
+              }
+            ]
           }
         ]
-      }
-    ]
-  })
-});
+      })
+    });
+
     if (!response.ok) {
       console.error("❌ OpenAI Vision API error:", response.status);
       return null;
@@ -948,125 +960,102 @@ async function translateImage(messageId) {
     const data = await response.json();
     const raw = data?.choices?.[0]?.message?.content;
 
-    // 🔍 Debug（穩定後可關）
     console.log("🧠 OpenAI Image Translation Raw:", raw);
 
-// ======================================================
-// ③ 安全解析 JSON（最終定版）
-// ======================================================
-let parsed = safeParseJSON(raw);
+    // ======================================================
+    // ③ 安全解析 JSON（A / B / C 全保留）
+    // ======================================================
+    let parsed = safeParseJSON(raw);
 
-/**
- * 🧠 情況 A
- * Vision 回傳的是：
- * { mode: "text", content: "翻譯後內容..." }
- */
-if (
-  parsed &&
-  parsed.mode === "text" &&
-  !parsed.items &&
-  typeof parsed.content === "string"
-) {
-  parsed = {
-    mode: "text",
-    items: [
-      { translation: parsed.content.trim() }
-    ]
-  };
-}
+    // 情況 A：{ mode: "text", content: "..." }
+    if (
+      parsed &&
+      parsed.mode === "text" &&
+      !parsed.items &&
+      typeof parsed.content === "string"
+    ) {
+      parsed = {
+        mode: "text",
+        items: [{ translation: parsed.content.trim() }]
+      };
+    }
 
-/**
- * 🧠 情況 B
- * AI 回了 JSON，但真正的翻譯文字在 JSON 前面
- * 例如：
- * 「親愛的xxx...」
- * ```json
- * { "mode": "text" }
- * ```
- */
-if (
-  parsed &&
-  parsed.mode === "text" &&
-  !parsed.items
-) {
-  const textOnly = raw
-    .replace(/```json[\s\S]*$/i, "")
-    .replace(/```/g, "")
-    .trim();
+    // 情況 B：文字在 JSON 前面
+    if (
+      parsed &&
+      parsed.mode === "text" &&
+      !parsed.items
+    ) {
+      const textOnly = raw
+        .replace(/```json[\s\S]*$/i, "")
+        .replace(/```/g, "")
+        .trim();
 
-  if (textOnly) {
-    parsed = {
-      mode: "text",
-      items: [
-        { translation: textOnly }
-      ]
-    };
-  }
-}
+      if (textOnly) {
+        parsed = {
+          mode: "text",
+          items: [{ translation: textOnly }]
+        };
+      }
+    }
 
-/**
- * 🛡️ 情況 C
- * Vision 完全沒回 JSON，只回一大段文字
- */
-if (!parsed) {
-  const cleaned = raw
-    ?.replace(/```[\s\S]*?```/g, "")
-    ?.trim();
+    // 情況 C：完全沒 JSON
+    if (!parsed) {
+      const cleaned = raw
+        ?.replace(/```[\s\S]*?```/g, "")
+        ?.trim();
 
-  if (cleaned) {
-    console.warn("⚠️ Vision 未回 JSON，啟用純文字 fallback");
+      if (cleaned) {
+        parsed = {
+          mode: "text",
+          items: [{ translation: cleaned }]
+        };
+      }
+    }
 
-    parsed = {
-      mode: "text",
-      items: [
-        { translation: cleaned }
-      ]
-    };
-  }
-}
+    // ======================================================
+    // ④ 最終防線（A3）
+    // ======================================================
+    if (
+      !parsed ||
+      !parsed.mode ||
+      !Array.isArray(parsed.items) ||
+      parsed.items.length === 0 ||
+      typeof parsed.items[0].translation !== "string"
+    ) {
+      return null;
+    }
 
-// ======================================================
-// ④ 最終防線（只允許乾淨文字通過）
-// ======================================================
-if (
-  !parsed ||
-  !parsed.mode ||
-  !Array.isArray(parsed.items) ||
-  parsed.items.length === 0 ||
-  typeof parsed.items[0].translation !== "string"
-) {
-  return null;
-}
-    // ✨ 非菜單文字，再走一次台灣代筆潤飾
-if (parsed.mode === "text") {
-  const rewritten = await rewriteToTaiwanese({
-    content: parsed.items[0].translation,
-    temperature: 0.2
-  });
+    // ✨ 非菜單 → 再走一次台灣代筆
+    if (parsed.mode === "text") {
+      const rewritten = await rewriteToTaiwanese({
+        content: parsed.items[0].translation,
+        temperature: 0.2
+      });
 
-  if (rewritten && rewritten.trim()) {
-    parsed.items[0].translation = rewritten.trim();
-  }
-}
+      if (rewritten && rewritten.trim()) {
+        parsed.items[0].translation = rewritten.trim();
+      }
+    }
 
-// 🧹 最後一次清潔（防止任何殘留 JSON 字樣）
-parsed.items[0].translation = parsed.items[0].translation
-  .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
-  .replace(/整理後的內容如下[:：]?/gi, "")
-  .replace(/^-{3,}$/gm, "")
-  .trim();
+    // 🧹 最終清潔
+    parsed.items[0].translation = parsed.items[0].translation
+      .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
+      .replace(/整理後的內容如下[:：]?/gi, "")
+      .replace(/^-{3,}$/gm, "")
+      .trim();
 
-if (!parsed.items[0].translation) {
-  return null;
-}
+    if (!parsed.items[0].translation) {
+      return null;
+    }
 
-return parsed;
+    return parsed;
+
   } catch (err) {
     console.error("❌ translateImage exception:", err);
     return null;
   }
 }
-    
 // ======================================================
 // LINE Webhook（Router 主流程｜v1.6.6 結構清洗版）
 // ======================================================
@@ -1089,6 +1078,24 @@ if (e.message?.type === "image") {
     if (!result || !Array.isArray(result.items) || result.items.length === 0) {
       replyText = "⚠️ 圖片中未偵測到可翻譯文字";
     } else {
+
+      // ======================================================
+      // 🍽 補丁 A2：菜單翻譯 → 再過一次台灣代筆（關鍵）
+      // ======================================================
+      if (result.mode === "menu_high" || result.mode === "menu_low") {
+        for (const item of result.items) {
+          if (item.translation && item.translation.trim()) {
+            item.translation = await rewriteToTaiwanese({
+              content: item.translation,
+              temperature: 0.2
+            });
+          }
+        }
+      }
+
+      // ======================================================
+      // 📤 組回傳文字
+      // ======================================================
       if (result.mode === "menu_high") {
         replyText += "📋 菜單翻譯\n━━━━━━━━━━━\n";
         result.items.forEach(i => {
@@ -1111,7 +1118,7 @@ if (e.message?.type === "image") {
       }
     }
 
-    // 🧹 統一出口清潔
+    // 🧹 統一出口清潔（防 JSON / Prompt 洩漏）
     replyText = sanitizeTranslationOutput(replyText);
 
     await client.replyMessage(e.replyToken, {
