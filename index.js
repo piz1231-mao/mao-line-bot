@@ -870,13 +870,28 @@ if (e.message?.type === "image") {
   }
 
   try {
+   // ================================
+// 🖼 圖片翻譯處理（最終定版）
+// ================================
+if (e.message?.type === "image") {
+
+  // 沒有啟動「翻譯圖片」→ 完全不處理
+  if (!imageTranslateSessions.has(userId)) {
+    continue;
+  }
+
+  try {
     const result = await translateImage(e.message.id);
 
-    // 防呆：結果異常
-    if (!result || !Array.isArray(result.items)) {
+    // ✅ 關鍵防呆（這就是你一直出問題的地方）
+    if (
+      !result ||
+      !Array.isArray(result.items) ||
+      result.items.length === 0
+    ) {
       await client.replyMessage(e.replyToken, {
         type: "text",
-        text: "⚠️ 圖片中未偵測到可翻譯內容"
+        text: "⚠️ 圖片中未偵測到可翻譯文字"
       });
       continue;
     }
@@ -911,7 +926,7 @@ if (e.message?.type === "image") {
         .join("\n");
     }
 
-    // ⚠️ LINE 不允許空字串（關鍵修正）
+    // ✅ LINE 不允許空字串（最後一道保險）
     replyText = replyText.trim();
     if (!replyText) {
       replyText = "⚠️ 圖片中未偵測到可翻譯文字";
@@ -933,9 +948,8 @@ if (e.message?.type === "image") {
     imageTranslateSessions.delete(userId);
   }
 
-  continue; // ❗圖片事件到此結束
+  continue;
 }
-
 // ================================
 // 🚫 非文字事件一律跳過
 // ================================
