@@ -1059,26 +1059,19 @@ if (e.message?.type === "image") {
   // ❌ 不回任何訊息
   continue;
 }
+      
 // ================================
-// 🛑 結束圖片翻譯（手動）
+// 🛑 結束圖片翻譯（安靜模式）
 // ================================
 if (text === "結束翻譯") {
-  if (imageTranslateSessions.has(userId)) {
-    imageTranslateSessions.delete(userId);
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "👌 圖片翻譯已結束"
-    });
-  } else {
-    // 不在翻譯狀態，不吵使用者
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "目前沒有進行中的圖片翻譯 🙂"
-    });
-  }
+  // 不管有沒有在翻譯狀態，一律清掉
+  imageTranslateSessions.delete(userId);
+
+  // ❌ 不回任何訊息
   continue;
 }
 
+      
 // ================================
 // 📘 文字翻譯（支援換行）
 // ================================
