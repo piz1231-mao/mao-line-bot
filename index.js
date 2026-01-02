@@ -881,6 +881,27 @@ if (text.startsWith("翻譯 ")) {
 
       // ===== Tier 1：即時指令 =====
 
+
+// ================================
+// 📘 今日英文（手動）
+// ================================
+if (text === "今日英文") {
+  const items = await generateDailyEnglish();
+
+  if (!items || !Array.isArray(items)) {
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "⚠️ 今日英文暫時無法產生"
+    });
+    continue;
+  }
+
+  const flex = buildDailyEnglishFlex(items);
+
+  await client.replyMessage(e.replyToken, flex);
+  continue;
+}
+
       // 股票 / 指數 / 期貨（市場自動判斷）
 if (
   text.startsWith("股 ") ||
@@ -963,7 +984,7 @@ await client.replyMessage(e.replyToken, flex);
         continue;
       }
 
-     // ======================================================
+// ======================================================
 // 📈 業績查詢（Router 定版）
 // ======================================================
 
@@ -1428,6 +1449,92 @@ ${text}
   }
 }
 
+// ======================================================
+// 🤖 每日英文產生器(餐飲 / 日常）
+// ======================================================
+
+async function generateDailyEnglish() {
+  const prompt = `
+請產生 10 個「餐飲 / 日常服務」常用英文單字或片語。
+
+每一個請提供：
+- word：英文
+- meaning：中文意思
+- pronounce：好唸的中文式發音（不要 KK 音標）
+- example：餐飲現場會用的簡短英文例句
+
+請只回傳 JSON array，不要有任何說明或標記。
+`;
+
+  try {
+    const raw = await callOpenAIChat({
+      userPrompt: prompt,
+      temperature: 0.4
+    });
+
+    // ✅ 防呆：只抓第一個 [ ... ]
+    const jsonMatch = raw.match(/$begin:math:display$\[\\s\\S\]\*$end:math:display$/);
+    if (!jsonMatch) throw new Error("JSON not found");
+
+    return JSON.parse(jsonMatch[0]);
+  } catch (err) {
+    console.error("❌ generateDailyEnglish error:", err);
+    return null;
+  }
+}
+
+// ================================
+// 📘 今日英文 Flex（定版）
+// ================================
+function buildDailyEnglishFlex(items) {
+  return {
+    type: "flex",
+    altText: "📘 今日餐飲英文",
+    contents: {
+      type: "bubble",
+      body: {
+        type: "box",
+        layout: "vertical",
+        spacing: "md",
+        contents: [
+          {
+            type: "text",
+            text: "📘 今日餐飲英文",
+            weight: "bold",
+            size: "xl"
+          },
+          ...items.flatMap(item => ([
+            {
+              type: "text",
+              text: item.word,
+              weight: "bold",
+              size: "lg",
+              margin: "md"
+            },
+            {
+              type: "text",
+              text: `🇹🇼 ${item.meaning}`,
+              size: "sm",
+              color: "#555555"
+            },
+            {
+              type: "text",
+              text: `🔊 ${item.pronounce}`,
+              size: "sm",
+              color: "#888888"
+            },
+            {
+              type: "text",
+              text: `💬 ${item.example}`,
+              size: "sm",
+              wrap: true
+            }
+          ]))
+        ]
+      }
+    }
+  };
+}
 
 // ======================================================
 const PORT = process.env.PORT || 3000;
