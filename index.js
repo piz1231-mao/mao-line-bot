@@ -735,11 +735,22 @@ async function callOpenAIChat({
 // ✅ 增加安全解析 JSON 的工具（v1.6.6 新增）
 function safeParseJSON(raw) {
   if (!raw) return null;
+
+  // 1️⃣ 移除 markdown code block
   const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+
+  // 2️⃣ 嘗試抓「最後一個 JSON 物件」
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}$/);
+
+  if (!jsonMatch) {
+    console.error("❌ JSON not found in response:", cleaned);
+    return null;
+  }
+
   try {
-    return JSON.parse(cleaned);
+    return JSON.parse(jsonMatch[0]);
   } catch (err) {
-    console.error("❌ JSON parse failed:", cleaned);
+    console.error("❌ JSON parse failed:", jsonMatch[0]);
     return null;
   }
 }
