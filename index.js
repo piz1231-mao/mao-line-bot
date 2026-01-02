@@ -1342,8 +1342,52 @@ await client.pushMessage(process.env.BOSS_USER_ID, flex);
   }
 });
 
+// ======================================================
+// 🤖 OpenAI 共用呼叫器（集中管理）
+// ======================================================
+async function callOpenAIChat({
+  systemPrompt = "",
+  userPrompt,
+  temperature = 0.3,
+  model = "gpt-4o-mini"
+}) {
+  const messages = [];
+
+  if (systemPrompt) {
+    messages.push({ role: "system", content: systemPrompt });
+  }
+
+  messages.push({ role: "user", content: userPrompt });
+
+  const response = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
+    },
+    body: JSON.stringify({
+      model,
+      messages,
+      temperature
+    })
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(err);
+  }
+
+  const data = await response.json();
+
+  if (!data.choices || !data.choices.length) {
+    throw new Error("OpenAI response malformed");
+  }
+
+  return data.choices[0].message.content;
+}
+
 // ================================
-// 🤖 AI 翻譯（餐飲 / 日常優化｜安全版）
+// 🤖 AI 翻譯（餐飲 / 日常優化｜共用引擎版）
 // ================================
 async function translateText(text) {
   const prompt = `
@@ -1369,18 +1413,16 @@ ${text}
 `;
 
   try {
-    const response = await fetch("https://api.openai.com/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
-      },
-      body: JSON.stringify({
-        model: "gpt-4o-mini", // 🔥 改成穩定可用
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.3
-      })
+    return await callOpenAIChat({
+      userPrompt: prompt,
+      temperature: 0.3,
+      model: "gpt-4o-mini"
     });
+  } catch (err) {
+    console.error("❌ translateText error:", err);
+    return "⚠️ 翻譯服務暫時無法使用";
+  }
+}
 
     // ❌ OpenAI 回 error（沒有 choices）
     if (!response.ok) {
