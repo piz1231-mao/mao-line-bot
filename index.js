@@ -124,6 +124,12 @@ function loadUsedEnglish() {
 
 function saveUsedEnglish(words) {
   try {
+    // ✅ 確保 data 資料夾存在（Render 需要）
+    const dir = "./data";
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir);
+    }
+
     fs.writeFileSync(
       DAILY_ENGLISH_PATH,
       JSON.stringify(words, null, 2),
@@ -1582,12 +1588,12 @@ function buildDailyEnglishFlex(items) {
               size: "md",
               color: "#333333"
             },
-            {
-              type: "text",
-              text: `🗣 ${item.pronounce_zh}`,
-              size: "md",
-              color: "#333333"
-            },
+         {
+  type: "text",
+  text: `🗣 台式唸法：${item.pronounce_phonetic}`,
+  size: "md",
+  color: "#333333"
+},
             {
               type: "text",
               text: `📖 KK：${item.kk}`,
