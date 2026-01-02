@@ -1,6 +1,6 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// Router 穩定定版 v1.6.4（圖片翻譯模組上線｜營運顯示鎖死）
+// Router 穩定定版 v1.6.6（圖片翻譯修復｜營運顯示鎖死）
 //
 // 【架構定位（已定版，不再變動）】
 // ------------------------------------------------------
@@ -109,13 +109,11 @@
 //
 // 【版本備註】
 // ------------------------------------------------------
-// v1.6.4
-// - 📘 今日英文：隨機主題＋記憶體防重複定版
-// - 🖼 圖片翻譯模組正式上線（需明確啟動）
-// - 翻譯文字 / 圖片翻譯 完全解耦
-// - 營運報表 C1 / C2 行為鎖死
+// v1.6.6
+// - 修正：圖片翻譯現在可以正確識別非菜單的一般文字 (Prompt 優化)
+// - 修正：Google Auth 增加雙重編碼防呆機制
+// - 優化：Webhook 結構重整，將圖片處理邏輯獨立，避免與文字指令衝突
 // ======================================================
-
 
 require("dotenv").config();
 const fetch = require("node-fetch");
@@ -150,8 +148,6 @@ const handleHSR = require("./handlers/hsr");
 const { buildStockListFlex } = require("./services/stock.list.flex");
 const { buildStockSingleFlex } = require("./services/stock.single.flex");
 
-
-
 // 股票
 const { getStockQuote } = require("./services/stock.service");
 const { buildStockText } = require("./services/stock.text");
@@ -173,14 +169,20 @@ const TEMPLATE_SHEET = "茶六博愛";
 const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山"];
 
 // ======================================================
-// Google Auth（Render / 本機通用｜定版）
+// Google Auth（Render / 本機通用｜定版｜v1.6.6 防呆修正）
 // ======================================================
 function getGoogleAuth() {
   // ✅ Render / 雲端（base64）
   if (process.env.GOOGLE_CREDENTIALS_B64) {
-    const json = Buffer
+    let json = Buffer
       .from(process.env.GOOGLE_CREDENTIALS_B64, "base64")
       .toString("utf8");
+
+    // 🛡️ 防呆機制：如果解碼出來還是 Base64 (以 "ewog" 開頭)，再解一次
+    if (json.trim().startsWith("ewog")) {
+      console.log("⚠️ 偵測到雙重 Base64 編碼，嘗試二次解碼...");
+      json = Buffer.from(json, "base64").toString("utf8");
+    }
 
     return new GoogleAuth({
       credentials: JSON.parse(json),
@@ -290,27 +292,14 @@ function parseSales(text) {
 // 茶六套餐解析器（v1.4 定版｜符號容錯）
 // ======================================================
 function parseTea6Combos(text) {
-  // ⚠️ 前處理：只統一冒號與 %
-  // 「。」不要在這裡動，交給 regex 處理
-  const t = text
-    .replace(/：/g, ":")
-    .replace(/％/g, "%");
+  const t = text.replace(/：/g, ":").replace(/％/g, "%");
 
   const items = [
-    "極品豚肉套餐",
-    "豐禾豚肉套餐",
-    "特級牛肉套餐",
-    "上等牛肉套餐",
-    "真饌和牛套餐",
-    "極炙牛肉套餐",
-    "日本和牛套餐",
-    "三人豚肉套餐",
-    "三人極上套餐",
-    "御。和牛賞套餐",
-    "聖誕歡饗套餐"
+    "極品豚肉套餐", "豐禾豚肉套餐", "特級牛肉套餐", "上等牛肉套餐",
+    "真饌和牛套餐", "極炙牛肉套餐", "日本和牛套餐",
+    "三人豚肉套餐", "三人極上套餐", "御。和牛賞套餐", "聖誕歡饗套餐"
   ];
 
-  // regex escape（必要）
   function escapeRegExp(str) {
     return str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   }
@@ -318,32 +307,22 @@ function parseTea6Combos(text) {
   const result = {};
 
   for (const name of items) {
-    /**
-     * 🔥 關鍵修正：
-     * - 先 escape
-     * - 再把「。」轉成 .?（0 或 1 個任意字元）
-     *   → 可吃：。 . 空白 · 甚至沒符號
-     */
     const searchPattern = escapeRegExp(name).replace(/。/g, ".?");
-
     const reg = new RegExp(
       `${searchPattern}\\s*[:：]?\\s*(\\d+)\\s*套[^\\d%]*([\\d.]+)%`
     );
-
     const m = t.match(reg);
-
     result[name] = m
       ? { qty: Number(m[1]), ratio: Number(m[2]) }
       : { qty: 0, ratio: 0 };
   }
-
   return result;
 }
+
 function parseSanshanCombos(text) {
   const t = text.replace(/：/g, ":").replace(/％/g, "%");
   const fields = SHOP_RATIO_FIELDS["三山博愛"];
   const result = {};
-
   for (const name of fields) {
     const reg = new RegExp(
       `${name}\\s*[:：]?\\s*(\\d+)\\s*(?:套)?[^\\d%]*([\\d.]+)%`
@@ -353,27 +332,18 @@ function parseSanshanCombos(text) {
       ? { qty: Number(m[1]), ratio: Number(m[2]) }
       : { qty: 0, ratio: 0 };
   }
-
   return result;
 }
+
 function parseTangzhanCombos(text) {
   const t = text.replace(/：/g, ":").replace(/％/g, "%");
   const fields = SHOP_RATIO_FIELDS["湯棧中山"];
   const result = {};
-
   for (const name of fields) {
-    /**
-     * 支援三種格式：
-     * 1️⃣ 名稱 qty ratio%
-     * 2️⃣ 名稱 ratio%
-     * 3️⃣ 名稱 qty
-     */
     const reg = new RegExp(
       `${name}\\s*[:：]?\\s*(?:(\\d+)[^\\d%]*)?(?:([\\d.]+)%)*`
     );
-
     const m = t.match(reg);
-
     result[name] = m
       ? {
           qty: m[1] ? Number(m[1]) : 0,
@@ -381,23 +351,20 @@ function parseTangzhanCombos(text) {
         }
       : { qty: 0, ratio: 0 };
   }
-
   return result;
 }
-
 
 // ======================================================
 // 通用：各店套餐 / 鍋型佔比寫入（R 欄）
 // ======================================================
 async function writeShopRatios({ shop, row, comboMap }) {
+  if (!auth) return;
   const c = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: c });
-
   const fields = SHOP_RATIO_FIELDS[shop];
   if (!fields) return;
 
   const values = [];
-
   for (const name of fields) {
     const item = comboMap[name] || { qty: 0, ratio: 0 };
     values.push(item.qty);
@@ -416,28 +383,21 @@ async function writeShopRatios({ shop, row, comboMap }) {
 // Sheet 操作（定版）
 // ======================================================
 async function ensureSheet(shop) {
-  if (shop === TEMPLATE_SHEET) return;
-
+  if (!auth || shop === TEMPLATE_SHEET) return;
   const c = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: c });
-  const meta = await sheets.spreadsheets.get({
-    spreadsheetId: SPREADSHEET_ID
-  });
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
 
   if (meta.data.sheets.some(s => s.properties.title === shop)) return;
 
   await sheets.spreadsheets.batchUpdate({
     spreadsheetId: SPREADSHEET_ID,
-    requestBody: {
-      requests: [{ addSheet: { properties: { title: shop } } }]
-    }
+    requestBody: { requests: [{ addSheet: { properties: { title: shop } } }] }
   });
-
   const header = await sheets.spreadsheets.values.get({
     spreadsheetId: SPREADSHEET_ID,
     range: `${TEMPLATE_SHEET}!A1:Q1`
   });
-
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
     range: `${shop}!A1:Q1`,
@@ -447,6 +407,7 @@ async function ensureSheet(shop) {
 }
 
 async function writeShop(shop, text, userId) {
+  if (!auth) return;
   const c = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: c });
   const p = parseSales(text);
@@ -468,11 +429,8 @@ async function writeShop(shop, text, userId) {
     }
   });
 
-  // ✅ 只信 append 回來的 row
   const row = Number(res.data.updates.updatedRange.match(/\d+/)[0]);
-
   const qtyLabel = shop === "湯棧中山" ? "總鍋數" : "套餐數";
-
   const summary =
 `【${shop}｜${p.date.slice(5)}】
 
@@ -493,7 +451,6 @@ async function writeShop(shop, text, userId) {
     requestBody: { values: [[summary]] }
   });
 
-  // ✅ 關鍵：把 row 回傳出去
   return row;
 }
 
@@ -506,14 +463,12 @@ const SHOP_RATIO_FIELDS = {
     "真饌和牛套餐","極炙牛肉套餐","日本和牛套餐",
     "三人豚肉套餐","三人極上套餐","御。和牛賞套餐","聖誕歡饗套餐"
   ],
-
   "三山博愛": [
     "豬&豬套餐","頂級豬豬套餐","美國牛肉套餐","美澳牛肉套餐",
     "日美澳牛肉套餐","美日和牛套餐","日本A5和牛套餐","頂級日本A5和牛套餐",
     "三人豬&豬套餐","三人頂級豬豬套餐","三人美國牛肉套餐","三人日美澳牛肉套餐",
     "聖誕特獻雙人套餐"
   ],
-
   "湯棧中山": [
     "麻油鍋","燒酒鍋","剝皮辣椒鍋","魷魚螺肉蒜鍋","昆布鍋","蔬食鍋","麻油、燒酒鍋",
     "冷藏嫩肩豬肉","冷藏豬腹肉","冷藏頂級嫩肩豬肉",
@@ -524,28 +479,16 @@ const SHOP_RATIO_FIELDS = {
 
 // ======================================================
 // ✅ 共用｜每日營運報表引擎（C1 + C2｜已定版）
-// - 08:00 推播、查業績 都只呼叫這裡
 // ======================================================
 async function buildDailyReportCarousel({ date, shops }) {
   const bubbles = [];
-
-  // 第一頁：C1 總覽
   bubbles.push(
-    buildDailySummaryFlex({
-      date,
-      shops
-    }).contents   // ⚠️ 只取 bubble
+    buildDailySummaryFlex({ date, shops }).contents
   );
-
-  // 後面頁：C2 各店銷售佔比
   for (const s of SHOP_LIST) {
-    const bubble = await readShopRatioBubble({
-      shop: s,
-      date
-    });
+    const bubble = await readShopRatioBubble({ shop: s, date });
     if (bubble) bubbles.push(bubble);
   }
-
   return {
     type: "flex",
     altText: `每日營運總覽 ${date}`,
@@ -556,15 +499,8 @@ async function buildDailyReportCarousel({ date, shops }) {
   };
 }
 
-
 // ======================================================
-// C1｜三店總覽 Flex（v1.6.3 定版）
-// - 💵 業績（現金流語意）
-// - 🍱 套餐數（茶六 / 三山）
-// - 🍲 總鍋數（湯棧中山）
-// - 🧾 客單價
-// - 👥 人事（外 / 內 / 總）【⚠️ 鎖死不再調整】
-// - 人事超標條件反紅（行為不變）
+// C1｜三店總覽 Flex
 // ======================================================
 function buildDailySummaryFlex({ date, shops }) {
   return {
@@ -583,13 +519,11 @@ function buildDailySummaryFlex({ date, shops }) {
             weight: "bold",
             size: "xl"
           },
-
           ...shops.flatMap((shop, idx) => {
             const overLimit =
               (shop.name === "茶六博愛" && shop.hrTotalRate > 22) ||
               (shop.name !== "茶六博愛" && shop.hrTotalRate > 25);
 
-            // 🔧 數量欄位 emoji / label 依店別切換
             const qtyEmoji = shop.name === "湯棧中山" ? "🍲" : "🍱";
             const qtyLabel = shop.name === "湯棧中山" ? "總鍋數" : "套餐數";
 
@@ -621,7 +555,6 @@ function buildDailySummaryFlex({ date, shops }) {
                     text: `🧾 客單價：${shop.unit}`,
                     size: "md"
                   },
-
                   {
                     type: "text",
                     text: `👥 外場：${shop.fp.toLocaleString()}（${shop.fpRate}%）`,
@@ -642,14 +575,9 @@ function buildDailySummaryFlex({ date, shops }) {
                 ]
               }
             ];
-
             if (idx < shops.length - 1) {
-              block.push({
-                type: "separator",
-                margin: "lg"
-              });
+              block.push({ type: "separator", margin: "lg" });
             }
-
             return block;
           })
         ]
@@ -657,13 +585,12 @@ function buildDailySummaryFlex({ date, shops }) {
     }
   };
 }
+
 // ======================================================
-// C2-1 單店銷售佔比 Bubble（v1.6.3｜冷藏肉獨立排名＋emoji 規格修正）
+// C2-1 單店銷售佔比 Bubble
 // ======================================================
 function buildShopRatioBubble({ shop, date, items }) {
   const contents = [];
-
-  // 🔧 表頭 emoji 依店別修正
   const headerEmoji = shop === "湯棧中山" ? "🍲" : "🍱";
 
   contents.push({
@@ -681,9 +608,6 @@ function buildShopRatioBubble({ shop, date, items }) {
     margin: "md"
   });
 
-  // ================================
-  // 🔢 建立「區塊內排名 index」
-  // ================================
   let hotRank = 0;
   let coldRank = 0;
   let coldSectionStarted = false;
@@ -693,9 +617,7 @@ function buildShopRatioBubble({ shop, date, items }) {
     const isColdRatio = item.name === "冷藏肉比例";
     const isColdItem  = item.name.includes("冷藏");
 
-    // === 判斷這一列要不要算排名 ===
     let rankIndex = null;
-
     if (!isOilMix && !isColdRatio) {
       if (!isColdItem) {
         rankIndex = hotRank;
@@ -711,22 +633,15 @@ function buildShopRatioBubble({ shop, date, items }) {
     const isTop3 = rankIndex === 2;
 
     const rankColor =
-      isTop1 ? "#D32F2F" :   // 🥇
-      isTop2 ? "#F57C00" :   // 🥈
-      isTop3 ? "#FBC02D" :   // 🥉
+      isTop1 ? "#D32F2F" :
+      isTop2 ? "#F57C00" :
+      isTop3 ? "#FBC02D" :
       "#333333";
 
-    const nameWeight =
-      (isOilMix || isColdRatio || isTop1 || isTop2 || isTop3)
-        ? "bold"
-        : "regular";
+    const nameWeight = (isOilMix || isColdRatio || isTop1 || isTop2 || isTop3) ? "bold" : "regular";
 
-    // 🔹 冷藏區分隔線（只出現一次）
     if (!coldSectionStarted && isColdItem) {
-      contents.push({
-        type: "separator",
-        margin: "xl"
-      });
+      contents.push({ type: "separator", margin: "xl" });
       coldSectionStarted = true;
     }
 
@@ -735,7 +650,6 @@ function buildShopRatioBubble({ shop, date, items }) {
       layout: "horizontal",
       margin: (isOilMix || isColdRatio) ? "xl" : "md",
       contents: [
-        // 品項名稱
         {
           type: "text",
           text: item.name,
@@ -745,7 +659,6 @@ function buildShopRatioBubble({ shop, date, items }) {
           weight: nameWeight,
           color: rankColor
         },
-        // 份數
         {
           type: "text",
           text: `${item.qty}`,
@@ -754,13 +667,9 @@ function buildShopRatioBubble({ shop, date, items }) {
           align: "end",
           weight: (isOilMix || isColdRatio) ? "bold" : "regular"
         },
-        // 佔比 %
         {
           type: "text",
-          text:
-            item.ratio !== undefined && item.ratio !== ""
-              ? `${item.ratio}%`
-              : "",
+          text: item.ratio !== undefined && item.ratio !== "" ? `${item.ratio}%` : "",
           flex: 3,
           size: "md",
           align: "end",
@@ -779,690 +688,6 @@ function buildShopRatioBubble({ shop, date, items }) {
     }
   };
 }
-// ======================================================
-// C2-2 三店銷售佔比 Carousel（定版）
-// ======================================================
-function buildShopRatioCarousel(bubbles) {
-  return {
-    type: "flex",
-    altText: "🍱 三店銷售佔比",
-    contents: {
-      type: "carousel",
-      contents: bubbles   // ⚠️ 每一個都必須是 bubble
-    }
-  };
-}
-
-// ======================================================
-// 單店｜查業績用「快速 Flex」（B 類）
-// ======================================================
-function buildShopQuickFlex(shop) {
-  const qtyEmoji = shop.name === "湯棧中山" ? "🍲" : "🍱";
-  const qtyLabel = shop.name === "湯棧中山" ? "總鍋數" : "套餐數";
-
-  return {
-    type: "bubble",
-    body: {
-      type: "box",
-      layout: "vertical",
-      spacing: "sm",
-      contents: [
-        {
-          type: "text",
-          text: `【${shop.name}｜${shop.date}】`,
-          weight: "bold",
-          size: "lg"
-        },
-        {
-          type: "text",
-          text: `💵 業績：${shop.revenue.toLocaleString()}`,
-          weight: "bold",
-          size: "md"
-        },
-        {
-          type: "text",
-          text: `${qtyEmoji} ${qtyLabel}：${shop.qty}`,
-          size: "md"
-        },
-        {
-          type: "text",
-          text: `🧾 客單價：${shop.unit}`,
-          size: "md"
-        },
-        {
-          type: "text",
-          text: `👥 外場：${shop.fp.toLocaleString()}（${shop.fpRate}%）`,
-          size: "md"
-        },
-        {
-          type: "text",
-          text: `👥 內場：${shop.bp.toLocaleString()}（${shop.bpRate}%）`,
-          size: "md"
-        },
-        {
-          type: "text",
-          text: `👥 總計：${shop.hrTotal.toLocaleString()}（${shop.hrTotalRate}%）`,
-          size: "md",
-          weight: "bold"
-        }
-      ]
-    }
-  };
-}
-
-// ======================================================
-// LINE Webhook（Router 主流程）
-// ======================================================
-app.post("/webhook", line.middleware(config), async (req, res) => {
-  try {
-   for (const e of req.body.events || []) {
-
-  const userId = e.source.userId;
-
-// ================================
-// 🖼 圖片翻譯處理（最終定版）
-// ================================
-if (e.message?.type === "image") {
-
-  // 沒有啟動「翻譯圖片」→ 完全不處理
-  if (!imageTranslateSessions.has(userId)) {
-    continue;
-  }
-
-  try {
-    const result = await translateImage(e.message.id);
-
-    if (
-      !result ||
-      !Array.isArray(result.items) ||
-      result.items.length === 0
-    ) {
-      await client.replyMessage(e.replyToken, {
-        type: "text",
-        text: "⚠️ 圖片中未偵測到可翻譯文字"
-      });
-      continue;
-    }
-
-    let replyText = "";
-
-    if (result.mode === "menu_high") {
-      replyText += "📋 菜單翻譯（對應版）\n━━━━━━━━━━━\n";
-      result.items.forEach(item => {
-        if (!item.translation) return;
-        replyText += `\n🍽 ${item.name || ""}\n`;
-        if (item.price) replyText += `💰 ${item.price}\n`;
-        replyText += `👉 ${item.translation}\n`;
-      });
-    } else if (result.mode === "menu_low") {
-      replyText += "📋 菜單翻譯（分段理解）\n━━━━━━━━━━━\n";
-      result.items.forEach(item => {
-        if (!item.translation) return;
-        replyText += `\n• ${item.translation}\n`;
-      });
-    } else {
-      replyText = result.items
-        .map(i => i.translation)
-        .filter(Boolean)
-        .join("\n");
-    }
-
-    replyText = replyText.trim();
-    if (!replyText) {
-      replyText = "⚠️ 圖片中未偵測到可翻譯文字";
-    }
-
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: replyText
-    });
-
-  } catch (err) {
-    console.error("❌ image translate error:", err);
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "⚠️ 圖片翻譯失敗"
-    });
-  } finally {
-    imageTranslateSessions.delete(userId);
-  }
-
-  continue;
-}
-// ================================
-// 🚫 非文字事件一律跳過
-// ================================
-if (e.message?.type !== "text") {
-  continue;
-}
-
-// ================================
-// ✏️ 從這裡開始，一定是文字
-// ================================
-const text = e.message.text.trim();
-
-// ================================
-// 🖼 啟動圖片翻譯
-// ================================
-if (text === "翻譯圖片") {
-  imageTranslateSessions.add(userId);
-
-  await client.replyMessage(e.replyToken, {
-    type: "text",
-    text: "📸 好，請傳一張要翻譯的圖片"
-  });
-
-  continue;
-}
-
-// ================================
-// 📘 文字翻譯
-// ================================
-if (text.startsWith("翻譯 ")) {
-  const content = text.slice(3).trim();
-
-  if (!content) {
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "請在「翻譯」後面輸入內容 🙂"
-    });
-    continue;
-  }
-
-  const result = await translateText(content);
-
-  await client.replyMessage(e.replyToken, {
-    type: "text",
-    text: result
-  });
-
-  continue;
-}
-  // ⬇️ 下面才是你原本的股票、天氣、業績…（完全不用動）
-     
-      // ===== Tier 1：即時指令 =====
-
-
-// ================================
-// 📘 今日英文（手動）
-// ================================
-if (text === "今日英文") {
-  const items = await generateDailyEnglish();
-
-  if (!items || !Array.isArray(items)) {
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "⚠️ 今日英文暫時無法產生"
-    });
-    continue;
-  }
-
-  const flex = buildDailyEnglishFlex(items);
-
-  await client.replyMessage(e.replyToken, flex);
-  continue;
-}
-
-      // 股票 / 指數 / 期貨（市場自動判斷）
-if (
-  text.startsWith("股 ") ||
-  text.startsWith("查股票 ") ||
-  ["台指期","台指","櫃買","OTC","大盤"].includes(text)
-) {
-  const id =
-    ["台指期","台指","櫃買","OTC","大盤"].includes(text)
-      ? text
-      : text.replace("查股票", "").replace("股", "").trim();
-
-  const data = await getStockQuote(id);
-const flex = buildStockSingleFlex(data);
-await client.replyMessage(e.replyToken, flex);
-  continue;
-}
-      
-      // ===== 📋 購物車 / 清單 =====
-if (
-  text === "查購物車" ||
-  text === "查清單" ||
-  text === "查股票 購物車"
-) {
-  try {
-    const c = await auth.getClient();
-    const sheets = google.sheets({ version: "v4", auth: c });
-
-    // 讀取「購物車」分頁 A 欄
-    const r = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: "購物車!A:A"
-    });
-
-    const symbols = (r.data.values || [])
-      .map(v => v[0])
-      .filter(Boolean);
-
-    if (!symbols.length) {
-      await client.replyMessage(e.replyToken, {
-        type: "text",
-        text: "📋 我的購物車\n━━━━━━━━━━━\n\n（清單是空的）"
-      });
-      continue;
-    }
-
-    // 逐一查價（走你已定版的 stock.service）
-    const results = [];
-    for (const s of symbols) {
-      const data = await getStockQuote(s);
-      if (data) results.push(data);
-    }
-
-    const flex = buildStockListFlex(results);
-
-await client.replyMessage(e.replyToken, flex);
-  } catch (err) {
-    console.error("❌ 查購物車失敗:", err);
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "⚠️ 查購物車失敗"
-    });
-  }
-  continue;
-}
-
-      // 天氣
-      const city = parseWeather(text);
-      if (city !== null) {
-        const r = await get36hrWeather(CITY_MAP[city] || "高雄市");
-        await client.replyMessage(e.replyToken, {
-          type:"text",
-          text: buildWeatherFriendText(r)
-        });
-        continue;
-      }
-
-      // 待辦
-      if (todoCmd.keywords?.some(k => text.startsWith(k))) {
-        await todoCmd.handler(client, e);
-        continue;
-      }
-
-// ======================================================
-// 📈 業績查詢（Router 定版）
-// ======================================================
-
-// ===== 模式 B：指定單店（一定要放前面）=====
-if (text.startsWith("查業績 ")) {
-  const shopName = text.replace("查業績", "").trim();
-
-  if (!SHOP_LIST.includes(shopName)) {
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: `❌ 找不到店名「${shopName}」`
-    });
-    continue;
-  }
-
-  const sheets = google.sheets({
-    version: "v4",
-    auth: await auth.getClient()
-  });
-
-  // === 讀單店最新一筆 ===
-  const r = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${shopName}!A:Q`
-  });
-
-  const rows = r.data.values || [];
-  if (rows.length < 2) {
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "目前沒有資料"
-    });
-    continue;
-  }
-
-  const last = rows.at(-1);
-  const shop = {
-    name: shopName,
-    date: last[5]?.slice(5),
-    revenue: Number(last[6] || 0),
-    qty: Number(last[8] || 0),
-    unit: last[9],
-    fp: Number(last[10] || 0),
-    fpRate: Number(last[11] || 0),
-    bp: Number(last[12] || 0),
-    bpRate: Number(last[13] || 0),
-    hrTotal: Number(last[14] || 0),
-    hrTotalRate: Number(last[15] || 0)
-  };
-
-  // === 產生 C1（只拿內容，不用標題）===
-  const c1Flex = buildDailySummaryFlex({
-    date: shop.date,
-    shops: [shop]
-  });
-  const c1Contents = c1Flex.contents.body.contents;
-
-  // === 單店標題（最上面）===
-  const singleShopHeader = {
-    type: "text",
-    text: `${shop.name}｜${shop.date}`,
-    weight: "bold",
-    size: "xl",
-    margin: "md"
-  };
-
-  // === C1 主體（行距調成跟 C2 一樣）===
-  const c1BodyItems = c1Contents[1].contents
-    .slice(1) // 拿掉 C1 內部的店名
-    .map(item => ({
-      ...item,
-      margin: "md"
-    }));
-
-  // === C2（單店銷售佔比）===
-  const ratioBubble = await readShopRatioBubble({
-    shop: shopName,
-    date: shop.date
-  });
-
-  // 只拿品項（砍掉「銷售佔比標題＋日期」）
-  const c2Contents = ratioBubble
-    ? ratioBubble.body.contents.slice(2)
-    : [];
-
-  // === 合併成單一 Bubble ===
-  const mergedContents = [
-    singleShopHeader,
-    { type: "separator", margin: "xl" },
-    ...c1BodyItems
-  ];
-
-  if (c2Contents.length) {
-    mergedContents.push(
-      { type: "separator", margin: "xl" },
-      ...c2Contents
-    );
-  }
-
-  await client.replyMessage(e.replyToken, {
-    type: "flex",
-    altText: `📊 ${shopName} 營運報表`,
-    contents: {
-      type: "bubble",
-      size: "mega",
-      body: {
-        type: "box",
-        layout: "vertical",
-        contents: mergedContents
-      }
-    }
-  });
-
-  continue;
-}
-      
-// ===== 模式 A：不指定店名（共用引擎）=====
-if (text === "查業績") {
-  const sheets = google.sheets({
-    version: "v4",
-    auth: await auth.getClient()
-  });
-
-  const shops = [];
-
-  for (const s of SHOP_LIST) {
-    const r = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `${s}!A:Q`
-    });
-
-    const rows = r.data.values || [];
-    if (rows.length < 2) continue;
-
-    const last = rows.at(-1);
-
-    shops.push({
-      name: s,
-      date: last[5]?.slice(5),
-      revenue: Number(last[6] || 0),
-      qty: Number(last[8] || 0),
-      unit: last[9],
-      fp: Number(last[10] || 0),
-      fpRate: Number(last[11] || 0),
-      bp: Number(last[12] || 0),
-      bpRate: Number(last[13] || 0),
-      hrTotal: Number(last[14] || 0),
-      hrTotalRate: Number(last[15] || 0)
-    });
-  }
-
-  if (!shops.length) {
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "目前沒有資料"
-    });
-    continue;
-  }
-
-  const flex = await buildDailyReportCarousel({
-    date: shops[0].date,
-    shops
-  });
-
-  await client.replyMessage(e.replyToken, flex);
-  continue;
-}
-  
-      
-// ===== 業績回報（只寫不回｜定版）=====
-if (text.startsWith("大哥您好")) {
-  const shop =
-    text.includes("湯棧") ? "湯棧中山"
-    : text.includes("三山") ? "三山博愛"
-    : "茶六博愛";
-
-  try {
-    // 1️⃣ 確保店別分頁存在
-    await ensureSheet(shop);
-
-    // 2️⃣ 寫入主業績資料（唯一可信 row）
-    const row = await writeShop(shop, text, e.source.userId);
-
-    // 3️⃣ 寫入銷售佔比（如果該店有定義）
-    if (SHOP_RATIO_FIELDS[shop]) {
-      let comboMap = {};
-
-      if (shop === "茶六博愛") {
-        comboMap = parseTea6Combos(text);
-      } else if (shop === "三山博愛") {
-        comboMap = parseSanshanCombos(text);
-      } else if (shop === "湯棧中山") {
-        comboMap = parseTangzhanCombos(text);
-      }
-
-      await writeShopRatios({
-        shop,
-        row,
-        comboMap
-      });
-
-      console.log("🍱 銷售佔比已寫入", shop, row);
-    }
-  } catch (err) {
-    console.error("❌ 業績回報失敗:", err);
-    await client.replyMessage(e.replyToken, {
-      type: "text",
-      text: "⚠️ 業績回報失敗"
-    });
-  }
-
-  continue;
-}
-
-      // ===== Tier 2 / 3：高鐵 =====
-      const hsrResult = await handleHSR(e);
-      if (typeof hsrResult === "string") {
-        await client.replyMessage(e.replyToken, {
-          type:"text",
-          text: hsrResult
-        });
-        continue;
-      }
-    }
-    res.send("OK");
-  } catch (err) {
-    console.error("❌ LINE Webhook Error:", err);
-    res.status(500).end();
-  }
-});
-
-// ======================================================
-// ✅ 定版修正：讀取各店銷售佔比（排序正確＋彙總列不參與）
-// ======================================================
-async function readShopRatioBubble({ shop, date }) {
-  const fields = SHOP_RATIO_FIELDS[shop];
-  if (!fields) return null;
-
-  const sheets = google.sheets({
-    version: "v4",
-    auth: await auth.getClient()
-  });
-
-  const r = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: `${shop}!R:AZ`
-  });
-
-  const last = r.data.values?.at(-1);
-  if (!last) return null;
-
-  const items = [];
-
-  // 依欄位定錨讀資料
-  for (let i = 0; i < fields.length; i++) {
-    const col = i * 2;
-    const name = fields[i];
-    const qty = Number(last[col] || 0);
-    const ratio = Number(last[col + 1] || 0);
-
-    // qty > 0 才顯示，但「彙總列」例外一定要留
-    if (qty > 0 || name === "麻油、燒酒鍋" || name === "冷藏肉比例") {
-      items.push({ name, qty, ratio });
-    }
-  }
-
-  // ==================================================
-  // 🫕 湯棧中山：上下段排序＋彙總列獨立
-  // ==================================================
-  if (shop === "湯棧中山") {
-    // 👉 抓彙總列（不參與排序）
-    const oilMixTotal = items.find(i => i.name === "麻油、燒酒鍋");
-    const coldTotal   = items.find(i => i.name === "冷藏肉比例");
-
-    // ---- 上半段：鍋物＋聖誕（❌ 不含麻油、燒酒鍋）----
-    const hotpot = items
-      .filter(i =>
-        !i.name.includes("冷藏") &&
-        i.name !== "麻油、燒酒鍋"
-      )
-      .sort((a, b) => b.qty - a.qty);
-
-    // ---- 下半段：冷藏肉（❌ 不含冷藏肉比例）----
-    const cold = items
-      .filter(i =>
-        i.name.includes("冷藏") &&
-        i.name !== "冷藏肉比例"
-      )
-      .sort((a, b) => b.qty - a.qty);
-
-    // 👉 最終顯示順序（這裡就是 UI 規格）
-    const finalItems = [
-      ...hotpot,
-      ...(oilMixTotal ? [oilMixTotal] : []),
-      ...cold,
-      ...(coldTotal ? [coldTotal] : [])
-    ];
-
-    return buildShopRatioBubble({
-      shop,
-      date,
-      items: finalItems
-    });
-  }
-
-  // ==================================================
-  // 🍱 茶六 / 三山：全部商品一起依銷量排序
-  // ==================================================
-  return buildShopRatioBubble({
-    shop,
-    date,
-    items: items.sort((a, b) => b.qty - a.qty)
-  });
-}
-
-// ======================================================
-// 每日摘要 API（08:00 推播用｜流檢同款｜只推一則）
-// ======================================================
-app.post("/api/daily-summary", async (req, res) => {
-  try {
-    const sheets = google.sheets({
-      version: "v4",
-      auth: await auth.getClient()
-    });
-
-    // ==================================================
-    // C1｜讀取三店最新業績
-    // ==================================================
-    const shops = [];
-
-    for (const s of SHOP_LIST) {
-      const r = await sheets.spreadsheets.values.get({
-        spreadsheetId: SPREADSHEET_ID,
-        range: `${s}!A:Q`
-      });
-
-      const rows = r.data.values || [];
-      if (rows.length < 2) continue;
-
-      const last = rows.at(-1);
-
-      shops.push({
-        name: s,
-        date: last[5]?.slice(5),
-        revenue: Number(last[6] || 0),
-        qty: Number(last[8] || 0),
-        qtyLabel: s === "湯棧中山" ? "總鍋數" : "套餐數",
-        unit: last[9],
-        fp: Number(last[10] || 0),
-        fpRate: Number(last[11] || 0),
-        bp: Number(last[12] || 0),
-        bpRate: Number(last[13] || 0),
-        hrTotal: Number(last[14] || 0),
-        hrTotalRate: Number(last[15] || 0)
-      });
-    }
-
-    if (!shops.length) {
-      return res.send("no data");
-    }
-
-// ==================================================
-// ✅ 改用共用營運報表引擎（畫面不變）
-// ==================================================
-const flex = await buildDailyReportCarousel({
-  date: shops[0].date,
-  shops
-});
-
-await client.pushMessage(process.env.BOSS_USER_ID, flex);
-
-    res.send("OK");
-  } catch (err) {
-    console.error("❌ daily-summary failed:", err);
-    res.status(500).send("fail");
-  }
-});
 
 // ======================================================
 // 🤖 OpenAI 共用呼叫器（集中管理｜安全版｜唯一入口）
@@ -1474,11 +699,9 @@ async function callOpenAIChat({
   model = "gpt-4o-mini"
 }) {
   const messages = [];
-
   if (systemPrompt) {
     messages.push({ role: "system", content: systemPrompt });
   }
-
   messages.push({ role: "user", content: userPrompt });
 
   let response;
@@ -1489,11 +712,7 @@ async function callOpenAIChat({
         "Content-Type": "application/json",
         "Authorization": `Bearer ${process.env.OPENAI_API_KEY}`
       },
-      body: JSON.stringify({
-        model,
-        messages,
-        temperature
-      })
+      body: JSON.stringify({ model, messages, temperature })
     });
   } catch (err) {
     console.error("❌ OpenAI fetch failed:", err);
@@ -1506,23 +725,17 @@ async function callOpenAIChat({
   }
 
   const data = await response.json();
-
   if (!data.choices || !data.choices.length) {
     console.error("❌ OpenAI response malformed:", data);
     throw new Error("OpenAI response malformed");
   }
-
   return data.choices[0].message.content;
 }
 
+// ✅ 增加安全解析 JSON 的工具（v1.6.6 新增）
 function safeParseJSON(raw) {
   if (!raw) return null;
-
-  const cleaned = raw
-    .replace(/```json/gi, "")
-    .replace(/```/g, "")
-    .trim();
-
+  const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
   try {
     return JSON.parse(cleaned);
   } catch (err) {
@@ -1537,29 +750,15 @@ function safeParseJSON(raw) {
 async function translateText(text) {
   const prompt = `
 你是一位餐飲現場英文助理。
-
 請判斷使用者輸入的是「中文還是英文」，並依規則翻譯：
-
 【規則】
-- 中文 → 翻成自然、服務業會用的英文
-  - 只輸出「翻譯後的英文」
-  - 不要附加任何說明、提醒或原文
-
-- 英文 → 翻成自然中文
-  - 只輸出「中文翻譯」
-  - 如果有必要，可在最後補一句簡短的使用說明
-  - 若沒有必要，請不要補充
-
+- 中文 → 翻成自然、服務業會用的英文 (只輸出翻譯)
+- 英文 → 翻成自然中文 (只輸出翻譯)
 【內容】
 ${text}
 `;
-
   try {
-    return await callOpenAIChat({
-      userPrompt: prompt,
-      temperature: 0.3,
-      model: "gpt-4o-mini"
-    });
+    return await callOpenAIChat({ userPrompt: prompt, temperature: 0.3 });
   } catch (err) {
     console.error("❌ translateText error:", err);
     return "⚠️ 翻譯暫時無法使用";
@@ -1570,28 +769,19 @@ ${text}
 // 🤖 每日英文產生器（隨機主題＋防重複定版）
 // ======================================================
 async function generateDailyEnglish() {
-
   const themes = [
     "生活日常", "餐廳服務", "點餐與用餐", "朋友對話", "工作場合",
     "臨時狀況", "情緒與反應", "抱怨與處理問題", "禮貌與應對", "外出與交通"
   ];
-
   const pickedTheme = themes[Math.floor(Math.random() * themes.length)];
-
-  const bannedWords =
-    recentEnglishPool.size
-      ? Array.from(recentEnglishPool).join(", ")
-      : "（目前沒有）";
+  const bannedWords = recentEnglishPool.size ? Array.from(recentEnglishPool).join(", ") : "（目前沒有）";
 
   const prompt = `
 這次的英文主題是：「${pickedTheme}」。
-
 請產生 10 個英文單字或片語。
-
 【防重複規則】
 - 請避免使用下列近期已出現過的單字或片語：
 ${bannedWords}
-
 【每一筆請提供以下欄位】
 - word
 - meaning（自然中文）
@@ -1599,46 +789,31 @@ ${bannedWords}
 - pronounce_zh（台式中文唸法，例如 嘎・你許）
 - kk（KK 音標）
 - example（生活或服務情境例句）
-
 【只允許回傳 JSON array，不要任何說明】
 `;
-
   try {
-    const raw = await callOpenAIChat({
-      userPrompt: prompt,
-      temperature: 0.7
-    });
-
+    const raw = await callOpenAIChat({ userPrompt: prompt, temperature: 0.7 });
     const items = safeParseJSON(raw);
+    
+    if (!items || !Array.isArray(items)) throw new Error("JSON format invalid");
 
-    if (!items || !Array.isArray(items)) {
-      throw new Error("JSON format invalid");
-    }
-
-    // ===== 寫入防重複池 =====
     items.forEach(item => {
-      if (item.word) {
-        recentEnglishPool.add(item.word.toLowerCase());
-      }
+      if (item.word) recentEnglishPool.add(item.word.toLowerCase());
     });
 
-    // ===== 控制池大小 =====
     if (recentEnglishPool.size > MAX_RECENT) {
       const overflow = recentEnglishPool.size - MAX_RECENT;
-      Array.from(recentEnglishPool)
-        .slice(0, overflow)
-        .forEach(w => recentEnglishPool.delete(w));
+      Array.from(recentEnglishPool).slice(0, overflow).forEach(w => recentEnglishPool.delete(w));
     }
-
     return items;
-
   } catch (err) {
     console.error("❌ generateDailyEnglish error:", err);
     return null;
   }
 }
+
 // ================================
-// 📘 今日英文 Flex（定版｜字體放大＋台味唸法）
+// 📘 今日英文 Flex
 // ================================
 function buildDailyEnglishFlex(items) {
   return {
@@ -1651,70 +826,32 @@ function buildDailyEnglishFlex(items) {
         layout: "vertical",
         spacing: "md",
         contents: [
-          {
-            type: "text",
-            text: "📘 今日英文",
-            weight: "bold",
-            size: "xl"
-          },
+          { type: "text", text: "📘 今日英文", weight: "bold", size: "xl" },
           ...items.flatMap(item => ([
-            {
-              type: "text",
-              text: item.word,
-              weight: "bold",
-              size: "xl",
-              margin: "md"
-            },
-            {
-              type: "text",
-              text: `🇹🇼 ${item.meaning}`,
-              size: "md",
-              color: "#555555"
-            },
-            {
-              type: "text",
-              text: `🔤 ${item.pronounce_phonetic}`,
-              size: "md",
-              color: "#333333"
-            },
-            {
-              type: "text",
-              text: `🗣 ${item.pronounce_zh}`,
-              size: "md",
-              color: "#333333"
-            },
-            {
-              type: "text",
-              text: `📖 KK：${item.kk}`,
-              size: "sm",
-              color: "#777777"
-            },
-            {
-              type: "text",
-              text: `💬 ${item.example}`,
-              size: "sm",
-              wrap: true
-            }
+            { type: "text", text: item.word, weight: "bold", size: "xl", margin: "md" },
+            { type: "text", text: `🇹🇼 ${item.meaning}`, size: "md", color: "#555555" },
+            { type: "text", text: `🔤 ${item.pronounce_phonetic}`, size: "md", color: "#333333" },
+            { type: "text", text: `🗣 ${item.pronounce_zh}`, size: "md", color: "#333333" },
+            { type: "text", text: `📖 KK：${item.kk}`, size: "sm", color: "#777777" },
+            { type: "text", text: `💬 ${item.example}`, size: "sm", wrap: true }
           ]))
         ]
       }
     }
   };
 }
+
 // ======================================================
-// 🖼 圖片翻譯（菜單智慧模式｜B 定版）
+// 🖼 圖片翻譯（菜單智慧模式｜v1.6.6 修正版）
 // ======================================================
 async function translateImage(messageId) {
   try {
-    // 1️⃣ 向 LINE 下載圖片
     const stream = await client.getMessageContent(messageId);
     const chunks = [];
     for await (const chunk of stream) chunks.push(chunk);
+    const base64Image = Buffer.concat(chunks).toString("base64");
 
-    const imageBuffer = Buffer.concat(chunks);
-    const base64Image = imageBuffer.toString("base64");
-
-    // 2️⃣ 呼叫 OpenAI Vision（菜單理解版）
+    // 🔥 修正 Prompt：明確告訴 AI，如果是 text mode，要把文字塞進 items
     const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -1728,30 +865,30 @@ async function translateImage(messageId) {
           {
             role: "system",
             content: `
-你是一位餐飲圖片翻譯與菜單理解助手。
+你是一位圖片文字翻譯助手。
 
 【任務】
-1. 先判斷圖片是否為「菜單」
-2. 若是菜單，判斷是否能清楚對應「品項 ↔ 價格」
+1. 分析圖片內容。
+2. 判斷是否為「菜單」(有品項與價格)。
+3. 翻譯內容為「繁體中文」。
 
-【輸出模式】
-- 高信心可對應 → mode = "menu_high"
-- 無法清楚對應 → mode = "menu_low"
-- 非菜單 → mode = "text"
+【輸出模式判斷】
+- 若是菜單且清晰：mode = "menu_high"
+- 若是菜單但模糊/無價格：mode = "menu_low"
+- 若不是菜單（一般路牌、文章、對話、截圖）：mode = "text"
 
 【重要規則】
-- 不可臆測不存在的品項或價格
-- 僅依圖片可辨識內容翻譯
-- 翻譯為「自然的繁體中文」
+- 若 mode="text"，請將圖片內所有可辨識文字的翻譯結果，全部放入 items[0].translation 中。
+- 不要回傳空陣列。
 
-【輸出格式（嚴格 JSON，不要任何說明）】
+【輸出格式 (JSON Only)】
 {
-  "mode": "menu_high | menu_low | text",
+  "mode": "...",
   "items": [
     {
-      "name": "原文品項（若無可留空）",
-      "price": "價格（若無可留空）",
-      "translation": "中文翻譯"
+      "name": "原文(非菜單留空)",
+      "price": "價格(非菜單留空)",
+      "translation": "中文翻譯(❗注意：若 mode="text"，請將圖片中的所有文字翻譯結果放在這裡)"
     }
   ]
 }
@@ -1760,16 +897,8 @@ async function translateImage(messageId) {
           {
             role: "user",
             content: [
-              {
-                type: "text",
-                text: "請依規則分析並翻譯下列圖片內容"
-              },
-              {
-                type: "image_url",
-                image_url: {
-                  url: `data:image/jpeg;base64,${base64Image}`
-                }
-              }
+              { type: "text", text: "請分析並翻譯這張圖片。" },
+              { type: "image_url", image_url: { url: `data:image/jpeg;base64,${base64Image}` } }
             ]
           }
         ]
@@ -1783,8 +912,11 @@ async function translateImage(messageId) {
 
     const data = await response.json();
     const raw = data?.choices?.[0]?.message?.content;
-    const parsed = safeParseJSON(raw);
+    
+    // Debug 用：印出 AI 回傳內容
+    console.log("🚀 OpenAI Raw Response:", raw);
 
+    const parsed = safeParseJSON(raw);
     if (!parsed || !parsed.mode) return null;
 
     return parsed;
@@ -1794,6 +926,322 @@ async function translateImage(messageId) {
     return null;
   }
 }
+
+// ======================================================
+// LINE Webhook（Router 主流程｜v1.6.6 結構清洗版）
+// ======================================================
+app.post("/webhook", line.middleware(config), async (req, res) => {
+  try {
+    for (const e of req.body.events || []) {
+      const userId = e.source.userId;
+
+      // ================================
+      // 🖼 圖片處理 (唯一入口)
+      // ================================
+      if (e.message?.type === "image") {
+        if (!imageTranslateSessions.has(userId)) continue;
+
+        try {
+          const result = await translateImage(e.message.id);
+
+          // ⚠️ 只要有結果就回傳，不論是不是菜單
+          if (!result || !Array.isArray(result.items) || result.items.length === 0) {
+            await client.replyMessage(e.replyToken, {
+              type: "text",
+              text: "⚠️ 圖片中未偵測到可翻譯文字"
+            });
+          } else {
+            let replyText = "";
+
+            if (result.mode === "menu_high") {
+              replyText += "📋 菜單翻譯（對應版）\n━━━━━━━━━━━\n";
+              result.items.forEach(i => {
+                if (i.translation) replyText += `\n🍽 ${i.name||""}\n💰 ${i.price||""}\n👉 ${i.translation}\n`;
+              });
+            } else if (result.mode === "menu_low") {
+              replyText += "📋 菜單翻譯（分段理解）\n━━━━━━━━━━━\n";
+              result.items.forEach(i => {
+                if (i.translation) replyText += `\n• ${i.translation}\n`;
+              });
+            } else {
+              // mode = text (一般文字)
+              replyText = result.items
+                .map(i => i.translation)
+                .filter(Boolean)
+                .join("\n");
+            }
+
+            await client.replyMessage(e.replyToken, {
+              type: "text",
+              text: replyText.trim() || "⚠️ 翻譯結果為空"
+            });
+          }
+        } catch (err) {
+          console.error("❌ image translate error:", err);
+          await client.replyMessage(e.replyToken, { type: "text", text: "⚠️ 圖片翻譯失敗" });
+        } finally {
+          imageTranslateSessions.delete(userId);
+        }
+        continue;
+      }
+
+      // ================================
+      // 🚫 非文字事件一律跳過
+      // ================================
+      if (e.message?.type !== "text") continue;
+      const text = e.message.text.trim();
+
+      // ================================
+      // 🖼 啟動圖片翻譯
+      // ================================
+      if (text === "翻譯圖片") {
+        imageTranslateSessions.add(userId);
+        await client.replyMessage(e.replyToken, { type: "text", text: "📸 好，請傳一張要翻譯的圖片" });
+        continue;
+      }
+
+      // ================================
+      // 📘 文字翻譯
+      // ================================
+      if (text.startsWith("翻譯 ")) {
+        const content = text.slice(3).trim();
+        if (!content) {
+          await client.replyMessage(e.replyToken, { type: "text", text: "請在「翻譯」後面輸入內容 🙂" });
+        } else {
+          const result = await translateText(content);
+          await client.replyMessage(e.replyToken, { type: "text", text: result });
+        }
+        continue;
+      }
+
+      // ================================
+      // 📘 今日英文
+      // ================================
+      if (text === "今日英文") {
+        const items = await generateDailyEnglish();
+        if (!items || !Array.isArray(items)) {
+          await client.replyMessage(e.replyToken, { type: "text", text: "⚠️ 今日英文暫時無法產生" });
+        } else {
+          await client.replyMessage(e.replyToken, buildDailyEnglishFlex(items));
+        }
+        continue;
+      }
+
+      // ===== Tier 1：即時指令 =====
+      
+      // 📊 股票查詢
+      if (text.startsWith("股 ") || text.startsWith("查股票 ") || ["台指期","台指","櫃買","OTC","大盤"].includes(text)) {
+        const id = ["台指期","台指","櫃買","OTC","大盤"].includes(text) 
+          ? text 
+          : text.replace("查股票", "").replace("股", "").trim();
+        const data = await getStockQuote(id);
+        const flex = buildStockSingleFlex(data);
+        await client.replyMessage(e.replyToken, flex);
+        continue;
+      }
+      
+      // 🛒 購物車
+      if (["查購物車", "查清單", "查股票 購物車"].includes(text)) {
+        try {
+          const c = await auth.getClient();
+          const sheets = google.sheets({ version: "v4", auth: c });
+          const r = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: "購物車!A:A" });
+          const symbols = (r.data.values || []).map(v => v[0]).filter(Boolean);
+
+          if (!symbols.length) {
+            await client.replyMessage(e.replyToken, { type: "text", text: "📋 我的購物車\n━━━━━━━━━━━\n\n（清單是空的）" });
+          } else {
+            const results = [];
+            for (const s of symbols) {
+              const data = await getStockQuote(s);
+              if (data) results.push(data);
+            }
+            await client.replyMessage(e.replyToken, buildStockListFlex(results));
+          }
+        } catch (err) {
+          console.error("❌ 查購物車失敗:", err);
+          await client.replyMessage(e.replyToken, { type: "text", text: "⚠️ 查購物車失敗" });
+        }
+        continue;
+      }
+
+      // 🌤 天氣
+      const city = parseWeather(text);
+      if (city !== null) {
+        const r = await get36hrWeather(CITY_MAP[city] || "高雄市");
+        await client.replyMessage(e.replyToken, { type: "text", text: buildWeatherFriendText(r) });
+        continue;
+      }
+
+      // 📋 待辦
+      if (todoCmd.keywords?.some(k => text.startsWith(k))) {
+        await todoCmd.handler(client, e);
+        continue;
+      }
+
+      // ======================================================
+      // 📈 業績查詢
+      // ======================================================
+      if (text.startsWith("查業績")) {
+        const shopName = text.replace("查業績", "").trim();
+        
+        // 若有指定店名，檢查是否存在
+        if (shopName && !SHOP_LIST.includes(shopName)) {
+          await client.replyMessage(e.replyToken, { type: "text", text: `❌ 找不到店名「${shopName}」` });
+          continue;
+        }
+
+        const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
+        const targetShops = shopName ? [shopName] : SHOP_LIST;
+        const shops = [];
+
+        for (const s of targetShops) {
+          const r = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${s}!A:Q` });
+          const rows = r.data.values || [];
+          if (rows.length < 2) continue;
+          const last = rows.at(-1);
+          shops.push({
+            name: s,
+            date: last[5]?.slice(5),
+            revenue: Number(last[6] || 0),
+            qty: Number(last[8] || 0),
+            unit: last[9],
+            fp: Number(last[10] || 0),
+            fpRate: Number(last[11] || 0),
+            bp: Number(last[12] || 0),
+            bpRate: Number(last[13] || 0),
+            hrTotal: Number(last[14] || 0),
+            hrTotalRate: Number(last[15] || 0)
+          });
+        }
+
+        if (!shops.length) {
+          await client.replyMessage(e.replyToken, { type: "text", text: "目前沒有資料" });
+          continue;
+        }
+
+        if (shopName) {
+          // 單店模式 Bubble
+          const shop = shops[0];
+          const c1Flex = buildDailySummaryFlex({ date: shop.date, shops: [shop] });
+          const c1Contents = c1Flex.contents.body.contents;
+          const singleShopHeader = { type: "text", text: `${shop.name}｜${shop.date}`, weight: "bold", size: "xl", margin: "md" };
+          const c1BodyItems = c1Contents[1].contents[0].contents.slice(1).map(item => ({ ...item, margin: "md" }));
+          
+          const ratioBubble = await readShopRatioBubble({ shop: shopName, date: shop.date });
+          const c2Contents = ratioBubble ? ratioBubble.body.contents.slice(2) : [];
+          
+          const mergedContents = [singleShopHeader, { type: "separator", margin: "xl" }, ...c1BodyItems];
+          if (c2Contents.length) mergedContents.push({ type: "separator", margin: "xl" }, ...c2Contents);
+
+          await client.replyMessage(e.replyToken, {
+            type: "flex", altText: `📊 ${shopName} 營運報表`,
+            contents: { type: "bubble", size: "mega", body: { type: "box", layout: "vertical", contents: mergedContents } }
+          });
+        } else {
+          // 全店模式 Carousel
+          const flex = await buildDailyReportCarousel({ date: shops[0].date, shops });
+          await client.replyMessage(e.replyToken, flex);
+        }
+        continue;
+      }
+
+      // 🧾 業績回報
+      if (text.startsWith("大哥您好")) {
+        const shop = text.includes("湯棧") ? "湯棧中山" : text.includes("三山") ? "三山博愛" : "茶六博愛";
+        try {
+          await ensureSheet(shop);
+          const row = await writeShop(shop, text, userId);
+          if (SHOP_RATIO_FIELDS[shop]) {
+            let comboMap = {};
+            if (shop === "茶六博愛") comboMap = parseTea6Combos(text);
+            else if (shop === "三山博愛") comboMap = parseSanshanCombos(text);
+            else if (shop === "湯棧中山") comboMap = parseTangzhanCombos(text);
+            await writeShopRatios({ shop, row, comboMap });
+            console.log("🍱 銷售佔比已寫入", shop, row);
+          }
+        } catch (err) {
+          console.error("❌ 業績回報失敗:", err);
+          await client.replyMessage(e.replyToken, { type: "text", text: "⚠️ 業績回報失敗" });
+        }
+        continue;
+      }
+
+      // 🚄 高鐵
+      const hsrResult = await handleHSR(e);
+      if (typeof hsrResult === "string") {
+        await client.replyMessage(e.replyToken, { type: "text", text: hsrResult });
+        continue;
+      }
+    }
+    res.send("OK");
+  } catch (err) {
+    console.error("❌ LINE Webhook Error:", err);
+    res.status(500).end();
+  }
+});
+
+// ======================================================
+// ✅ 定版修正：讀取各店銷售佔比
+// ======================================================
+async function readShopRatioBubble({ shop, date }) {
+  if (!auth) return null;
+  const fields = SHOP_RATIO_FIELDS[shop];
+  if (!fields) return null;
+  const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
+  const r = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${shop}!R:AZ` });
+  const last = r.data.values?.at(-1);
+  if (!last) return null;
+
+  const items = [];
+  for (let i = 0; i < fields.length; i++) {
+    const col = i * 2;
+    const qty = Number(last[col] || 0);
+    const ratio = Number(last[col + 1] || 0);
+    if (qty > 0 || fields[i] === "麻油、燒酒鍋" || fields[i] === "冷藏肉比例") {
+      items.push({ name: fields[i], qty, ratio });
+    }
+  }
+
+  if (shop === "湯棧中山") {
+    const oilMixTotal = items.find(i => i.name === "麻油、燒酒鍋");
+    const coldTotal = items.find(i => i.name === "冷藏肉比例");
+    const hotpot = items.filter(i => !i.name.includes("冷藏") && i.name !== "麻油、燒酒鍋").sort((a, b) => b.qty - a.qty);
+    const cold = items.filter(i => i.name.includes("冷藏") && i.name !== "冷藏肉比例").sort((a, b) => b.qty - a.qty);
+    const finalItems = [...hotpot, ...(oilMixTotal ? [oilMixTotal] : []), ...cold, ...(coldTotal ? [coldTotal] : [])];
+    return buildShopRatioBubble({ shop, date, items: finalItems });
+  }
+
+  return buildShopRatioBubble({ shop, date, items: items.sort((a, b) => b.qty - a.qty) });
+}
+
+// ======================================================
+// 每日摘要 API（08:00 推播用）
+// ======================================================
+app.post("/api/daily-summary", async (req, res) => {
+  try {
+    if (!auth) return res.status(500).send("No Auth");
+    const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
+    const shops = [];
+    for (const s of SHOP_LIST) {
+      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${s}!A:Q` });
+      const rows = r.data.values || [];
+      if (rows.length < 2) continue;
+      const last = rows.at(-1);
+      shops.push({
+        name: s, date: last[5]?.slice(5), revenue: Number(last[6]||0), qty: Number(last[8]||0), qtyLabel: s==="湯棧中山"?"總鍋數":"套餐數", unit: last[9],
+        fp: Number(last[10]||0), fpRate: Number(last[11]||0), bp: Number(last[12]||0), bpRate: Number(last[13]||0), hrTotal: Number(last[14]||0), hrTotalRate: Number(last[15]||0)
+      });
+    }
+    if (!shops.length) return res.send("no data");
+    const flex = await buildDailyReportCarousel({ date: shops[0].date, shops });
+    await client.pushMessage(process.env.BOSS_USER_ID, flex);
+    res.send("OK");
+  } catch (err) {
+    console.error("❌ daily-summary failed:", err);
+    res.status(500).send("fail");
+  }
+});
 
 // ======================================================
 const PORT = process.env.PORT || 3000;
