@@ -1455,34 +1455,46 @@ ${text}
 
 async function generateDailyEnglish() {
   const prompt = `
+你是一個 API，只能回傳 JSON，不要說任何多餘的話。
+
 請產生 10 個「餐飲 / 日常服務」常用英文單字或片語。
 
-每一個請提供：
-- word：英文
-- meaning：中文意思
-- pronounce：好唸的中文式發音（不要 KK 音標）
-- example：餐飲現場會用的簡短英文例句
+格式必須完全符合以下 JSON，不能有任何註解、說明、markdown：
 
-請只回傳 JSON array，不要有任何說明或標記。
+[
+  {
+    "word": "wait",
+    "meaning": "稍等",
+    "pronounce": "wei-t",
+    "example": "Please wait a moment."
+  }
+]
 `;
 
   try {
     const raw = await callOpenAIChat({
       userPrompt: prompt,
-      temperature: 0.4
+      temperature: 0.2 // 🔒 降低亂跑機率
     });
 
-    // ✅ 防呆：只抓第一個 [ ... ]
-    const jsonMatch = raw.match(/$begin:math:display$\[\\s\\S\]\*$end:math:display$/);
-    if (!jsonMatch) throw new Error("JSON not found");
+    // ✅ 第一層：直接 parse（最快、最乾淨）
+    try {
+      return JSON.parse(raw);
+    } catch {}
 
-    return JSON.parse(jsonMatch[0]);
+    // ✅ 第二層保底：移除 ```json ``` 後再 parse
+    const cleaned = raw
+      .replace(/```json/g, "")
+      .replace(/```/g, "")
+      .trim();
+
+    return JSON.parse(cleaned);
+
   } catch (err) {
     console.error("❌ generateDailyEnglish error:", err);
     return null;
   }
 }
-
 // ================================
 // 📘 今日英文 Flex（定版）
 // ================================
