@@ -928,77 +928,107 @@ async function translateImage(messageId) {
     // 🔍 Debug（穩定後可關）
     console.log("🧠 OpenAI Image Translation Raw:", raw);
 
-    // ======================================================
-    // ③ 安全解析 JSON
-    // ======================================================
-    let parsed = safeParseJSON(raw);
+// ======================================================
+// ③ 安全解析 JSON（最終定版）
+// ======================================================
+let parsed = safeParseJSON(raw);
 
-    // 🧠【關鍵修正 #1】
-    // AI 只回 { mode: "text" }，但文字在 JSON 前面
-    if (
-      parsed &&
-      parsed.mode === "text" &&
-      !parsed.items
-    ) {
-      const textOnly = raw
-        .replace(/```json[\s\S]*$/i, "")
-        .replace(/```/g, "")
-        .trim();
+/**
+ * 🧠 情況 A
+ * Vision 回傳的是：
+ * { mode: "text", content: "翻譯後內容..." }
+ */
+if (
+  parsed &&
+  parsed.mode === "text" &&
+  !parsed.items &&
+  typeof parsed.content === "string"
+) {
+  parsed = {
+    mode: "text",
+    items: [
+      { translation: parsed.content.trim() }
+    ]
+  };
+}
 
-      if (textOnly) {
-        parsed = {
-          mode: "text",
-          items: [
-            { translation: textOnly }
-          ]
-        };
-      }
-    }
+/**
+ * 🧠 情況 B
+ * AI 回了 JSON，但真正的翻譯文字在 JSON 前面
+ * 例如：
+ * 「親愛的xxx...」
+ * ```json
+ * { "mode": "text" }
+ * ```
+ */
+if (
+  parsed &&
+  parsed.mode === "text" &&
+  !parsed.items
+) {
+  const textOnly = raw
+    .replace(/```json[\s\S]*$/i, "")
+    .replace(/```/g, "")
+    .trim();
 
-    // 🛡️【關鍵修正 #2】
-    // Vision 完全沒給 JSON，但有文字
-    if (!parsed) {
-      const cleaned = raw
-        ?.replace(/```[\s\S]*?```/g, "")
-        ?.trim();
-
-      if (cleaned) {
-        console.warn("⚠️ Vision 未回 JSON，啟用純文字代筆 fallback");
-
-        const rewritten = await translateText(cleaned);
-
-        if (rewritten && rewritten.trim()) {
-          parsed = {
-            mode: "text",
-            items: [
-              { translation: rewritten }
-            ]
-          };
-        }
-      }
-    }
-
-    // ======================================================
-    // ④ 最終防線（避免 LINE 回傳空字串 400）
-    // ======================================================
-    if (
-      !parsed ||
-      !parsed.mode ||
-      !Array.isArray(parsed.items) ||
-      parsed.items.length === 0 ||
-      !parsed.items[0].translation ||
-      !parsed.items[0].translation.trim()
-    ) {
-      return null;
-    }
-
-    return parsed;
-
-  } catch (err) {
-    console.error("❌ translateImage exception:", err);
-    return null;
+  if (textOnly) {
+    parsed = {
+      mode: "text",
+      items: [
+        { translation: textOnly }
+      ]
+    };
   }
 }
+
+/**
+ * 🛡️ 情況 C
+ * Vision 完全沒回 JSON，只回一大段文字
+ */
+if (!parsed) {
+  const cleaned = raw
+    ?.replace(/```[\s\S]*?```/g, "")
+    ?.trim();
+
+  if (cleaned) {
+    console.warn("⚠️ Vision 未回 JSON，啟用純文字 fallback");
+
+    parsed = {
+      mode: "text",
+      items: [
+        { translation: cleaned }
+      ]
+    };
+  }
+}
+
+// ======================================================
+// ④ 最終防線（只允許乾淨文字通過）
+// ======================================================
+if (
+  !parsed ||
+  !parsed.mode ||
+  !Array.isArray(parsed.items) ||
+  parsed.items.length === 0 ||
+  typeof parsed.items[0].translation !== "string"
+) {
+  return null;
+}
+
+// 🧹 最後一次清潔（防止任何殘留 JSON 字樣）
+parsed.items[0].translation = parsed.items[0].translation
+  .replace(/\{\s*"mode"\s*:\s*"text"\s*\}/gi, "")
+  .replace(/整理後的內容如下[:：]?/gi, "")
+  .replace(/^-{3,}$/gm, "")
+  .trim();
+
+if (!parsed.items[0].translation) {
+  return null;
+}
+
+return parsed;
+
+    
 // ======================================================
 // LINE Webhook（Router 主流程｜v1.6.6 結構清洗版）
 // ======================================================
