@@ -1073,54 +1073,35 @@ app.post("/webhook", line.middleware(config), async (req, res) => {
       const userId = e.source.userId;
 
 // ================================
-// 🖼 圖片處理 (唯一入口)
+// 🖼 圖片處理（唯一入口｜結構鎖死版）
 // ================================
 if (e.message?.type === "image") {
   if (!imageTranslateSessions.has(userId)) continue;
 
   try {
     const result = await translateImage(e.message.id);
-
     let replyText = "";
 
     if (!result || !Array.isArray(result.items) || result.items.length === 0) {
       replyText = "⚠️ 圖片中未偵測到可翻譯文字";
     } else {
+      if (result.mode === "menu_high") {
+        replyText += "📋 菜單翻譯（完整）\n━━━━━━━━━━━\n";
+        result.items.forEach(item => {
+          if (!item.translation) return;
+          if (item.name) replyText += `\n🍽 ${item.name}`;
+          if (item.price) replyText += `　💰 ${item.price}`;
+          replyText += `\n👉 ${item.translation}\n`;
+        });
 
-      // ======================================================
-      // 🍽 補丁 A2：菜單翻譯 → 再過一次台灣代筆（關鍵）
-      // ======================================================
-      if (result.mode === "menu_high" || result.mode === "menu_low") {
-        for (const item of result.items) {
-          if (item.translation && item.translation.trim()) {
-            item.translation = await rewriteToTaiwanese({
-              content: item.translation,
-              temperature: 0.2
-            });
-          }
-        }
-      }
-
-      // ======================================================
-      // 📤 組回傳文字
-      // ======================================================
-if (result.mode === "menu_high") {
-  replyText += "📋 菜單翻譯\n━━━━━━━━━━━\n";
-
-  result.items.forEach(i => {
-    const name  = i.name ? `🍽 ${i.name}` : "";
-    const price = i.price ? `💰 ${i.price}` : "";
-    const desc  = i.translation ? `👉 ${i.translation}` : "";
-
-    replyText += `\n${name}\n${price}\n${desc}\n`;
-  });
-}
       } else if (result.mode === "menu_low") {
-        result.items.forEach(i => {
-          if (i.translation) {
-            replyText += `\n${i.translation}\n`;
+        replyText += "📋 菜單翻譯\n━━━━━━━━━━━\n";
+        result.items.forEach(item => {
+          if (item.translation) {
+            replyText += `\n• ${item.translation}\n`;
           }
         });
+
       } else {
         // 一般文字
         replyText = result.items
@@ -1130,7 +1111,6 @@ if (result.mode === "menu_high") {
       }
     }
 
-    // 🧹 統一出口清潔（防 JSON / Prompt 洩漏）
     replyText = sanitizeTranslationOutput(replyText);
 
     await client.replyMessage(e.replyToken, {
