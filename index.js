@@ -1455,26 +1455,40 @@ ${text}
 
 async function generateDailyEnglish() {
   const prompt = `
-你是一個 API，只能回傳 JSON，不要說任何多餘的話。
+你是一個 API，只能回傳 JSON，不要加任何說明文字。
 
-請產生 10 個「生活中常用、服務情境也常出現」的英文單字或片語。
-- 生活英文為主
-- 餐飲、服務場景也會自然用到
-- 請避免非常基礎、每天都會重複的單字（如 hello, thank you）
+請產生 10 個「生活常用為主、服務與餐飲現場也常會用到」的英文單字或片語。
 
-每一個請提供：
-- word：英文
+【內容原則】
+- 生活英文為主（不要太教科書）
+- 餐飲 / 服務現場自然會用到
+- 請避免非常基礎、每天容易重複的單字（如 hello, thank you）
+
+【每一筆資料請提供以下欄位（全部都要）】
+- word：英文單字或片語
 - meaning：自然中文意思
-- pronounce：用「中文方式」提示唸法（不要 KK 音標）
+- kk：KK 音標（例如 /weɪt/）
+- pronounce：用「偏台灣人口音的繁體中文」模擬英文唸法
+  原則：
+  - 以台灣人實際會唸的方式為準
+  - 不要太標準、不要太學術
+  - 以現場敢唸出口為優先
+  例如：
+  wait → 威特
+  order → 歐德(兒)
+  ready → 瑞底
+  moment → 摸門
+  confirm → 康佛姆
 - example：生活或服務現場會用的簡短英文例句
 
-請只回傳 JSON array，格式必須完全如下：
+【只允許回傳 JSON array，格式必須完全如下】
 
 [
   {
     "word": "wait",
     "meaning": "稍等",
-    "pronounce": "wei-t",
+    "kk": "/weɪt/",
+    "pronounce": "威特",
     "example": "Please wait a moment."
   }
 ]
