@@ -1115,10 +1115,10 @@ replyText = replyText
       // 🖼 啟動圖片翻譯
       // ================================
       if (text === "翻譯圖片") {
-        imageTranslateSessions.add(userId);
-        await client.replyMessage(e.replyToken, { type: "text", text: "📸 好，請傳一張要翻譯的圖片" });
-        continue;
-      }
+  imageTranslateSessions.add(userId);
+  // ❌ 不回任何訊息
+  continue;
+}
 
 // ================================
 // 📘 文字翻譯（支援換行）
