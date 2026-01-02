@@ -862,6 +862,35 @@ function polishMenuTranslation(text) {
 
   return t.trim();
 }
+// ======================================================
+// 🌐 中文 → 英文翻譯（保留原意，不做台灣代筆）
+// ======================================================
+async function translateChineseToEnglish(text) {
+  if (!text || !text.trim()) return "";
+
+  const systemPrompt = `
+You are a professional translator.
+Translate the given text into natural, fluent English.
+
+Rules:
+- Do NOT explain
+- Do NOT add comments
+- Do NOT rewrite creatively
+- Keep the original meaning
+- Output English only
+`;
+
+  try {
+    return await callOpenAIChat({
+      systemPrompt,
+      userPrompt: text,
+      temperature: 0.2
+    });
+  } catch (err) {
+    console.error("❌ translateChineseToEnglish error:", err);
+    return "";
+  }
+}
 
 // ======================================================
 // 🤖 每日英文產生器（隨機主題＋防重複定版）
@@ -1231,6 +1260,30 @@ if (text === "翻譯" || text.startsWith("翻譯\n") || text.startsWith("翻譯 
       text: result
     });
   }
+  continue;
+}
+      
+// ======================================================
+// 📘 翻譯文字（中 → 英，需明確指令）
+// ======================================================
+if (text.startsWith("翻譯 ")) {
+  const content = text.replace(/^翻譯\s*/, "").trim();
+
+  if (!content) {
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "要翻譯什麼？可以直接打：翻譯 這句話"
+    });
+    continue;
+  }
+
+  const translated = await translateChineseToEnglish(content);
+
+  await client.replyMessage(e.replyToken, {
+    type: "text",
+    text: translated || "⚠️ 翻譯失敗，請稍後再試"
+  });
+
   continue;
 }
 
