@@ -109,6 +109,12 @@ const fs = require("fs");
 const { GoogleAuth } = require("google-auth-library");
 const { google } = require("googleapis");
 
+// ======================================================
+// 📘 今日英文｜記憶體防重複（instance 層）
+// ======================================================
+const recentEnglishPool = new Set();
+const MAX_RECENT = 40; // 記住最近用過的單字數量
+
 const app = express();
 
 // ======================================================
