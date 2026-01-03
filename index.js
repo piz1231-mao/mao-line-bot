@@ -674,15 +674,22 @@ async function callOpenAIChat({
   return data.choices[0].message.content;
 }
 
-// ✅ 增加安全解析 JSON 的工具（v1.6.6 新增）
+// ======================================================
+// ✅ 安全解析 JSON（支援 Object / Array｜v1.6.9 定版）
+// ======================================================
 function safeParseJSON(raw) {
   if (!raw) return null;
 
   // 1️⃣ 移除 markdown code block
-  const cleaned = raw.replace(/```json/gi, "").replace(/```/g, "").trim();
+  const cleaned = raw
+    .replace(/```json/gi, "")
+    .replace(/```/g, "")
+    .trim();
 
-  // 2️⃣ 嘗試抓「最後一個 JSON 物件」
-  const jsonMatch = cleaned.match(/\{[\s\S]*\}$/);
+  // 2️⃣ 嘗試抓「最後一段 JSON」（物件或陣列）
+  const jsonMatch =
+    cleaned.match(/(\{[\s\S]*\})\s*$/) ||   // {}
+    cleaned.match(/(\[[\s\S]*\])\s*$/);     // []
 
   if (!jsonMatch) {
     console.error("❌ JSON not found in response:", cleaned);
@@ -690,12 +697,13 @@ function safeParseJSON(raw) {
   }
 
   try {
-    return JSON.parse(jsonMatch[0]);
+    return JSON.parse(jsonMatch[1]);
   } catch (err) {
-    console.error("❌ JSON parse failed:", jsonMatch[0]);
+    console.error("❌ JSON parse failed:", jsonMatch[1]);
     return null;
   }
 }
+
 const TAIWAN_REWRITE_SYSTEM_PROMPT = `
 你不是翻譯工具。你不是在「整理內容」，也不是在「說明翻譯結果」。
 
