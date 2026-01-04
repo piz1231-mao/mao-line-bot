@@ -126,6 +126,7 @@ const client = new line.Client(config);
 // Google Sheet 設定
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
+const UTILITIES_SPREADSHEET_ID = "15BuvMH32ETU7-v8Ql3aRFpuQnyf244zdbOdOOiXNi4w";
 const TEMPLATE_SHEET = "茶六博愛";
 const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山"];
 
@@ -370,7 +371,7 @@ async function writeUtilities({ shop, text, userId }) {
   const sheets = google.sheets({ version: "v4", auth: c });
 
   await sheets.spreadsheets.values.append({
-    spreadsheetId: 15BuvMH32ETU7-v8Ql3aRFpuQnyf244zdbOdOOiXNi4w,
+    spreadsheetId: UTILITIES_SPREADSHEET_ID,
     range: `三表登記!A1`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
@@ -378,7 +379,7 @@ async function writeUtilities({ shop, text, userId }) {
         nowTW(),        // 建立時間
         userId,         // userId
         shop,           // 店名
-        "",             // 日期（先空，之後再補）
+        "",             // 日期（先空）
         water || "",    // 水
         power || "",    // 電
         gas || "",      // 瓦斯
@@ -387,7 +388,6 @@ async function writeUtilities({ shop, text, userId }) {
     }
   });
 }
-
 // ======================================================
 // Sheet 操作（定版）
 // ======================================================
