@@ -1508,12 +1508,11 @@ if (text === "翻譯" || text.startsWith("翻譯\n") || text.startsWith("翻譯 
         continue;
       }
 
-      // 🧾 業績回報
-      if (text.startsWith("大哥您好")) {
-        const p = parseSales(text); // ⭐ 日期只在這裡解析
-        if (text.startsWith("大哥您好")) {
-  const p = parseSales(text);
-  const shop = detectShop(text);
+     
+      // 🧾 業績回報（定版｜三店＋三表）
+if (text.startsWith("大哥您好")) {
+  const p = parseSales(text);            // ⭐ 日期只在這裡解析
+  const shop = detectShop(text);         // ⭐ 唯一店名來源
 
   // 🚫 沒有明確店名，直接跳過
   if (!shop) {
@@ -1523,20 +1522,29 @@ if (text === "翻譯" || text.startsWith("翻譯\n") || text.startsWith("翻譯 
 
   try {
     await ensureSheet(shop);
+
+    // ① 寫入業績主表
     const row = await writeShop(shop, text, userId);
 
+    // ② 寫入三表（水電瓦斯）
     await writeUtilities({
       shop,
-      date: p.date,
+      date: p.date,   // ⭐ 跟業績完全同一天
       text,
       userId
     });
 
+    // ③ 寫入銷售佔比
     if (SHOP_RATIO_FIELDS[shop]) {
       let comboMap = {};
-      if (shop === "茶六博愛") comboMap = parseTea6Combos(text);
-      else if (shop === "三山博愛") comboMap = parseSanshanCombos(text);
-      else if (shop === "湯棧中山") comboMap = parseTangzhanCombos(text);
+
+      if (shop === "茶六博愛") {
+        comboMap = parseTea6Combos(text);
+      } else if (shop === "三山博愛") {
+        comboMap = parseSanshanCombos(text);
+      } else if (shop === "湯棧中山") {
+        comboMap = parseTangzhanCombos(text);
+      }
 
       await writeShopRatios({ shop, row, comboMap });
       console.log("🍱 銷售佔比已寫入", shop, row);
