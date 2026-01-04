@@ -314,6 +314,22 @@ function parseTangzhanCombos(text) {
   }
   return result;
 }
+// ======================================================
+// 水 / 電 / 瓦斯 解析器（STEP 1）
+// ======================================================
+function parseUtilities(text) {
+  const t = text.replace(/：/g, ":");
+
+  const gas   = t.match(/瓦斯(?:度數)?\s*:\s*([\d.]+)/)?.[1] || "";
+  const power = t.match(/電(?:度數)?\s*:\s*([\d.]+)/)?.[1] || "";
+  const water = t.match(/水(?:度數)?\s*:\s*([\d.]+)/)?.[1] || "";
+
+  return {
+    gas,
+    power,
+    water
+  };
+}
 
 // ======================================================
 // 通用：各店套餐 / 鍋型佔比寫入（R 欄）
@@ -337,6 +353,38 @@ async function writeShopRatios({ shop, row, comboMap }) {
     range: `${shop}!R${row}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [values] }
+  });
+}
+// ======================================================
+// 三表登記（寫入水 / 電 / 瓦斯）
+// ======================================================
+async function writeUtilities({ shop, text, userId }) {
+  if (!auth) return;
+
+  const { gas, power, water } = parseUtilities(text);
+
+  // 如果三個都沒有，就不要寫
+  if (!gas && !power && !water) return;
+
+  const c = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: c });
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: 15BuvMH32ETU7-v8Ql3aRFpuQnyf244zdbOdOOiXNi4w,
+    range: `三表登記!A1`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        nowTW(),        // 建立時間
+        userId,         // userId
+        shop,           // 店名
+        "",             // 日期（先空，之後再補）
+        water || "",    // 水
+        power || "",    // 電
+        gas || "",      // 瓦斯
+        text            // 原始文字
+      ]]
+    }
   });
 }
 
@@ -1460,6 +1508,7 @@ if (text === "翻譯" || text.startsWith("翻譯\n") || text.startsWith("翻譯 
         try {
           await ensureSheet(shop);
           const row = await writeShop(shop, text, userId);
+          await writeUtilities({ shop, text, userId });
           if (SHOP_RATIO_FIELDS[shop]) {
             let comboMap = {};
             if (shop === "茶六博愛") comboMap = parseTea6Combos(text);
