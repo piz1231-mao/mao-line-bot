@@ -249,6 +249,12 @@ function parseSales(text) {
     bp
   };
 }
+function detectShop(text) {
+  if (text.includes("茶六博愛")) return "茶六博愛";
+  if (text.includes("三山博愛")) return "三山博愛";
+  if (text.includes("湯棧中山")) return "湯棧中山";
+  return null;
+}
 
 // ======================================================
 // 茶六套餐解析器（v1.4 定版｜符號容錯）
@@ -1505,31 +1511,47 @@ if (text === "翻譯" || text.startsWith("翻譯\n") || text.startsWith("翻譯 
       // 🧾 業績回報
       if (text.startsWith("大哥您好")) {
         const p = parseSales(text); // ⭐ 日期只在這裡解析
-        const shop = text.includes("湯棧") ? "湯棧中山" : text.includes("三山") ? "三山博愛" : "茶六博愛";
-        try {
-          await ensureSheet(shop);
-          const row = await writeShop(shop, text, userId);
+        if (text.startsWith("大哥您好")) {
+  const p = parseSales(text);
+  const shop = detectShop(text);
 
-await writeUtilities({
-  shop,
-  date: p.date,   // ⭐ 同一個日期
-  text,
-  userId
-});
-          if (SHOP_RATIO_FIELDS[shop]) {
-            let comboMap = {};
-            if (shop === "茶六博愛") comboMap = parseTea6Combos(text);
-            else if (shop === "三山博愛") comboMap = parseSanshanCombos(text);
-            else if (shop === "湯棧中山") comboMap = parseTangzhanCombos(text);
-            await writeShopRatios({ shop, row, comboMap });
-            console.log("🍱 銷售佔比已寫入", shop, row);
-          }
-        } catch (err) {
-          console.error("❌ 業績回報失敗:", err);
-          await client.replyMessage(e.replyToken, { type: "text", text: "⚠️ 業績回報失敗" });
-        }
-        continue;
-      }
+  // 🚫 沒有明確店名，直接跳過
+  if (!shop) {
+    console.log("⚠️ 無法判斷店名，略過三表與業績寫入");
+    continue;
+  }
+
+  try {
+    await ensureSheet(shop);
+    const row = await writeShop(shop, text, userId);
+
+    await writeUtilities({
+      shop,
+      date: p.date,
+      text,
+      userId
+    });
+
+    if (SHOP_RATIO_FIELDS[shop]) {
+      let comboMap = {};
+      if (shop === "茶六博愛") comboMap = parseTea6Combos(text);
+      else if (shop === "三山博愛") comboMap = parseSanshanCombos(text);
+      else if (shop === "湯棧中山") comboMap = parseTangzhanCombos(text);
+
+      await writeShopRatios({ shop, row, comboMap });
+      console.log("🍱 銷售佔比已寫入", shop, row);
+    }
+
+  } catch (err) {
+    console.error("❌ 業績回報失敗:", err);
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "⚠️ 業績回報失敗"
+    });
+  }
+
+  continue;
+}
 
       // 🚄 高鐵
       const hsrResult = await handleHSR(e);
