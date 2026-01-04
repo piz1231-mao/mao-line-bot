@@ -337,6 +337,36 @@ function parseUtilities(text) {
     water
   };
 }
+// ======================================================
+// ⏱ 時段業績解析器（STEP 2）
+// ======================================================
+function parseTimeSales(text) {
+  const t = text.replace(/：/g, ":").replace(/。/g, ".");
+
+  const patterns = [
+    { type: "早上餐期",  reg: /早上餐期\s*(\d{1,2}-\d{1,2})\.(\d+)/ },
+    { type: "早上離峰",  reg: /早上離峰\s*(\d{1,2}-\d{1,2})\.(\d+)/ },
+    { type: "早上業績",  reg: /早上業績\s*(\d{1,2}-\d{1,2})\.(\d+)/ },
+    { type: "晚上餐期",  reg: /晚上餐期\s*(\d{1,2}-\d{1,2})\.(\d+)/ },
+    { type: "晚上離峰",  reg: /晚上離峰\s*(\d{1,2}-\d{1,2})\.(\d+)/ },
+    { type: "晚上業績",  reg: /晚上業績\s*(\d{1,2}-\d{1,2})\.(\d+)/ }
+  ];
+
+  const result = [];
+
+  for (const p of patterns) {
+    const m = t.match(p.reg);
+    if (m) {
+      result.push({
+        type: p.type,
+        time: m[1],
+        amount: Number(m[2])
+      });
+    }
+  }
+
+  return result;
+}
 
 // ======================================================
 // 通用：各店套餐 / 鍋型佔比寫入（R 欄）
@@ -394,6 +424,37 @@ async function writeUtilities({ shop, date, text, userId }) {
     }
   });
 }
+// ======================================================
+// ⏱ 時段業績寫入（STEP 2）
+// ======================================================
+async function writeTimeSales({ shop, date, text, userId }) {
+  if (!auth) return;
+
+  const items = parseTimeSales(text);
+  if (!items.length) return;
+
+  const c = await auth.getClient();
+  const sheets = google.sheets({ version: "v4", auth: c });
+
+  const values = items.map(i => ([
+    nowTW(),      // 系統時間
+    userId,
+    shop,
+    date,         // ⭐ 共用營運日期
+    i.type,       // 早上餐期 / 晚上業績
+    i.time,       // 11-15
+    i.amount,     // 金額
+    text          // 原始訊息（一定要留）
+  ]));
+
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: UTILITIES_SPREADSHEET_ID,
+    range: "時段業績!A1",
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values }
+  });
+}
+
 // ======================================================
 // Sheet 操作（定版）
 // ======================================================
@@ -1533,6 +1594,12 @@ if (text.startsWith("大哥您好")) {
       text,
       userId
     });
+    await writeTimeSales({
+  shop,
+  date: p.date,
+  text,
+  userId
+});
 
     // ③ 寫入銷售佔比
     if (SHOP_RATIO_FIELDS[shop]) {
