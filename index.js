@@ -359,7 +359,7 @@ async function writeShopRatios({ shop, row, comboMap }) {
 // ======================================================
 // 三表登記（寫入水 / 電 / 瓦斯）
 // ======================================================
-async function writeUtilities({ shop, text, userId }) {
+async function writeUtilities({ shop, date, text, userId }) {
   if (!auth) return;
 
   const { gas, power, water } = parseUtilities(text);
@@ -375,16 +375,16 @@ async function writeUtilities({ shop, text, userId }) {
     range: `三表登記!A1`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
-      values: [[
-        nowTW(),        // 建立時間
-        userId,         // userId
-        shop,           // 店名
-        "",             // 日期（先空）
-        water || "",    // 水
-        power || "",    // 電
-        gas || "",      // 瓦斯
-        text            // 原始文字
-      ]]
+   values: [[
+  nowTW(),   // 系統時間（保留）
+  userId,
+  shop,
+  date,      // ⭐ 唯一營運日期來源
+  water || "",
+  power || "",
+  gas || "",
+  text       // ⭐ 原始訊息一定要留
+]]
     }
   });
 }
@@ -1504,11 +1504,18 @@ if (text === "翻譯" || text.startsWith("翻譯\n") || text.startsWith("翻譯 
 
       // 🧾 業績回報
       if (text.startsWith("大哥您好")) {
+        const p = parseSales(text); // ⭐ 日期只在這裡解析
         const shop = text.includes("湯棧") ? "湯棧中山" : text.includes("三山") ? "三山博愛" : "茶六博愛";
         try {
           await ensureSheet(shop);
           const row = await writeShop(shop, text, userId);
-          await writeUtilities({ shop, text, userId });
+
+await writeUtilities({
+  shop,
+  date: p.date,   // ⭐ 同一個日期
+  text,
+  userId
+});
           if (SHOP_RATIO_FIELDS[shop]) {
             let comboMap = {};
             if (shop === "茶六博愛") comboMap = parseTea6Combos(text);
