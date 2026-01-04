@@ -1262,6 +1262,7 @@ if (e.message?.type === "image") {
       // ================================
       if (e.message?.type !== "text") continue;
       const text = e.message.text.trim();
+      console.log("📩 收到訊息：", text.slice(0, 20));
 
       // ================================
       // 🖼 啟動圖片翻譯
