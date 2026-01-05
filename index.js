@@ -1706,21 +1706,49 @@ async function readShopRatioBubble({ shop, date }) {
 // ======================================================
 app.post("/api/daily-summary", async (req, res) => {
   try {
-    if (!auth) return res.status(500).send("No Auth");
-    const sheets = google.sheets({ version: "v4", auth: await auth.getClient() });
+    const auth = getGoogleAuth(); // 確保這裡能取得 auth
+    const c = await auth.getClient();
+    const sheets = google.sheets({ version: "v4", auth: c });
     const shops = [];
+
     for (const s of SHOP_LIST) {
-      const r = await sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: `${s}!A:Q` });
+      const r = await sheets.spreadsheets.values.get({ 
+        spreadsheetId: SPREADSHEET_ID, 
+        range: `${s}!A:Q` 
+      });
       const rows = r.data.values || [];
       if (rows.length < 2) continue;
       const last = rows.at(-1);
+
+      // ✅ 修正點：將資料正確 push 進陣列
       shops.push({
-     });
+        name: s,
+        date: last[5]?.slice(5),
+        revenue: Number(last[6] || 0),
+        qty: Number(last[8] || 0),
+        qtyLabel: s === "湯棧中山" ? "總鍋數" : "套餐數",
+        unit: last[9],
+        fp: Number(last[10] || 0),
+        fpRate: Number(last[11] || 0),
+        bp: Number(last[12] || 0),
+        bpRate: Number(last[13] || 0),
+        hrTotal: Number(last[14] || 0),
+        hrTotalRate: Number(last[15] || 0)
+      });
     }
+
     if (!shops.length) return res.send("no data");
+
     const flex = await buildDailyReportCarousel({ date: shops[0].date, shops });
-    await client.pushMessage(process.env.BOSS_USER_ID, flex);
-    res.send("OK");
+    
+    // 發送給老闆（請確保環境變數 BOSS_USER_ID 已設定）
+    if (process.env.BOSS_USER_ID) {
+      await client.pushMessage(process.env.BOSS_USER_ID, flex);
+      res.send("OK");
+    } else {
+      res.status(500).send("Missing BOSS_USER_ID");
+    }
+
   } catch (err) {
     console.error("❌ daily-summary failed:", err);
     res.status(500).send("fail");
