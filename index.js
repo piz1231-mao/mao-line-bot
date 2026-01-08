@@ -1525,6 +1525,34 @@ if (isTranslateCmd) {
         }
         continue;
       }
+        
+        // 💰 銀行資金水位（GAS Flex｜明確查詢指令）
+if (
+  text === "查資金" ||
+  text === "查銀行資金" ||
+  text === "查銀行資金水位"
+) {
+  try {
+    const res = await fetch(
+      "https://script.google.com/macros/s/AKfycbytQhYSRazKhZemk1jsKKEsNT1v3i_55kN5MdlzyUxL3zJq0v3uCaYna-IxNBS_nYEKQA/exec?action=fund"
+    );
+
+    if (!res.ok) throw new Error("GAS response not OK");
+
+    const flex = await res.json();
+
+    await client.replyMessage(e.replyToken, flex);
+
+  } catch (err) {
+    console.error("❌ 資金水位查詢失敗:", err);
+    await client.replyMessage(e.replyToken, {
+      type: "text",
+      text: "⚠️ 目前無法取得資金水位"
+    });
+  }
+
+  continue;
+}
 
       // 🌤 天氣
       const city = parseWeather(text);
