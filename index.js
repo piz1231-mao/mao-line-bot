@@ -173,7 +173,7 @@ const client = new line.Client(config);
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const UTILITIES_SPREADSHEET_ID = "15BuvMH32ETU7-v8Ql3aRFpuQnyf244zdbOdOOiXNi4w";
 const TEMPLATE_SHEET = "茶六博愛";
-const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山"];
+const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山_TEST"];
 
 // ======================================================
 // Google Auth（Render / 本機通用｜定版｜v1.6.6 防呆修正）
@@ -308,7 +308,7 @@ function detectShop(text) {
 
   if (text.includes("茶六")) return "茶六博愛";
   if (text.includes("三山")) return "三山博愛";
-  if (text.includes("湯棧")) return "湯棧中山";
+  if (text.includes("湯棧")) return "湯棧中山_TEST";
 
   return null;
 }
