@@ -1343,7 +1343,7 @@ app.post("/webhook", line.middleware(config), (req, res) => {
   setImmediate(async () => {
     try {
       for (const e of req.body.events || []) {
-        const userId = e.source.userId;
+       const userId = e.source.userId || e.source.groupId || "unknown";
 
 // ================================
 // 🖼 圖片處理（唯一入口｜結構鎖死版）
