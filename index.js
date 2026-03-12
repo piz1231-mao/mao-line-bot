@@ -545,6 +545,7 @@ async function writeShop(shop, text, userId) {
   const sheets = google.sheets({ version: "v4", auth: c });
   const p = parseSales(text);
 
+  console.log("📄 寫入 Sheet:", shop);
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
     range: `${shop}!A1`,
