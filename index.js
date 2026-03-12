@@ -143,7 +143,7 @@ const client = new line.Client(config);
 // ======================================================
 const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
 const TEMPLATE_SHEET = "茶六博愛";
-const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山"];
+const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山_TEST"];
 
 // ======================================================
 // Google Auth（Render / 本機通用｜定版）
