@@ -548,7 +548,7 @@ async function writeShop(shop, text, userId) {
   console.log("📄 寫入 Sheet:", shop);
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${shop}!A1`,
+    range: `'${shop}'!A1`,
     valueInputOption: "USER_ENTERED",
     requestBody: {
       values: [[
@@ -580,7 +580,7 @@ async function writeShop(shop, text, userId) {
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: SPREADSHEET_ID,
-    range: `${shop}!Q${row}`,
+    range: `'${shop}'!Q${row}`,
     valueInputOption: "USER_ENTERED",
     requestBody: { values: [[summary]] }
   });
