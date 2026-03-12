@@ -1,28 +1,21 @@
 // ======================================================
 // 毛怪秘書 LINE Bot — index.js
-// Router 穩定定版 v1.7.2
-// （變數命名修正｜清潔器安全優化｜關鍵字衝突修復）
 // Router 穩定定版 v1.7.3
 // （資金水位查詢整合｜功能說明校正｜權限邊界確認）
 //
 // 【架構定位（定版，不再調整）】
 // ------------------------------------------------------
 // - index.js 為「唯一 Router / 裁判」
-// - 所有指令統一由此判斷與分流
-// - service / handler 僅做單一職責，不搶流程
 // - 所有 LINE 訊息只在此檔判斷是否為指令
 // - service / handler 僅負責單一職責，不搶流程
 // - 狀態型功能必須「明確啟動」，不可自動誤判
 // - AI / 翻譯 / 圖片功能遵守「不誤判、不打架」原則
 //
-// 【功能總覽（目前啟用）】
-// ------------------------------------------------------
 // ======================================================
 // 【功能總覽（依目前實際程式行為）】
 // ======================================================
 //
 // 【Tier 1｜即時指令（無狀態）】
-// - 📊 股票查詢（單筆 / 指數）
 // ------------------------------------------------------
 // - 📊 股票查詢
 //   ・股 2330 / 查股票 3189
@@ -34,19 +27,12 @@
 // - 🌤 天氣查詢
 //   ・天氣 台中 / 查天氣 高雄
 //
-// - 📋 待辦事項
-//   ・待辦：XXXX
-//
 // - 📘 文字翻譯（需明確指令）
-//   ・翻譯 中文內容 → 英文（忠實翻譯）
-//   ・翻譯 英文 / 日文 / 韓文 → 台灣中文代筆
 //   ・翻譯 中文 → 英文（忠實翻譯）
 //   ・翻譯 外文 → 台灣中文代筆
 //
 // - 📘 今日英文
 //   ・每日隨機 10 組單字 / 片語
-//   ・含：中文、拼音、台式唸法、KK、例句
-//   ・具 instance 層防重複機制
 //   ・包含：中文、拼音、台式唸法、KK 音標、例句
 //   ・instance 層防重複機制（recentEnglishPool）
 //
@@ -62,10 +48,6 @@
 // - 🖼 圖片翻譯
 //   ・輸入「翻譯圖片」後進入靜默等待
 //   ・僅翻譯該次圖片，不自動誤判
-//   ・支援：菜單 / 一般文字 / 信件 / 截圖
-//   ・菜單：台灣餐廳語感＋輕量潤飾
-//   ・非菜單：台灣代筆重寫
-//   ・翻譯完成後自動清除狀態
 //   ・完成後自動清除狀態
 //
 // - 🚄 高鐵查詢
@@ -78,21 +60,15 @@
 // ------------------------------------------------------
 // - 🧾 業績回報（只寫不回，寫入 Google Sheet）
 // - 📈 業績查詢（單店 / 全店）
-// - 📊 每日營運總覽（08:00 推播）
 // - 📊 每日營運總覽（08:00 主動推播）
 //   ・C1：三店營運摘要
-//   ・C2：各店銷售佔比（全品項）
-// - TradingView Webhook（訊號接收）
 //   ・C2：各店銷售佔比
 // - 🚨 TradingView Webhook（最高優先權｜隔離處理）
 //
-// 【翻譯 / 圖片設計原則（定版）】
-// ------------------------------------------------------
 // ======================================================
 // 【翻譯 / 圖片處理原則（定版）】
 // ======================================================
 // - 翻譯結果以「台灣人實際會用的內容」為準
-// - 禁止逐字直譯、簡體字、中國用語、中國官腔
 // - 禁止簡體字、中國用語、翻譯腔
 // - JSON 僅作為內部解析，不對使用者顯示
 // - 不顯示 mode / 結構 / prompt 痕跡
@@ -114,11 +90,6 @@
 //   ・無 Router 流程調整
 //   ・屬穩定補充版本
 //
-// 【v1.7.2 版本優化備註（定版）】
-// ------------------------------------------------------
-// - 修正：rewriteToTaiwanese 變數命名錯誤 (ReferenceError)。
-// - 修正：sanitizeTranslationOutput 避免誤刪正文中的 JSON 或大括號內容。
-// - 優化：關鍵字防火牆邏輯，將「翻譯」指令獨立，避免誤觸「翻譯圖片」狀態開關。
 // ======================================================
 
 require("dotenv").config();
@@ -170,10 +141,10 @@ const client = new line.Client(config);
 // ======================================================
 // Google Sheet 設定
 // ======================================================
-const SPREADSHEET_ID = "11efjOhFI_bY-zaZZw9r00rLH7pV1cvZInSYLWIokKWk";
+const SPREADSHEET_ID = "15BuvMH32ETU7-v8Ql3aRFpuQnyf244zdbOdOOiXNi4w";
 const UTILITIES_SPREADSHEET_ID = "15BuvMH32ETU7-v8Ql3aRFpuQnyf244zdbOdOOiXNi4w";
 const TEMPLATE_SHEET = "茶六博愛";
-const SHOP_LIST = ["茶六博愛", "三山博愛","湯棧中山", "湯棧中山_TEST"];
+const SHOP_LIST = ["茶六博愛", "三山博愛", "湯棧中山"];
 
 // ======================================================
 // Google Auth（Render / 本機通用｜定版｜v1.6.6 防呆修正）
@@ -233,7 +204,7 @@ app.all("/tv-alert", express.text({ type: "*/*" }), (req, res) => {
     }
   });
 });
-
+ 
 // ======================================================
 // 工具
 // ======================================================
@@ -305,11 +276,9 @@ function parseSales(text) {
   };
 }
 function detectShop(text) {
-
-  if (text.includes("茶六")) return "茶六博愛";
-  if (text.includes("三山")) return "三山博愛";
-  if (text.includes("湯棧")) return "湯棧中山_TEST";
-
+  if (text.includes("茶六博愛")) return "茶六博愛";
+  if (text.includes("三山博愛")) return "三山博愛";
+  if (text.includes("湯棧中山")) return "湯棧中山";
   return null;
 }
 
@@ -544,7 +513,6 @@ async function writeShop(shop, text, userId) {
   const c = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: c });
   const p = parseSales(text);
-console.log("📅 解析日期:", p);
 
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
@@ -1129,7 +1097,7 @@ ${bannedWords}
   try {
     const raw = await callOpenAIChat({ userPrompt: prompt, temperature: 0.7 });
     const items = safeParseJSON(raw);
-
+    
     if (!items || !Array.isArray(items)) throw new Error("JSON format invalid");
 
     items.forEach(item => {
@@ -1481,7 +1449,7 @@ if (e.message?.type === "image") {
   // ❌ 不回任何訊息
   continue;
 }
-
+      
 // ================================
 // 🛑 結束圖片翻譯（安靜模式）
 // ================================
@@ -1493,7 +1461,7 @@ if (text === "結束翻譯") {
   continue;
 }
 
-
+      
 // ================================
 // 📘 文字翻譯（智慧分流｜定版）
 // ================================
@@ -1528,7 +1496,7 @@ if (isTranslateCmd) {
 
   continue;
 }
-
+      
 
 
       // ================================
@@ -1545,7 +1513,7 @@ if (isTranslateCmd) {
       }
 
       // ===== Tier 1：即時指令 =====
-
+      
       // 📊 股票查詢
       if (text.startsWith("股 ") || text.startsWith("查股票 ") || ["台指期","台指","櫃買","OTC","大盤"].includes(text)) {
         const id = ["台指期","台指","櫃買","OTC","大盤"].includes(text) 
@@ -1556,7 +1524,7 @@ if (isTranslateCmd) {
         await client.replyMessage(e.replyToken, flex);
         continue;
       }
-
+      
       // 🛒 購物車
       if (["查購物車", "查清單", "查股票 購物車"].includes(text)) {
         try {
@@ -1581,7 +1549,7 @@ if (isTranslateCmd) {
         }
         continue;
       }
-
+        
         // 💰 銀行資金水位（GAS Flex｜明確查詢指令）
 if (
   text === "查資金" ||
@@ -1629,7 +1597,7 @@ if (
       // ======================================================
       if (text.startsWith("查業績")) {
         const shopName = text.replace("查業績", "").trim();
-
+        
         // 若有指定店名，檢查是否存在
         if (shopName && !SHOP_LIST.includes(shopName)) {
           await client.replyMessage(e.replyToken, { type: "text", text: `❌ 找不到店名「${shopName}」` });
@@ -1672,10 +1640,10 @@ if (
           const c1Contents = c1Flex.contents.body.contents;
           const singleShopHeader = { type: "text", text: `${shop.name}｜${shop.date}`, weight: "bold", size: "xl", margin: "md" };
           const c1BodyItems = c1Contents[1].contents[0].contents.slice(1).map(item => ({ ...item, margin: "md" }));
-
+          
           const ratioBubble = await readShopRatioBubble({ shop: shopName, date: shop.date });
           const c2Contents = ratioBubble ? ratioBubble.body.contents.slice(2) : [];
-
+          
           const mergedContents = [singleShopHeader, { type: "separator", margin: "xl" }, ...c1BodyItems];
           if (c2Contents.length) mergedContents.push({ type: "separator", margin: "xl" }, ...c2Contents);
 
@@ -1691,14 +1659,11 @@ if (
         continue;
       }
 
-
+      
       // 🧾 業績回報（定版｜三店＋三表）
 if (text.startsWith("大哥您好")) {
   const p = parseSales(text);            // ⭐ 日期只在這裡解析
   const shop = detectShop(text);         // ⭐ 唯一店名來源
-  
-console.log("📩 業績訊息:", text.slice(0,60));
-console.log("🏪 偵測店名:", shop);
 
   // 🚫 沒有明確店名，直接跳過
   if (!shop) {
@@ -1707,33 +1672,24 @@ console.log("🏪 偵測店名:", shop);
   }
 
   try {
-    //await ensureSheet(shop);
+    await ensureSheet(shop);
 
-console.log("🧱 ensureSheet START:", shop);
-await ensureSheet(shop);
-console.log("🧱 ensureSheet OK");
+    // ① 寫入業績主表
+    const row = await writeShop(shop, text, userId);
 
-console.log("📝 writeShop START");
-const row = await writeShop(shop, text, userId);
-console.log("📝 writeShop OK", row);
-
-console.log("🔧 writeUtilities START");
-await writeUtilities({
+    // ② 寫入三表（水電瓦斯）
+    await writeUtilities({
+      shop,
+      date: p.date,   // ⭐ 跟業績完全同一天
+      text,
+      userId
+    });
+    await writeTimeSales({
   shop,
   date: p.date,
   text,
   userId
 });
-console.log("🔧 writeUtilities OK");
-
-console.log("⏱ writeTimeSales START");
-await writeTimeSales({
-  shop,
-  date: p.date,
-  text,
-  userId
-});
-console.log("⏱ writeTimeSales OK");
 
     // ③ 寫入銷售佔比
     if (SHOP_RATIO_FIELDS[shop]) {
