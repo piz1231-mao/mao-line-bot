@@ -1707,7 +1707,7 @@ console.log("🏪 偵測店名:", shop);
   }
 
   try {
-    await ensureSheet(shop);
+    //await ensureSheet(shop);
 
     // ① 寫入業績主表
     const row = await writeShop(shop, text, userId);
