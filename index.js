@@ -305,9 +305,11 @@ function parseSales(text) {
   };
 }
 function detectShop(text) {
-  if (text.includes("茶六博愛")) return "茶六博愛";
-  if (text.includes("三山博愛")) return "三山博愛";
-  if (text.includes("湯棧中山")) return "湯棧中山";
+
+  if (text.includes("茶六")) return "茶六博愛";
+  if (text.includes("三山")) return "三山博愛";
+  if (text.includes("湯棧")) return "湯棧中山";
+
   return null;
 }
 
@@ -1693,6 +1695,9 @@ if (
 if (text.startsWith("大哥您好")) {
   const p = parseSales(text);            // ⭐ 日期只在這裡解析
   const shop = detectShop(text);         // ⭐ 唯一店名來源
+  
+console.log("📩 業績訊息:", text.slice(0,60));
+console.log("🏪 偵測店名:", shop);
 
   // 🚫 沒有明確店名，直接跳過
   if (!shop) {
