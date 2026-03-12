@@ -1709,22 +1709,31 @@ console.log("🏪 偵測店名:", shop);
   try {
     //await ensureSheet(shop);
 
-    // ① 寫入業績主表
-    const row = await writeShop(shop, text, userId);
+console.log("🧱 ensureSheet START:", shop);
+await ensureSheet(shop);
+console.log("🧱 ensureSheet OK");
 
-    // ② 寫入三表（水電瓦斯）
-    await writeUtilities({
-      shop,
-      date: p.date,   // ⭐ 跟業績完全同一天
-      text,
-      userId
-    });
-    await writeTimeSales({
+console.log("📝 writeShop START");
+const row = await writeShop(shop, text, userId);
+console.log("📝 writeShop OK", row);
+
+console.log("🔧 writeUtilities START");
+await writeUtilities({
   shop,
   date: p.date,
   text,
   userId
 });
+console.log("🔧 writeUtilities OK");
+
+console.log("⏱ writeTimeSales START");
+await writeTimeSales({
+  shop,
+  date: p.date,
+  text,
+  userId
+});
+console.log("⏱ writeTimeSales OK");
 
     // ③ 寫入銷售佔比
     if (SHOP_RATIO_FIELDS[shop]) {
