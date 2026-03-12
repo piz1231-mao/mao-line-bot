@@ -544,6 +544,7 @@ async function writeShop(shop, text, userId) {
   const c = await auth.getClient();
   const sheets = google.sheets({ version: "v4", auth: c });
   const p = parseSales(text);
+console.log("📅 解析日期:", p);
 
   const res = await sheets.spreadsheets.values.append({
     spreadsheetId: SPREADSHEET_ID,
